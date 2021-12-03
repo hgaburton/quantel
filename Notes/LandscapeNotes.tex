@@ -1,6 +1,6 @@
 \documentclass[11pt,a4paper]{article}
 
-% ============================================================%a
+%============================================================%a
 %%% PACKAGES %%%
 %============================================================%
 
@@ -23,7 +23,7 @@
 \usepackage{physics} % Many macros useful to write physics 
 \usepackage{amsmath, amssymb} % Ensembles of mathematical symbol
 \usepackage{bm} % amsmath recommend to use this package for a robust version of math bold font
-\usepackage{mleftright} % Nicer delimiters than the \left and \right ones
+\usepackage{mleftright} % Nicer delimiters than \left and \right
 \usepackage{siunitx} % SI notations for physical unit
 \usepackage[version=4]{mhchem} % Chemical notation
 
@@ -74,8 +74,15 @@ hyperfigures=false]
 \newcommand{\bcre}[1]{b_{#1}^\dagger} %Boson creation operator
 \newcommand{\bani}[1]{b_{#1}} %Boson annihilation operator
 
+\newcommand{\FC}[1]{F_{#1}^{\text{C}}}
+\newcommand{\FA}[1]{F_{#1}^{\text{A}}}
+
 \newcommand{\kron}[1]{\delta_{#1}}
 \newcommand{\p}[1]{\Hat{\mathnormal{P}}_{#1}} %Permutation operators
+
+\newcommand{\eri}[2]{\braket{#1}{#2}} %Electron repulsion integral
+\newcommand{\ceri}[2]{\mleft(#1|#2\mright)}
+\newcommand{\dbi}[2]{\mel{#1}{}{#2}} %Double bar integral
 
 %%% Matrix elements and integrals %%%
 
@@ -162,6 +169,16 @@ The two previous operators are related by the following formula
   \label{eq:excOpRelation}
   \hE_{pq,rs} = \hE_{pq}\hE_{rs}-\delta_{rq}\hE_{ps}.
 \end{equation}
+The commutators of these spin-averaged excitation operators are
+\begin{align}
+  \label{eq:commExcOp}
+  \comm{\hE_{pq}}{\hE_{xy}}&=\delta_{qx}\hE_{py} - \delta_{py}\hE_{xq} & \comm{\hE_{pq,rs}}{\hE_{xy}}&=\delta_{xq}\hE_{py,rs} - \delta_{py}\hE_{xq,rs} + \delta_{xs}\hE_{pq,ry} - \delta_{ry}\hE_{pq,xs}
+\end{align}
+Using these relation we can give the commutator of the Hamiltonian with a spin-averaged excitation
+\begin{equation}
+  \label{eq:commHamExcOp}
+  \comm{\hH}{\hE_{xy}} = \sum_p \mleft(h_{px}\hE_{py}-h_{yp}\hE_{xp}\mright) + \sum_{pqr}\braket{pq}{xr}\hE_{py,qr} - \sum_{qrs}\braket{yp}{qr}\hE_{xq,pr}
+\end{equation}
 Using the second quantized Hamiltonian \ref{eq:hamiltonianSecondQuant} we obtain a general formula for the energy of an arbitrary wave function $\ket{\Psi}$
 \begin{equation}
   \label{eq:energyDensityMat}
@@ -179,6 +196,15 @@ The 2-electron RDM has the following symmetry properties
   \Gamma_{pqrs}=\Gamma_{rspq}=\Gamma_{qpsr}=\Gamma_{srqp}.
 \end{equation}
 
+As we will need them later, we also introduce the tensor notation of Kutzelnigg and Mukherjee. They work in the spin-orbital basis. We also provide the relation between their notations and ours. An upper index $\sigma$ means that this quantity is in the spin-orbital basis and not the same as defined above.
+\begin{equation*}
+ \hH=\sum_{pq} h_q^pa_p^q + \frac{1}{2}\sum_{pqrs}g_{pq}^{rs}a_{rs}^{pq}
+\end{equation*}
+\begin{align}
+  a_p^q&= \cre{q}\ani{p} & a_{rs}^{pq}&= \cre{p}\cre{q}\ani{s}\ani{r} \\
+  h_q^p&=h_{qp}\delta_{\sigma(q),\sigma(p)} &  g_{pq}^{rs}&=\braket{pq}{rs}\delta_{\sigma(p),\sigma(r)} \delta_{\sigma(q),\sigma(s)} \\
+  \gamma_q^p&=\gamma_{pq}^\sigma & \gamma_{qs}^{pr}&=\Gamma_{pqrs}^\sigma
+\end{align}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsection{Hartree-Fock}
@@ -355,24 +381,24 @@ obtained by inserting in \eqref{eq:energyDensityMat} the following definition of
 We use a parametrization in terms of local coordinates for orbital rotations as well as CI coefficient as it facilitates the following calculations. The parammetrized wave function is written as
 \begin{equation}
   \label{eq:MCSCF_WF_localCoord}
-  \ket{\Psi_{\text{MCSCF}}}=e^{\hK}e^{\hS}\ket{0}
+  \ket{\Psi_{\text{MCSCF}}}=e^{\hK}e^{\hS}\ket{\Psi_0}
 \end{equation}
-where the orbital rotation operator $\hK$ and the CI coefficient roation operator $\hS$ are defined as
+where $\ket{\Psi_0}$ is a CI vector vector and the orbital rotation operator $\hK$ and the CI coefficient rotation operator $\hS$ are defined as
 \begin{align}
   \hK &= \sum_{i,a} \kappa_i^a \hE_{ia} = \sum_{i,a} \kappa_i^a \left( \cre{a}\ani{i} - \cre{i}\ani{a} \right),  \\
-  \hS &= \sum_I S_{0I}\left(\ket{I}\bra{0}-\ket{0}\bra{I}\right).
+  \hS &= \sum_I S_{K}\left(\ket{\Psi_K}\bra{\Psi_0}-\ket{\Psi_0}\bra{\Psi_K}\right).
 \end{align}
 The associated energy is obtained as
 \begin{equation}
   \label{eq:MCSCF_NRJ_Exp}
-  E_{\text{MCSCF}} = \mel{0}{e^{-\hK}e^{-\hS} \hH e^{\hS}e^{\hK}}{0},
+  E_{\text{MCSCF}} = \mel{\Psi_0}{e^{-\hK}e^{-\hS} \hH e^{\hS}e^{\hK}}{\Psi_0},
 \end{equation}
 using the BCH expansion this energy can be expressed as an infinite serie of nested commutators
 \begin{equation}
   \label{eq:MCSCF_NRJ_BCH}
   \begin{split}
-    E_{\text{MCSCF}} = &\mel{0}{\hH}{0} + \mel{0}{[\hH,\hK]}{0} + \mel{0}{[\hH,\hS]}{0} + \frac{1}{2} \left(\mel{0}{[[\hH,\hK],\hK]}{0} + \mel{0}{[[\hH,\hS],\hS]}{0}\right) \\
-      &+ \mel{0}{[[\hH,\hK],\hS]}{0} + \dots
+    E_{\text{MCSCF}} = &\mel{\Psi_0}{\hH}{\Psi_0} + \mel{\Psi_0}{[\hH,\hK]}{\Psi_0} + \mel{\Psi_0}{[\hH,\hS]}{\Psi_0}  \\
+      &\frac{1}{2} \left(\mel{\Psi_0}{[[\hH,\hK],\hK]}{\Psi_0}+ \mel{\Psi_0}{[[\hH,\hS],\hS]}{\Psi_0}\right) + \mel{\Psi_0}{[[\hH,\hK],\hS]}{\Psi_0} + \dots
   \end{split}
 \end{equation}
 We can identify the terms in the above equation with the taylor developments at the origin of the energy function
@@ -388,13 +414,13 @@ where $\lambda$ is a ``super''-vector containing all the parameters $\kappa_i^a$
 \end{align}
 The we can identify the terms in the BCH expansion as
 \begin{align}
-  \evalat*{\mleft(\pdv{E}{\bm{\kappa}}\mright)}{\bm{\lambda}=0} &= \mel**{0}{\com{\hH}{\hK}}{0} \\
-  \evalat*{\mleft(\pdv{E}{\bm{S}}\mright)}{\bm{\lambda}=0} &= \mel**{0}{\com{\hH}{\hS}}{0} \\
-  \evalat*{\mleft(\pdv{E}{\bm{\kappa}}{\bm{\kappa}}\mright)}{\bm{\lambda}=0} &= \mel**{0}{\com{\com{\hH}{\hK}}{\hK}}{0} \\
-  \evalat*{\mleft(\pdv{E}{\bm{S}}{\bm{S}}\mright)}{\bm{\lambda}=0} &= \mel**{0}{\com{\com{\hH}{\hS}}{\hS}}{0} \\
-  \evalat*{\mleft(\pdv{E}{\bm{\kappa}}{\bm{S}}\mright)}{\bm{\lambda}=0} &= \mel**{0}{\com{\com{\hH}{\hK}}{\hS}}{0}
+  \evalat*{\mleft(\pdv{E}{\bm{\kappa}}\mright)}{\bm{\lambda}=0} &= \mel**{\Psi_0}{\com{\hH}{\hK}}{\Psi_0} \\
+  \evalat*{\mleft(\pdv{E}{\bm{S}}\mright)}{\bm{\lambda}=0} &= \mel**{\Psi_0}{\com{\hH}{\hS}}{\Psi_0} \\
+  \evalat*{\mleft(\pdv{E}{\bm{\kappa}}{\bm{\kappa}}\mright)}{\bm{\lambda}=0} &= \mel**{\Psi_0}{\com{\com{\hH}{\hK}}{\hK}}{\Psi_0} \\
+  \evalat*{\mleft(\pdv{E}{\bm{S}}{\bm{S}}\mright)}{\bm{\lambda}=0} &= \mel**{\Psi_0}{\com{\com{\hH}{\hS}}{\hS}}{\Psi_0} \\
+  \evalat*{\mleft(\pdv{E}{\bm{\kappa}}{\bm{S}}\mright)}{\bm{\lambda}=0} &= \mel**{\Psi_0}{\com{\com{\hH}{\hK}}{\hS}}{\Psi_0}
 \end{align}
-The derivation of all these equations in terms of one- and two-electrons integrals and density matrices is quite tedious and can be found in another pdf (which is not written so far...).
+The derivation of all these equations in terms of one- and two-electrons integrals and density matrices is quite cumbersome and will be presented in the next section.
 
 The MCSCF tangent space is defined as
 \begin{equation}
@@ -403,14 +429,153 @@ The MCSCF tangent space is defined as
 \end{equation}
 We can therefore identify two types of tangent vectors
 \begin{align}
-  \ket{\eta_{ia}}&=\evalat*{\mleft(\pdv{\ket{\Psi}}{\kappa_{ia}}\mright)}{\kappa_{ia}=0}=\left(\cre{a}\ani{i}-\cre{i}\ani{a}\right)e^{\hK-\kappa_i^a \hE_{ia}}e^{\hS}\ket{0} \\
-  \ket{\eta_{0I}}&= e^{\hK}\left(\ket{I}\bra{0}-\ket{0}\bra{I}\right)e^{\hS-S_{0I}(\ket{I}\bra{0}-\ket{0}\bra{I})}\ket{0}
+  \ket{\eta_{ia}}&=\evalat*{\mleft(\pdv{\ket{\Psi}}{\kappa_{ia}}\mright)}{\kappa_{ia}=0}=\left(\cre{a}\ani{i}-\cre{i}\ani{a}\right)e^{\hK-\kappa_i^a \hE_{ia}}e^{\hS}\ket{\Psi_0} \\
+  \ket{\eta_{0I}}&= e^{\hK}\left(\ket{\Psi_K}\bra{\Psi_0}-\ket{\Psi_0}\bra{\Psi_K}\right)e^{\hS-S_{I}(\ket{\Psi_K}\bra{\Psi_0}-\ket{\Psi_0}\bra{\Psi_K})}\ket{\Psi_0}
 \end{align}
 These tangent vectors span a linear vector space and we can define the metric matrix of this space as
 \begin{equation}
   \label{eq:MCSCF_TangentMetric}
   M_{nm}=\braket{\eta_n}{\eta_m}.
 \end{equation}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{MCSCF Gradient and Hessian}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+In this section, we derive both the spin-dependent and spin-free gradient and Hessian as we may be interested in the unrestricted MCSCF solutions.
+
+%///////////////////////////%
+\subsubsection{Spin-orbital formalism}
+% ///////////////////////////%
+
+In this subsection the indices will refer to spin-orbitals.
+
+
+\noindent\textbf{Toolbox}
+
+
+\noindent\textbf{Gradient}
+
+As already seen earlier, the gradient has to components. Namely, the orbital and the CI gradient.
+We start with the orbital gradient. We can further divide this gradient into 3 parts (4 if we consider an MCSCF wave function) because some orbital rotations are redundant.
+The only non-redundant rotations are the core-active, core-virtual and active-virtual.
+In their paper on the generalized Wick's theorem, Kutzelnigg and Mukherjee have derived the general expression for the gradient in the spin-orbital formalism.
+\begin{align}
+  \label{eq:MCSCF_SO_Orb_Gradient}
+  g^o_{pq} &= \evalat*{\mleft(\pdv{E}{\kappa_{pq}}\mright)}{\bm{\lambda}=0} = \mel**{\Psi_0}{\com{\hH}{\cre{p}\ani{q} - \cre{q}\ani{p}}}{\Psi_0} \\
+           &= 2\mel**{\Psi_0}{\com{\hH}{\cre{p}\ani{q}}}{\Psi_0} \notag \\
+  &= 2 \sum_r\mleft(h_{rp}^{\sigma}\gamma_{rq}^{\sigma}-h_{qr}^{\sigma}\gamma_{pr}^{\sigma})\mright) + \sum_{mrs}\mleft(\mel{mr}{}{ps}\Gamma_{mqrs}^\sigma - \mel{mq}{}{rs}\Gamma_{mrps}^\sigma \mright) 
+\end{align}
+
+We can simplify this equation in our three cases of interest.
+
+\begin{subequations}
+  \label{eq:MCSCF_SO_Orb_Gradient}
+  \begin{align}
+    g^o_{ia} &= 2h_{ia}^\sigma + 2\sum_{rs}\mel{ir}{}{as}\gamma_{rs}^\sigma\\
+    g^o_{it} &= \\
+    g^o_{ta} &= .
+  \end{align}
+\end{subequations}
+
+We now turn to the CI part of the gradient
+
+\begin{align}
+  \label{eq:MCSCF_CI_Gradient}
+  g^c_{K} &= \evalat*{\mleft(\pdv{E}{S_{K}}\mright)}{\bm{\lambda}=0} = 2\mel**{\Psi_K}{\hH}{\Psi_0} \\
+  &= 2\sum_{IJ}C_{K,I}^*\mel{I}{\hH}{J}C_{0,J} \notag
+\end{align}
+
+\noindent\textbf{Hessian}
+
+They have also derived a general formula for the Hessian elements in the spin-orbitals formalism.
+
+\begin{align}
+  \label{eq:MCSCF_SO_OrbOrb_Hessian}
+  H^{oo}_{pq,rs} &= \evalat*{\mleft(\pdv{E}{\kappa_{pq}}{\kappa_{rs}}\mright)}{\bm{\lambda}=0} = \frac{1}{2}(1+P_{pq,rs})\mel**{\Psi_0}{\com{\com{\hH}{\cre{p}\ani{q} - \cre{q}\ani{p}}}{\cre{r}\ani{s} - \cre{s}\ani{r}}}{\Psi_0} \\
+  &= \notag
+\end{align}
+
+\begin{align}
+  \label{eq:MCSCF_SO_CIOrb_Hessian}
+  H^{oc}_{pq,K} &= \evalat*{\mleft(\pdv{E}{\kappa_{pq}}{S_{K}}\mright)}{\bm{\lambda}=0} = \mel**{\Psi_K}{\com{\hH}{\cre{p}\ani{q} - \cre{q}\ani{p}}}{\Psi_0} \\
+  &= 2\sum_{IJ}C_{K,I}^*\mel{I}{\com{\hH}{\cre{p}\ani{q} - \cre{q}\ani{p}}}{J}C_{0,J} \notag
+\end{align}
+
+\begin{align}
+  \label{eq:MCSCF_SO_CIOrb_Hessian}
+  H^{cc}_{K,L} &= \evalat*{\mleft(\pdv{E}{S_{K}}{S_{L}}\mright)}{\bm{\lambda}=0} = 2\mel**{\Psi_K}{\hH}{\Psi_L} \\
+  &= 2\sum_{IJ}C_{K,I}^*\mel**{I}{\hH}{J}C_{L,J} - E_0\delta_{K,L} \notag
+\end{align}
+
+%///////////////////////////%
+\subsubsection{Spin-free formalism}
+%///////////////////////////%
+
+In this subsection the indices will refer to spin-orbitals. We will use composite index for spin-orbitals whenever we want to exhibit the link between both formalism.
+
+\noindent\textbf{Toolbox}
+
+Most of the relations provided here are taken from Roos1980 and Siegbahn1980.
+\begin{align}
+  \hE_{pa}\ket{\Psi_0} =0  &\Leftrightarrow \bra{\Psi_0}\hE_{ap} = 0 \\
+  \hE_{ip}\ket{\Psi_0} =2\delta_{ip}\ket{\Psi_0} &\Leftrightarrow \bra{\Psi_0}\hE_{pi}=2\delta_{ip}\bra{\Psi_0 } \\
+  \gamma_{ip}&=2\delta_{ip} \\
+  \Gamma_{ijpq}&= \delta_{ij}\gamma_{pq} -\delta_{iq}\delta_{jp} \\
+  \Gamma_{pijq}&= 2\delta_{ip}\delta_{jq} - \frac{1}{2}\delta_{ij}\Gamma_{pq} \\
+  \Gamma_{ipjq}&=0 \\
+  \gamma_{ap} = \gamma_{pa} &= 0 \\
+  \Gamma_{aqrs} = \Gamma_{pars} &= \Gamma_{pqas} = \Gamma_{pqra} = 0
+\end{align}
+
+\noindent\textbf{Gradient}
+
+\begin{subequations}
+  \label{eq:MCSCF_O_Orb_Gradient}
+  \begin{align}
+    g^o_{ai} &= 4(F_{ai}^{C} + F_{ai}^{A}) \\
+    g^o_{it} &= 4(F_{ti}^{C} + F_{ti}^{A}) - 2\sum_v \gamma_{tv}F_{iv}^C -4\sum_{vxy}\Gamma_{tvxy}\braket{ix}{vy} \\
+    g^o_{at} &= 2\sum_v \gamma_{tv}F_{av}^C + 4\sum_{vxy}\Gamma_{tvxy}\braket{ax}{vy}.
+  \end{align}
+\end{subequations}
+
+The CI gradient is the same in the spin-free formalism as in the spin-orbital formalism.
+
+\noindent\textbf{Hessian}
+
+\begin{equation}
+  \label{eq:MCSCF_O_OrbOrb_Hessian}
+  H^{oo}_{pq,rs} = \evalat*{\mleft(\pdv{E}{\kappa_{pq}}{\kappa_{rs}}\mright)}{\bm{\lambda}=0} = \frac{1}{2}(1+P_{pq,rs})\mel**{\Psi_0}{\com{\com{\hH}{\hE_{pq} - \hE_{qp}}}{\hE_{rs} - \hE_{sr}}}{\Psi_0} 
+\end{equation}
+
+\begin{subequations}
+\begin{align}
+  H^{oo}_{ai,bj} &= 2\mleft[ 4\ceri{ai}{bj}-\ceri{ab}{ij}-\ceri{aj}{bi} \mright] +2\delta_{ij} \mleft( \FC{ab}+\FA{ab} \mright) - 2\delta_{ab}\mleft(\FC{ij}+\FA{ij}\mright)\\
+  H^{oo}_{ai,bt} &= \sum_{v} \gamma_{tv}\mleft[4\ceri{ai}{bv}-\ceri{av}{bi}-\ceri{ab}{vi}\mright] \\
+  &- \delta_{ab}\sum_{vxy} \Gamma_{tvxy}\ceri{vi}{xy} -\delta_{ab}\mleft(\FC{ti}+\FA{ti}\mright) -\frac{1}{2}\delta_{ab}\sum_v\gamma_{tv}\FC{vi}\\
+  H^{oo}_{ai,tj} &= \sum_v (2\delta_{tv} - \gamma_{tv})\mleft[4\ceri{ai}{vj}-\ceri{av}{ji}-\ceri{aj}{vi}\mright] \\ \displaybreak
+  &-\delta_{ji}\sum_{vxy} \Gamma_{tvxy}\ceri{av}{xy} + 2\delta_{ij}\mleft(\FC{at}+\FA{at}\mright) -\frac{1}{2}\delta_{ij}\sum_v\gamma_{tv}\FC{av} \\ 
+  H^{oo}_{ti,uj} &= 2\sum_{vx}\mleft[\Gamma_{utvx}\ceri{vx}{ij}+(\Gamma_{uxvt}+\Gamma_{uxtv})\ceri{vi}{xj}\mright] \\
+                 &+\sum_v\{(\delta_{tv}-\gamma_{tv})\mleft[4\ceri{vi}{uj}-\ceri{ui}{vj}-\ceri{uv}{ij}\mright]+(\delta_{uv}-\gamma_{uv})\mleft[4\ceri{vj}{ti}-\ceri{tj}{vi}-\ceri{tv}{ij})\mright]\} \\
+                 &+\gamma_{tu}\FC{ij}-2\delta_{ij}\sum_{vxy}\Gamma_{tvxy}\ceri{uv}{xy}-\delta_{ij}\sum_v\gamma_{uv}\FC{tv} + 2\delta_{ij}\mleft(\FC{tu}+\FA{tu}\mright)-2\delta_{tu}\mleft(\FC{ij}+\FA{ij}\mright) \\
+  H^{oo}_{ti,au} &= -2\sum_{vx}\{\Gamma_{tuvx}\ceri{ai}{vx} + (\Gamma_{tvux}+\Gamma_{tvxu})\ceri{ax}{vi}\} \\
+  &- \sum_v\gamma_{uv}\mleft[\ceri{ai}{tv}+\ceri{at}{vi}-4\ceri{av}{ti}\mright] -\gamma_{tu}\FC{ai} +\delta_{tu}\mleft(\FC{ai}+\FA{ai}\mright)  \\
+  H^{oo}_{at,bu} &= 2\sum_{vx}\{\Gamma_{tuvx}\ceri{ab}{vx} + (\Gamma_{tvux}+\Gamma_{tvxu})\ceri{ax}{bv}\} + \gamma_{tu}\FC{ab} \\
+                 &-\delta_{ab}\sum_{vxy}\{\Gamma_{tvxy}\ceri{uv}{xy}+\Gamma_{uvxy}\ceri{tv}{xy}\} -\frac{1}{2}\delta_{ab}\sum_v\mleft[\gamma_{tv}\FC{ub}+\gamma_{uv}\FC{tv}\mright]
+\end{align}
+\end{subequations}
+
+\begin{align}
+  \label{eq:MCSCF_O_CIOrb_Hessian}
+  H^{oc}_{pq,K} &= \evalat*{\mleft(\pdv{E}{\kappa_{pq}}{S_{K}}\mright)}{\bm{\lambda}=0} = 2\mel**{\Psi_K}{\com{\hH}{\hE_{pq} - \hE_{qp}}}{\Psi_0} \\
+                &= 2\sum_{IJ}C_{K,I}^*\mel{I}{\com{\hH}{\hE_{pq} - \hE_{qp}}}{J}C_{0,J} \notag \\
+  (H^{oc}_{pq,K})_{IJ} &= \mel**{I}{\com{\hH}{\hE_{pq} - \hE_{qp}}}{J}
+\end{align}
+
+The CI-CI Hessian is the same in the spin-free formalism as in the spin-orbital formalism.
+
+\noindent\textbf{Orbital-CI Hessian}
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsection{Non-orthogonal stuff}
@@ -475,7 +640,7 @@ Hence, we only need to compute these elements
 Now, we turn to the two-electrons RDMs
 \begin{align}
   \label{eq:2RDM}
-  \Gamma_{pq}^{IJ}&=\sum_{\sigma,\sigma'}\mel{I}{\hat{a}_{p\sigma}^\dagger\hat{a}_{r\sigma'}^\dagger\hat{a}_{s\sigma'}\hat{a}_{q\sigma}}{J} \\
+  \Gamma_{pqrs}^{IJ}&=\sum_{\sigma,\sigma'}\mel{I}{\hat{a}_{p\sigma}^\dagger\hat{a}_{r\sigma'}^\dagger\hat{a}_{s\sigma'}\hat{a}_{q\sigma}}{J} \\
   &= \sum_{\sigma}\mel{I}{\hat{a}_{p\sigma}^\dagger\hat{a}_{r\sigma}^\dagger\hat{a}_{s\sigma}\hat{a}_{q\sigma}}{J} + \sum_{\sigma \neq \sigma'}\mel{I}{\hat{a}_{p\sigma}^\dagger\hat{a}_{r\sigma'}^\dagger\hat{a}_{s\sigma'}\hat{a}_{q\sigma}}{J} \notag
 \end{align}
 
@@ -506,6 +671,19 @@ In this case there are more non-zero matrix elements to take into account. Namel
 \end{subequations}
 In the above equations we introduced the notations $\kron{s,\oa}$ and $\kron{s,\ob}$ which are equal to 1 if $s$ is occupied by an $\alpha$ (respectively $\beta$) electron, 0 if not.
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Features}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+This section list the features of the code that would be desirable for our implementation (non-exhaustive).
+\begin{itemize}
+\item RHF and UHF implementation
+\item Do we need MCSCF ?
+\item Mulliken charge analysis
+\item Spin analysis 
+\item Do we want to do the same grid as Thompson?
+\item Open question: how to initialize the CI part?
+\end{itemize}
 
 %=================================================================%
 \section{MCSCF landscape}
@@ -734,7 +912,7 @@ The situation for the forth excited state is the same as for the first one. Yet 
     \begin{tabular}{r|c c}
       \textbf{FCI} & 3.12430 & \\
       \hline
-      \textbf{CASSCF} & 3.12430 & 3.15160 \\
+      \textbf{CASSCF} & 3.12430 & \\
       \hline
       \textbf{MCSCF} & 3.12430 & 3.15160 \\
       \hline
@@ -761,7 +939,7 @@ The fifth excited state lies in a really flat region of space. There is maybe ot
   \centering
   \captionof{table}{FCI, CASSCF and MCSCF energies}
   \begin{tabular}{r|c}
-    \textbf{FCI} & 3.61641 \\
+    \textbf{FCI} & 3.62074 \\
     \textbf{CASSCF} & 3.61641 \\
     \textbf{MCSCF} & 3.61641
   \end{tabular}
