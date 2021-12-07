@@ -19,6 +19,10 @@
 \usepackage{caption, subcaption}
 \usepackage{wrapfig} % Figure wrapped by text
 
+
+\usepackage{tikz}
+\usetikzlibrary{matrix,positioning}
+
 %%% Physics notations, mathematical symbol... %%%
 \usepackage{physics} % Many macros useful to write physics 
 \usepackage{amsmath, amssymb} % Ensembles of mathematical symbol
@@ -483,7 +487,8 @@ We now turn to the CI part of the gradient
 \begin{align}
   \label{eq:MCSCF_CI_Gradient}
   g^c_{K} &= \evalat*{\mleft(\pdv{E}{S_{K}}\mright)}{\bm{\lambda}=0} = 2\mel**{\Psi_K}{\hH}{\Psi_0} \\
-  &= 2\sum_{IJ}C_{K,I}^*\mel{I}{\hH}{J}C_{0,J} \notag
+          &= 2\sum_{IJ}C_{K,I}^*\mel{I}{\hH}{J}C_{0,J} \notag \\
+          &= 2\sum_{pq}h_{pq}\mel{\Psi_K}{\cre{p}\ani{q}}{\Psi_0} + \sum_{pqrs}\eri{pr}{qs}\mel{\Psi_K}{\cre{p}\cre{r}\ani{s}\ani{q}}{\Psi_0}
 \end{align}
 
 \noindent\textbf{Hessian}
@@ -655,18 +660,18 @@ In this case there are more non-zero matrix elements to take into account. Namel
     \notag \\
     \Gamma_{pqrs}^{II_{k_\alpha}^{l_\alpha}} &= \sum_{\sigma,\sigma'}\mel{I}{\hat{a}_{p\sigma}^\dagger\hat{a}_{r\sigma'}^\dagger\hat{a}_{s\sigma'}\hat{a}_{q\sigma}}{I_{k_\alpha}^{l_\alpha}} \\
                        &=\mel{I}{\hat{a}_{p\alpha}^\dagger\hat{a}_{r\alpha}^\dagger\hat{a}_{s\alpha}\hat{a}_{q\alpha}}{I_{k_\alpha}^{l_\alpha}} + \mel{I}{\hat{a}_{p\alpha}^\dagger\hat{a}_{r\beta}^\dagger\hat{a}_{s\beta}\hat{a}_{q\alpha}}{I_{k_\alpha}^{l_\alpha}} + \mel{I}{\hat{a}_{p\beta}^\dagger\hat{a}_{r\alpha}^\dagger\hat{a}_{s\alpha}\hat{a}_{q\beta}}{I_{k_\alpha}^{l_\alpha}} \notag\\
-                       &= \kron{rs,ql,pk}\kron{s,\oa}+\kron{pq,rk,sl}\kron{q,\oa}-\kron{ps,rk,ql}\kron{s,\oa}-\kron{rq,sl,pk}\kron{q,\oa} + \kron{rs,ql,pk}\kron{s,\ob} + \kron{pq,rk,sl}\kron{q,\ob} \notag\\
+                       &= (-1)^{p_k+p_l}\mleft(\kron{rs,ql,pk}\kron{s,\oa}+\kron{pq,rk,sl}\kron{q,\oa}-\kron{ps,rk,ql}\kron{s,\oa}-\kron{rq,sl,pk}\kron{q,\oa} + \kron{rs,ql,pk}\kron{s,\ob} + \kron{pq,rk,sl}\kron{q,\ob}\mright) \notag\\
     \notag \\
     \Gamma_{pqrs}^{II_{k_\beta}^{l_\beta}} &= \sum_{\sigma,\sigma'}\mel{I}{\hat{a}_{p\sigma}^\dagger\hat{a}_{r\sigma'}^\dagger\hat{a}_{s\sigma'}\hat{a}_{q\sigma}}{I_{k_\beta}^{l_\beta}} \\
-                       &= \kron{rs,ql,pk}\kron{s,\ob}+\kron{pq,rk,sl}\kron{q,\ob}-\kron{ps,rk,ql}\kron{s,\ob}-\kron{rq,sl,pk}\kron{q,\ob} + \kron{rs,ql,pk}\kron{s,\oa} + \kron{pq,rk,sl}\kron{q,\oa} \notag\\
+                       &= (-1)^{p_k+p_l}\mleft(\kron{rs,ql,pk}\kron{s,\ob}+\kron{pq,rk,sl}\kron{q,\ob}-\kron{ps,rk,ql}\kron{s,\ob}-\kron{rq,sl,pk}\kron{q,\ob} + \kron{rs,ql,pk}\kron{s,\oa} + \kron{pq,rk,sl}\kron{q,\oa}\mright) \notag\\
     \Gamma_{pqrs}^{II_{k_\alpha,m_\beta}^{l_\alpha,n_\beta}} &= \sum_{\sigma,\sigma'}\mel{I}{\hat{a}_{p\sigma}^\dagger\hat{a}_{r\sigma'}^\dagger\hat{a}_{s\sigma'}\hat{a}_{q\sigma}}{I_{k_\alpha,m_\beta}^{l_\alpha,n_\beta}} \\
-                       &= \kron{ql,sn,rm,pk}+\kron{qn,sl,rk,pm}\notag\\
+                       &= (-1)^{p_k+p_l+p_m+p_n}\mleft(\kron{ql,sn,rm,pk}+\kron{qn,sl,rk,pm} \mright)\notag\\
     \notag \\
     \Gamma_{pqrs}^{II_{k_\alpha,m_\alpha}^{l_\alpha,n_\alpha}} &= \sum_{\sigma,\sigma'}\mel{I}{\hat{a}_{p\sigma}^\dagger\hat{a}_{r\sigma'}^\dagger\hat{a}_{s\sigma'}\hat{a}_{q\sigma}}{I_{k_\alpha,m_\alpha}^{l_\alpha,n_\alpha}} \\
-                       &= \kron{pk,rm,sn,ql} - \kron{pk,rm,sl,qn} - \kron{pm,rk,sn,ql} + \kron{pm,rk,sl,qn} \notag\\
+                       &= (-1)^{p_k+p_l+p_m+p_n}\mleft(\kron{pk,rm,sn,ql} - \kron{pk,rm,sl,qn} - \kron{pm,rk,sn,ql} + \kron{pm,rk,sl,qn}\mright) \notag\\
     \notag \\
     \Gamma_{pqrs}^{II_{k_\beta,m_\beta}^{l_\beta,n_\beta}} &= \sum_{\sigma,\sigma'}\mel{I}{\hat{a}_{p\sigma}^\dagger\hat{a}_{r\sigma'}^\dagger\hat{a}_{s\sigma'}\hat{a}_{q\sigma}}{I_{k_\beta,m_\beta}^{l_\beta,n_\beta}} \\
-    &= \kron{pk,rm,sn,ql} - \kron{pk,rm,sl,qn} - \kron{pm,rk,sn,ql} + \kron{pm,rk,sl,qn} \notag
+    &= (-1)^{p_k+p_l+p_m+p_n}\mleft(\kron{pk,rm,sn,ql} - \kron{pk,rm,sl,qn} - \kron{pm,rk,sn,ql} + \kron{pm,rk,sl,qn}\mright) \notag
   \end{align}
 \end{subequations}
 In the above equations we introduced the notations $\kron{s,\oa}$ and $\kron{s,\ob}$ which are equal to 1 if $s$ is occupied by an $\alpha$ (respectively $\beta$) electron, 0 if not.
@@ -675,14 +680,49 @@ In the above equations we introduced the notations $\kron{s,\oa}$ and $\kron{s,\
 \subsection{Features}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-This section list the features of the code that would be desirable for our implementation (non-exhaustive).
+\noindent\textbf{User input}
+
+Here we list what the user should be able to choose when starting the calculation
 \begin{itemize}
-\item RHF and UHF implementation
-\item Do we need MCSCF ?
+\item Restricted or unrestricted formalism
+\item One-step or two-step optimization
+\item If one step, full Hessian or BFGS
+\item Initial orbital: RHF, MOM, MP2, previous calculation\dots
+\item Initial CI vector: identity matrix, CASCI calculation\dots
+\item Size of the grid
+\item MCSCF ?
+\end{itemize}
+
+\noindent\textbf{pySCF}
+
+List of the things already coded in pySCF that we should use (add link to the documentation if possible)
+\begin{itemize}
+\item Generalized Fock matrix
+\item Transition density matrix between 2 CI vector
+\item AO to MO transformation
+\item 1 and 2 RDM for a given CI vector
+\item Natural orbitals
+\end{itemize}
+
+\noindent\textbf{To code}
+
+List of the module that we need to code
+\begin{itemize}
+\item Build the Hamiltonian matrix (we can maybe express everything in terms of transition density matrices)
+\item Build the gradient
+\item Build the Hessian
+\item Compare two MCSCF stationary points
+\end{itemize}
+
+\noindent\textbf{Output}
+
+List of the desired outputs
+\begin{itemize}
+\item Natural orbitals
+\item Spin of the wave function
 \item Mulliken charge analysis
-\item Spin analysis 
-\item Do we want to do the same grid as Thompson?
-\item Open question: how to initialize the CI part?
+\item Index solution
+\item Spatial symmetry
 \end{itemize}
 
 %=================================================================%
