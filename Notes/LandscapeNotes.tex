@@ -538,11 +538,17 @@ Most of the relations provided here are taken from Roos1980 and Siegbahn1980.
 \begin{subequations}
   \label{eq:MCSCF_O_Orb_Gradient}
   \begin{align}
-    g^o_{ai} &= 4(F_{ai}^{C} + F_{ai}^{A}) \\
-    g^o_{it} &= 4(F_{ti}^{C} + F_{ti}^{A}) - 2\sum_v \gamma_{tv}F_{iv}^C -4\sum_{vxy}\Gamma_{tvxy}\braket{ix}{vy} \\
-    g^o_{at} &= 2\sum_v \gamma_{tv}F_{av}^C + 4\sum_{vxy}\Gamma_{tvxy}\braket{ax}{vy}.
+    g^o_{ai} &= 4(\FC{ai} + \FA{ai}) \\
+    g^o_{it} &= 4(\FC{ti} + \FA{ti}) - 2\sum_v \gamma_{tv}\FC{iv} -4\sum_{vxy}\Gamma_{tvxy}\braket{ix}{vy} \\
+    g^o_{at} &= 2\sum_v \gamma_{tv}\FC{av} + 4\sum_{vxy}\Gamma_{tvxy}\braket{ax}{vy}.
   \end{align}
 \end{subequations}
+where we have introduced the core and active generalized Hamiltonian
+\begin{align}
+  \label{eq:MCSCF_GeneralizedFock}
+  \FC{pq} &= h_{pq} + \sum_{i} 2\ceri{pq}{ii} - \ceri{pi}{iq} \\
+  \FA{pq} &= \sum_{vx}\gamma_{vx}(\ceri{pq}{vx} - \frac{1}{2}\ceri{px}{vq})
+\end{align}
 
 The CI gradient is the same in the spin-free formalism as in the spin-orbital formalism.
 
@@ -690,7 +696,7 @@ Here we list what the user should be able to choose when starting the calculatio
 \item Initial orbital: RHF, MOM, MP2, previous calculation\dots
 \item Initial CI vector: identity matrix, CASCI calculation\dots
 \item Size of the grid
-\item MCSCF ?
+\item MCSCF option which turn on the active-active rotations
 \end{itemize}
 
 \noindent\textbf{pySCF}
@@ -723,6 +729,7 @@ List of the desired outputs
 \item Mulliken charge analysis
 \item Index solution
 \item Spatial symmetry
+\item Spin density
 \end{itemize}
 
 %=================================================================%
