@@ -17,146 +17,6 @@ from pyscf.mcscf import casci
 from pyscf import fci
 from pyscf.fci import spin_op
 
-##### Definition of the functions #####
-# If a function has no documentation, it means the documentation is included in the method with the same name below.
-
-def get_CASRDM_12(self,ci,ncas,nelecas):
-
-    if len(ci.shape)==1:
-        nDeta = scipy.special.comb(ncas,nelecas[0])
-        nDetb = scipy.special.comb(ncas,nelecas[1])
-        ci = ci.reshape((nDeta,nDetb)) #TODO be careful that the reshape is the inverse of the "unfolding" of the matrix vector
-
-    dm1_cas = self.fcisolver.make_rdm1(ci,ncas,nelecas) # the make_rdm1 method takes a ci vector as a matrix na x nb
-
-    return dm1_cas.T # We transpose the 1-RDM because their convention is <|a_q^\dagger a_p|>
-
-def get_CASRDM_12(self,ci,ncas,nelecas):
-
-    if len(ci.shape)==1:
-        nDeta = scipy.special.comb(ncas,nelecas[0])
-        nDetb = scipy.special.comb(ncas,nelecas[1])
-        ci = ci.reshape((nDeta,nDetb)) #TODO be careful that the reshape is the inverse of the "unfolding" of the matrix vector
-
-    dm1_cas, dm2_cas = self.fcisolver.make_rdm12(ci,ncas,nelecas) # The make_rdm12 method takes a ci vector as a matrix na x nb
-
-    return dm1_cas.T, dm2_cas # We transpose the 1-RDM because their convention is <|a_q^\dagger a_p|>
-
-def CASRDM1_to_RDM1(casdm1,norb,ncore,ncas):
-    dm1 = np.zeros((norb,norb))
-    dm1_core = 2*np.diag(np.ones(ncore)) #the occocc part of dm1 is a diagonal of 2
-    dm1[:ncore,:ncore] = dm1_core
-    dm1[ncore:ncore+ncas,ncore:ncore+ncas] = dm1_cas
-    return dm1
-
-def dm2_mo_occ(part,p,q,r,s,dm1):
-    ''' This function compute the core part of the 2-RDM. The ijkl, ijpq and pijq can be simplified according to the following equations (Eq(62)-(67)). The piqj is zero as well as all the elements with a virtual index or an odd number of core indices. '''
-    if part=='ijkl':
-        return(2*np.kron(p,q)*np.kron(r,s) - np.kron(p,r)*np.kron(q,s))
-    elif part=='ijpq':
-        return(np.kron(p,q)*dm1[r,s] - np.kron(p,s)*np.kron(q,r))
-    elif part=='pijq':
-        return(2*np.kron(q,p)*np.kron(r,s) - 0.5*np.kron(q,r)*dm1[p,q])
-    else:
-        return('Wrong specification of part')
-
-def CASRDM2_to_RDM2(dm1_cas,dm2_cas,norb,ncore,ncas):
-    dm2 = np.zeros((norb,norb,norb,norb))
-    for i in range(ncore):      # really not elegant ... find an alternative way to do this
-        for j in range(ncore):
-            for k in range(ncore):
-                for l in range(ncore):
-                    dm2[i,j,k,l]=dm2_mo_occ('ijkl',i,j,k,l,dm1_cas)
-    for i in range(ncore):
-        for j in range(ncore):
-            for p in range(ncas):
-                for q in range(ncas):
-                    dm2[i,j,p+ncore,q+ncore]=dm2_mo_occ('ijpq',i,j,p,q,dm1_cas)
-    for i in range(ncore):
-        for j in range(ncore):
-            for p in range(ncas):
-                for q in range(ncas):
-                    dm2[p+ncore,i,j,q+ncore]=dm2_mo_occ('pijq',p,i,j,q,dm1_cas)
-
-    t_dm2[ncore:ncore+ncas,ncore:ncore+ncas,ncore:ncore+ncas,ncore:ncore+ncas] = dm2_cas # Finally we add the uvxy sector
-    return dm1
-
-def get_tCASRDM1(self,ci1,ci2,ncas,nelecas):
-
-    if len(ci1.shape)==1:
-        nDeta = scipy.special.comb(ncas,nelecas[0])
-        nDetb = scipy.special.comb(ncas,nelecas[1])
-        ci1 = ci1.reshape((nDeta,nDetb)) #TODO be careful that the reshape is the inverse of the "unfolding" of the matrix vector
-    if len(ci2.shape)==1:
-        nDeta = scipy.special.comb(ncas,nelecas[0])
-        nDetb = scipy.special.comb(ncas,nelecas[1])
-        ci2 = ci2.reshape((nDeta,nDetb)) #TODO be careful that the reshape is the inverse of the "unfolding" of the matrix vector
-
-    t_dm1_cas = mycas.fcisolver.trans_rdm1(ci1,ci2,ncas,nelecas)
-
-    return t_dm1_cas #TODO do we need to transpose this matrix
-
-def get_tCASRDM12(self,ci1,ci2,ncas,nelecas):
-
-    if len(ci1.shape)==1:
-        nDeta = scipy.special.comb(ncas,nelecas[0])
-        nDetb = scipy.special.comb(ncas,nelecas[1])
-        ci1 = ci1.reshape((nDeta,nDetb)) #TODO be careful that the reshape is the inverse of the "unfolding" of the matrix vector
-    if len(ci2.shape)==1:
-        nDeta = scipy.special.comb(ncas,nelecas[0])
-        nDetb = scipy.special.comb(ncas,nelecas[1])
-        ci2 = ci2.reshape((nDeta,nDetb)) #TODO be careful that the reshape is the inverse of the "unfolding" of the matrix vector
-    t_dm1_cas, t_dm2_cas = mycas.fcisolver.trans_rdm12(ci1,ci2,ncas,nelecas)
-
-    return t_dm1_cas, t_dm2_cas #TODO do we need to transpose this matrix
-
-def get_F_core(norb,ncore,h1e,eri): #TODO we could probably optimize this...
-    F_core = np.zeros((norb,norb))
-    F_core += h1e
-    for p in range(norb):
-        for q in range(norb):
-            for i in range(ncore):
-                F_core[p,q] += 2*eri[p,q,i,i] - eri[p,i,i,q]
-    return(F_core)
-
-def get_F_cas(norb,ncas,dm1_cas,eri): #TODO same as above
-    F_cas = np.zeros((norb,norb))
-    for p in range(norb):
-        for q in range(norb):
-            for t in range(ncas):
-                for u in range(ncas):
-                    F_cas[p,q] += dm1_cas[t,u]*(eri[p,q,t,u]-0.5*eri[p,u,t,q])
-    return(F_cas)
-
-def get_GradOrb(self,F_core,F_cas,dm1_cas,dm2_cas):
-    g_orb = np.zeros((self.norb,self.norb))
-    ncore = self.ncore
-    ncas = self.ncas
-    nocc = ncore + ncas
-
-    g_orb[nocc:,:ncore] = 4*(F_core + F_cas)[nocc:,:ncore]
-    g_orb[nocc:,ncore:nocc] = 4*(F_core + F_cas)[nocc:,ncore:nocc] - 2*np.einsum('tv,iv->ti',dm1_cas,F_core[nocc:,ncore:nocc]) - 4*np.einsum('tvxy,ivxy->ti',dm2_cas,eri)
-    g_orb[ncore:nocc,:ncore] = 2*np.einsum('tv,av->ta',dm1_cas,F_core[ncore:nocc,:ncore]) + 4*np.einsum('tvxy,avxy->ta',dm2_cas,eri)
-
-    return g_orb - g_orb.T # this gradient is a matrix, be careful we need to pack it before joining it with the CI part
-
-def get_gradCI(self,ci_mat,h1e,eri):
-    g_ci = np.zeros(len(ci_mat)-1)
-    ciO = ci_mat[:,0]
-
-    for i in range(len(ci_mat)-1):
-        t_dm1_cas, t_dm2_cas = self.get_tCASRDM12(self,ci_mat[:,i+1],ciO)
-        t_dm1 = CASRDM1_to_RDM1(t_dm1_cas,self.norb,self.ncore,self.ncas)
-        t_dm2 = CASRDM2_to_RDM2(t_dm1_cas,t_dm2_cas,self.norb,self.ncore,self.ncas)
-
-        g_ci[i] = 2*np.einsum('pq,pq',h1e,t_dm1) + np.einsum('pqrs,pqrs',eri,t_dm2)
-
-    return g_ci
-
-def form_Grad(self,g_orb,g_ci):
-    uniq_g_orb = self.pack_uniq_var(g_orb)
-    g = np.concatenate((g_orb,g_ci))
-    return g
 
 ##### Definition of the class #####
 
@@ -192,6 +52,7 @@ class NR_CASSCF(lib.StreamObject):
 
         mol = myhf.mol
         self.mol = mol
+        self.nelec = mol.nelec #Access the number of electrons
         self._scf = myhf
         self.verbose = mol.verbose
         self.stdout = mol.stdout
@@ -202,18 +63,23 @@ class NR_CASSCF(lib.StreamObject):
             neleca = nelecas - nelecb
             self.nelecas = (neleca, nelecb)
         else:
-            self.nelecas = (nelecas[0],nelecas[1])
-        self.nDeta = scipy.special.comb(self.ncas,self.nelecas[0])
-        self.nDetb = scipy.special.comb(self.ncas,self.nelecas[1])
-        self.nDet = self.nDeta*self.nDetb
-
+            self.nelecas = (nelecas[0],nelecas[1]).astype(int)
         self.v1e = mol.intor('int1e_nuc') #Nuclear repulsion matrix elements
         self.t1e = mol.intor('int1e_kin') #Kinetic energy matrix elements
         self.h1e_AO =  self.t1e + self.v1e
+        self.norb = len(self.h1e_AO)
+        self.nDeta = (scipy.special.comb(self.ncas,self.nelecas[0])).astype(int)
+        self.nDetb = (scipy.special.comb(self.ncas,self.nelecas[1])).astype(int)
+        self.nDet = (self.nDeta*self.nDetb).astype(int)
         self.eri_AO = mol.intor('int2e') #eri in the AO basis in the chemist notation
+        self._ncore = ncore
+        self._initMO = initMO
+        self._initCI = initCI
         self.frozen = frozen
+        self.mo_coeff = None
+        self.mat_CI = None
 
-        self.fcisolver = fci.direct_spin0_symm.FCISolver(mol)
+        self.fcisolver = fci.direct_spin1.FCISolver(mol)
 
     @property
     def ncore(self):
@@ -228,14 +94,14 @@ class NR_CASSCF(lib.StreamObject):
     @property
     def initMO(self):
         if self._initMO is None:
-            self.mo_coeff = myhf.mo_coeff
-            self.h1e = np.einsum('ip,ij,jq->pq', self.mo_coeff, self.h1e_ao, self.mo_coeff) # We transform the 1-electron integrals to the MO basis
-            self.eri = np.asarray(mol.ao2mo(self.mo_coeff)) # eri in the MO basis as super index matrix (ij|kl) with i>j and k>l VERIFY THIS LAST POINT
-            self.eri = ao2mo.restore(1, self.eri, norb) # eri in the MO basis with chemist notation
-            return myhf.mo_coeff
+            self.mo_coeff = self._scf.mo_coeff
+            self.h1e = np.einsum('ip,ij,jq->pq', self._scf.mo_coeff, self.h1e_AO, self._scf.mo_coeff) # We transform the 1-electron integrals to the MO basis
+            self.eri = np.asarray(mol.ao2mo(self._scf.mo_coeff)) # eri in the MO basis as super index matrix (ij|kl) with i>j and k>l VERIFY THIS LAST POINT
+            self.eri = ao2mo.restore(1, self.eri, self.norb) # eri in the MO basis with chemist notation
+            return self._scf.mo_coeff
         else:
             self.mo_coeff = initMO
-            self.h1e = np.einsum('ip,ij,jq->pq', self.mo_coeff, self.h1e_ao, self.mo_coeff) # We transform the 1-electron integrals to the MO basis
+            self.h1e = np.einsum('ip,ij,jq->pq', self.mo_coeff, self.h1e_AO, self.mo_coeff) # We transform the 1-electron integrals to the MO basis
             self.eri = np.asarray(mol.ao2mo(self.mo_coeff)) # eri in the MO basis as super index matrix (ij|kl) with i>j and k>l VERIFY THIS LAST POINT
             self.eri = ao2mo.restore(1, self.eri, norb) # eri in the MO basis with chemist notation
             return self._initMO
@@ -243,10 +109,10 @@ class NR_CASSCF(lib.StreamObject):
     @property #TODO add an option to initialize as a full CASCI diagonalization instead of a diagonal of 1
     def initCI(self):
         if self._initCI is None:
-            self.CI_mat = np.diag(np.ones(nDet))
-            return np.diag(np.ones(nDet))
+            self.mat_CI = np.identity(self.nDet, dtype="float")
+            return np.identity(self.nDet, dtype="float")
         else:
-            self.CI_mat = initCI
+            self.mat_CI = initCI
             return self._initCI
 
     def dump_flags(self): #TODO
@@ -269,36 +135,182 @@ class NR_CASSCF(lib.StreamObject):
 
     def get_CASRDM_1(self,ci):
         ''' This method compute the 1-RDM in the CAS space of a given ci wave function '''
-        return get_CASRDM_1(self,ci,self.ncas,self.nelecas)
+        ncas = self.ncas
+        nelecas = self.nelecas
+        if len(ci.shape)==1:
+            nDeta = scipy.special.comb(ncas,nelecas[0]).astype(int)
+            nDetb = scipy.special.comb(ncas,nelecas[1]).astype(int)
+            ci = ci.reshape((nDeta,nDetb)) #TODO be careful that the reshape is the inverse of the "unfolding" of the matrix vector
+        dm1_cas = self.fcisolver.make_rdm1(ci,ncas,nelecas) # the make_rdm1 method takes a ci vector as a matrix na x nb
+        return dm1_cas.T # We transpose the 1-RDM because their convention is <|a_q^\dagger a_p|>
+
 
     def get_CASRDM_12(self,ci):
         ''' This method compute the 1-RDM and 2-RDM in the CAS space of a given ci wave function '''
-        return get_CASRDM_12(self,ci,self.ncas,self.nelecas)
+        ncas = self.ncas
+        nelecas = self.nelecas
+        if len(ci.shape)==1:
+            nDeta = scipy.special.comb(ncas,nelecas[0]).astype(int)
+            nDetb = scipy.special.comb(ncas,nelecas[1]).astype(int)
+            ci = ci.reshape((nDeta,nDetb)) #TODO be careful that the reshape is the inverse of the "unfolding" of the matrix vector
 
-    def CASRDM1_to_RDM1(self,casdm1):
+        dm1_cas, dm2_cas = self.fcisolver.make_rdm12(ci,ncas,nelecas) # The make_rdm12 method takes a ci vector as a matrix na x nb
+
+        return dm1_cas.T, dm2_cas # We transpose the 1-RDM because their convention is <|a_q^\dagger a_p|>
+
+    def CASRDM1_to_RDM1(self,dm1_cas):
         ''' This method takes a 1-RDM in the CAS space and transform it to the full MO space '''
-        return CASRDM1_to_RDM1(casdm1,self.norb,self.ncore,self.ncas)
+        ncore = self.ncore
+        ncas = self.ncas
+        dm1 = np.zeros((self.norb,self.norb))
+        dm1_core = 2*np.identity(self.ncore, dtype="int") #the occocc part of dm1 is a diagonal of 2
+        dm1[:ncore,:ncore] = dm1_core
+        dm1[ncore:ncore+ncas,ncore:ncore+ncas] = dm1_cas
+        return dm1
 
-    def CASRDM2_to_RDM2(self,casdm2):
+    @staticmethod
+    def dm2_mo_occ(part,p,q,r,s,dm1):
+        ''' This function compute the core part of the 2-RDM. The ijkl, ijpq and pijq can be simplified according to the following equations (Eq(62)-(67)). The piqj is zero as well as all the elements with a virtual index or an odd number of core indices. '''
+        if part=='ijkl':
+            return(2*np.kron(p,q)*np.kron(r,s) - np.kron(p,r)*np.kron(q,s))
+        elif part=='ijpq':
+            return(np.kron(p,q)*dm1[r,s] - np.kron(p,s)*np.kron(q,r))
+        elif part=='pijq':
+            return(2*np.kron(q,p)*np.kron(r,s) - 0.5*np.kron(q,r)*dm1[p,q])
+        else:
+            return('Wrong specification of part')
+
+    def CASRDM2_to_RDM2(self,dm1_cas,dm2_cas):
         ''' This method takes a 2-RDM in the CAS space and transform it to the full MO space '''
-        return CASRDM2_to_RDM2(casdm2,self.norb,self.ncore,self.ncas)
+        ncore = self.ncore
+        ncas = self.ncas
+        norb = self.norb
+        dm2 = np.zeros((norb,norb,norb,norb))
+        for i in range(ncore):      # really not elegant ... find an alternative way to do this
+            for j in range(ncore):
+                for k in range(ncore):
+                    for l in range(ncore):
+                        dm2[i,j,k,l] = self.dm2_mo_occ('ijkl',i,j,k,l,dm1_cas)
+        for i in range(ncore):
+            for j in range(ncore):
+                for p in range(ncas):
+                    for q in range(ncas):
+                        dm2[i,j,p+ncore,q+ncore] = self.dm2_mo_occ('ijpq',i,j,p,q,dm1_cas)
+        for i in range(ncore):
+            for j in range(ncore):
+                for p in range(ncas):
+                    for q in range(ncas):
+                        dm2[p+ncore,i,j,q+ncore] = self.dm2_mo_occ('pijq',p,i,j,q,dm1_cas)
+
+        dm2[ncore:ncore+ncas,ncore:ncore+ncas,ncore:ncore+ncas,ncore:ncore+ncas] = dm2_cas # Finally we add the uvxy sector
+        return dm2
 
     def get_tCASRDM1(self,ci1,ci2):
         ''' This method compute the 1-electron transition density matrix between the ci vectors ci1 and ci2 '''
-        return get_tCASRDM1(self,ci1,ci2,self.ncas,self.nelecas)
+        ncas = self.ncas
+        nelecas = self.nelecas
+        if len(ci1.shape)==1:
+            nDeta = scipy.special.comb(ncas,nelecas[0]).astype(int)
+            nDetb = scipy.special.comb(ncas,nelecas[1]).astype(int)
+            ci1 = ci1.reshape((nDeta,nDetb)) #TODO be careful that the reshape is the inverse of the "unfolding" of the matrix vector
+        if len(ci2.shape)==1:
+            nDeta = scipy.special.comb(ncas,nelecas[0]).astype(int)
+            nDetb = scipy.special.comb(ncas,nelecas[1]).astype(int)
+            ci2 = ci2.reshape((nDeta,nDetb)) #TODO be careful that the reshape is the inverse of the "unfolding" of the matrix vector
+
+        t_dm1_cas = mycas.fcisolver.trans_rdm1(ci1,ci2,ncas,nelecas)
+
+        return t_dm1_cas #TODO do we need to transpose this matrix
 
     def get_tCASRDM12(self,ci1,ci2):
         ''' This method compute the 1- and 2-electrons transition density matrix between the ci vectors ci1 and ci2 '''
-        return get_tCASRDM12(self,ci1,ci2,self.ncas,self.nelecas)
+        ncas = self.ncas
+        nelecas = self.nelecas
+        if len(ci1.shape)==1:
+            nDeta = scipy.special.comb(ncas,nelecas[0]).astype(int)
+            nDetb = scipy.special.comb(ncas,nelecas[1]).astype(int)
+            ci1 = ci1.reshape((nDeta,nDetb)) #TODO be careful that the reshape is the inverse of the "unfolding" of the matrix vector
+        if len(ci2.shape)==1:
+            nDeta = scipy.special.comb(ncas,nelecas[0]).astype(int)
+            nDetb = scipy.special.comb(ncas,nelecas[1]).astype(int)
+            ci2 = ci2.reshape((nDeta,nDetb)) #TODO be careful that the reshape is the inverse of the "unfolding" of the matrix vector
+        t_dm1_cas, t_dm2_cas = mycas.fcisolver.trans_rdm12(ci1,ci2,ncas,nelecas)
+
+        return t_dm1_cas, t_dm2_cas #TODO do we need to transpose this matrix
+
+    @staticmethod
+    def get_F_core(norb,ncore,h1e,eri): #TODO we could probably optimize this...
+        F_core = np.zeros((norb,norb))
+        F_core += h1e
+        for p in range(norb):
+            for q in range(norb):
+                for i in range(ncore):
+                    F_core[p,q] += 2*eri[p,q,i,i] - eri[p,i,i,q]
+        return(F_core)
+
+    @staticmethod
+    def get_F_cas(norb,ncas,dm1_cas,eri): #TODO same as above
+        F_cas = np.zeros((norb,norb))
+        for p in range(norb):
+            for q in range(norb):
+                for t in range(ncas):
+                    for u in range(ncas):
+                        F_cas[p,q] += dm1_cas[t,u]*(eri[p,q,t,u]-0.5*eri[p,u,t,q])
+        return(F_cas)
 
     def get_genFock(self,dm1_cas):
         ''' This method build the generalized Fock matrix '''
-        return get_F_core(self.norb,self.ncore,self.h1e,self.eri) + get_F_cas(self.norb,self.ncas,dm1_cas,self.eri)
+        return self.get_F_core(self.norb,self.ncore,self.h1e,self.eri) + self.get_F_cas(self.norb,self.ncas,dm1_cas,self.eri)
+
+    def get_gradOrb(self,dm1_cas,dm2_cas):
+        ''' This method build the orbital part of the gradient '''
+        g_orb = np.zeros((self.norb,self.norb))
+        ncore = self.ncore
+        ncas = self.ncas
+        nocc = ncore + ncas
+        print(nocc)
+        nvir = self.norb - nocc
+        F_core = self.get_F_core(self.norb,self.ncore,self.h1e,self.eri)
+        F_cas = self.get_F_cas(self.norb,self.ncas,dm1_cas,self.eri)
+
+        if ncore>0 and nvir>0:
+            g_orb[nocc:,:ncore] = 4*(F_core + F_cas)[nocc:,:ncore]
+        if ncore>0:
+            g_orb[ncore:nocc,:ncore] = 4*(F_core + F_cas)[ncore:nocc,:ncore] - 2*np.einsum('tv,iv->ti',dm1_cas,F_core[:ncore,ncore:nocc]) - 4*np.einsum('tvxy,ivxy->ti',dm2_cas,self.eri[:ncore,ncore:nocc,ncore:nocc,ncore:nocc])
+        if nvir>0:
+            g_orb[nocc:,ncore:nocc] = 2*np.einsum('tv,av->at',dm1_cas,F_core[nocc:,ncore:nocc]) + 4*np.einsum('tvxy,avxy->at',dm2_cas,self.eri[nocc:,ncore:nocc,ncore:nocc,ncore:nocc])
+        return g_orb - g_orb.T # this gradient is a matrix, be careful we need to pack it before joining it with the CI part
+
+    def get_gradCI(self):
+        ''' This method build the CI part of the gradient '''
+        mat_CI = self.mat_CI
+        g_CI = np.zeros(len(mat_CI)-1)
+        ciO = mat_CI[:,0]
+        h1e = self.h1e
+        eri = self.eri
+
+        for i in range(len(mat_CI)-1):
+            t_dm1_cas, t_dm2_cas = self.get_tCASRDM12(mat_CI[:,i+1],ciO)
+            t_dm1 = self.CASRDM1_to_RDM1(t_dm1_cas)
+            t_dm2 = self.CASRDM2_to_RDM2(t_dm1_cas,t_dm2_cas)
+
+            g_CI[i] = 2*np.einsum('pq,pq',h1e,t_dm1) + np.einsum('pqrs,pqrs',eri,t_dm2)
+
+        return g_CI
+
+    def form_grad(self,g_orb,g_ci):
+        ''' This method concatenate the orbital and CI part of the gradient '''
+        uniq_g_orb = self.pack_uniq_var(g_orb)
+        g = np.concatenate((uniq_g_orb,g_ci))
+        return g
 
     def uniq_var_indices(self, nmo, frozen):
         ''' This function creates a matrix of boolean of size (norb,norb). A True element means that this rotation should be taken into account during the optimization. Taken from pySCF.mcscf.casscf '''
-        nocc = self.ncore + self.ncas
-        mask = np.zeros((self.norb,self.norb),dtype=bool)
+        norb = self.norb
+        ncore = self.ncore
+        ncas = self.ncas
+        nocc = ncore + ncas
+        mask = np.zeros((norb,norb),dtype=bool)
         mask[ncore:nocc,:ncore] = True # Active-Core rotations
         mask[nocc:,:nocc] = True # Virtual-Core and Virtual-Active rotations
         # if self.internal_rotation:
@@ -314,7 +326,7 @@ class NR_CASSCF(lib.StreamObject):
     def pack_uniq_var(self, mat):
         ''' This method transforms a matrix of rotations K into a list of unique rotations elements. Taken from pySCF.mcscf.casscf '''
         nmo = self.mo_coeff.shape[1]
-        idx = self.uniq_var_indices(nmo, self.ncore, self.ncas, self.frozen)
+        idx = self.uniq_var_indices(nmo,self.frozen)
         return mat[idx]
 
     # to anti symmetric matrix
@@ -326,19 +338,45 @@ class NR_CASSCF(lib.StreamObject):
         mat[idx] = v
         return mat - mat.T
 
-    def get_GradOrb(self,F_core,F_cas,dm1_cas,dm2_cas): #TODO add an if statement for MCSCF case
-        ''' This method build the orbital part of the gradient '''
-        return get_GradOrb(self,F_core,F_cas,dm1_cas,dm2_cas)
+    def get_hessianOrbOrb(self): #TODO
+        ''' This method build the orb-orb part of the hessian '''
+        pass
 
-    def get_GradCI(self,ci_mat):
-        ''' This method build the CI part of the gradient '''
-        return get_gradCI(self,ci_mat,self.h1e,self.eri)
+    def get_hamiltonian(self): #TODO
+        H = np.zeros((self.nDet,self.nDet))
+        id = np.identity(self.nDet)
+        for i in range(self.nDet):
+            for j in range(self.nDet):
+                dm1_cas, dm2_cas = self.get_tCASRDM12(id[i],id[j])
+                dm1 = self.CASRDM1_to_RDM1(dm1_cas)
+                dm2 = self.CASRDM2_to_RDM2(dm1_cas,dm2_cas)
+                H[i,j] = np.einsum('pq,pq',self.h1e,dm1) + np.einsum('pqrs,pqrs',self.eri,dm2)
+        return H
 
-    def form_Grad(self,g_orb,g_ci):
-        ''' This method concatenate the orbital and CI part of the gradient '''
-        return form_Grad(self,g_orb,g_ci)
+    def get_hessianCICI(self): #TODO
+        ''' This method build the CI-CI part of the hessian '''
+        mat_CI = self.mat_CI
+        hessian_CICI = np.zeros((len(mat_CI)-1,len(mat_CI)-1))
+        np.identity(self.nDet, dtype="float")
+        H = self.get_hamiltonian()
+        ciO = mat_CI[:,0]
+        eO = np.einsum('i,ij,j',ciO,H,ciO)
+        h1e = self.h1e
+        eri = self.eri
 
-    def get_Hessian(self): #TODO
+        for k in range(len(mat_CI)-1): # Loop on Hessian indices
+                cleft = mat_CI[:,k+1]
+                for l in range(len(mat_CI)-1):
+                    cright = mat_CI[:,l+1]
+                    hessian_CICI[k,l] = 2*np.einsum('i,ij,j',cleft,H,cright) - np.kron(k,l)*eO
+
+        return hessian_CICI
+
+    def get_hessianOrbCI(self): #TODO
+        ''' This method build the orb-CI part of the hessian '''
+        pass
+
+    def get_hessian(self): #TODO
         ''' This method concatenate the orb-orb, orb-CI and CI-CI part of the Hessian '''
         pass
 
@@ -356,5 +394,48 @@ if __name__ == '__main__':
     myhf = mol.RHF().run()
 
     mycas = NR_CASSCF(myhf,2,2)
+    print('This is the number of core orbitals automatically calculated',mycas.ncore)
 
+    mycas = NR_CASSCF(myhf,2,2,1)
+    print('This is the number of core orbitals set by the user',mycas.ncore)
 
+    print("The MOs haven't been initialized",mycas.mo_coeff)
+    print("InitMO",mycas.initMO)
+    print("The MOs are now equal to their init value",mycas.mo_coeff)
+    print("InitCI",mycas.initCI)
+    print("The CI matrix is now equal to its init value",mycas.mat_CI)
+
+    print("We compute the 4 init 1CASRDM",mycas.get_CASRDM_1(mycas.mat_CI[:,0]))
+    print(mycas.get_CASRDM_1(mycas.mat_CI[:,1]))
+    print(mycas.get_CASRDM_1(mycas.mat_CI[:,2]))
+    print(mycas.get_CASRDM_1(mycas.mat_CI[:,3]))
+
+    print("Transform the 1CASRDM to 1RDM",mycas.CASRDM1_to_RDM1(mycas.get_CASRDM_1(mycas.mat_CI[:,0])))
+
+    dm1_cas, dm2_cas = mycas.get_CASRDM_12(mycas.mat_CI[:,0])
+    print("One init 2CASRDM",dm2_cas)
+
+    print("2CASRDM transformed into 2RDM",mycas.CASRDM2_to_RDM2(dm1_cas, dm2_cas))
+
+    t_dm1 = mycas.get_tCASRDM1(mycas.mat_CI[:,0],mycas.mat_CI[:,0])
+    print("Two 1el transition density matrices",t_dm1)
+
+    t_dm1 = mycas.get_tCASRDM1(mycas.mat_CI[:,0],mycas.mat_CI[:,1])
+    print(t_dm1)
+
+    t_dm1, t_dm2 = mycas.get_tCASRDM12(mycas.mat_CI[:,0],mycas.mat_CI[:,1])
+    print("A 2TDM",t_dm2)
+
+    print("Generalized Fock operator",mycas.get_genFock(dm1_cas))
+
+    g_orb = mycas.get_gradOrb(dm1_cas,dm2_cas)
+    print("Orbital gradient",g_orb)
+
+    g_ci = mycas.get_gradCI()
+    print("CI gradient",g_ci)
+
+    print("Full gradient",mycas.form_grad(g_orb,g_ci))
+
+    print("This is the Hamiltonian", mycas.get_hamiltonian())
+
+    print("This is the CICI hessian", mycas.get_hessianCICI())
