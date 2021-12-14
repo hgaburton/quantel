@@ -163,8 +163,9 @@ class NR_CASSCF(lib.StreamObject):
         ncore = self.ncore
         ncas = self.ncas
         dm1 = np.zeros((self.norb,self.norb))
-        dm1_core = 2*np.identity(self.ncore, dtype="int") #the occocc part of dm1 is a diagonal of 2
-        dm1[:ncore,:ncore] = dm1_core
+        if ncore > 0:
+            dm1_core = 2*np.identity(self.ncore, dtype="int") #the occocc part of dm1 is a diagonal of 2
+            dm1[:ncore,:ncore] = dm1_core
         dm1[ncore:ncore+ncas,ncore:ncore+ncas] = dm1_cas
         return dm1
 
@@ -270,13 +271,16 @@ class NR_CASSCF(lib.StreamObject):
         nocc = ncore + ncas
         print(nocc)
         nvir = self.norb - nocc
-        F_core = self.get_F_core(self.norb,self.ncore,self.h1e,self.eri)
-        F_cas = self.get_F_cas(self.norb,self.ncas,dm1_cas,self.eri)
+        F_core = self.get_F_core(self.norb,ncore,self.h1e,self.eri)
+        F_cas = self.get_F_cas(self.norb,ncas,dm1_cas,self.eri)
 
+        #virtual-core rotations g_{ai}
         if ncore>0 and nvir>0:
             g_orb[nocc:,:ncore] = 4*(F_core + F_cas)[nocc:,:ncore]
+        #active-core rotations g_{ti}
         if ncore>0:
             g_orb[ncore:nocc,:ncore] = 4*(F_core + F_cas)[ncore:nocc,:ncore] - 2*np.einsum('tv,iv->ti',dm1_cas,F_core[:ncore,ncore:nocc]) - 4*np.einsum('tvxy,ivxy->ti',dm2_cas,self.eri[:ncore,ncore:nocc,ncore:nocc,ncore:nocc])
+        #virtual-active rotations g_{at}
         if nvir>0:
             g_orb[nocc:,ncore:nocc] = 2*np.einsum('tv,av->at',dm1_cas,F_core[nocc:,ncore:nocc]) + 4*np.einsum('tvxy,avxy->at',dm2_cas,self.eri[nocc:,ncore:nocc,ncore:nocc,ncore:nocc])
         return g_orb - g_orb.T # this gradient is a matrix, be careful we need to pack it before joining it with the CI part
@@ -300,7 +304,7 @@ class NR_CASSCF(lib.StreamObject):
 
     def form_grad(self,g_orb,g_ci):
         ''' This method concatenate the orbital and CI part of the gradient '''
-        uniq_g_orb = self.pack_uniq_var(g_orb)
+        uniq_g_orb = self.pack_uniq_var(g_orb) #We apply the mask to obtain a list of unique rotations
         g = np.concatenate((uniq_g_orb,g_ci))
         return g
 
@@ -338,11 +342,77 @@ class NR_CASSCF(lib.StreamObject):
         mat[idx] = v
         return mat - mat.T
 
-    def get_hessianOrbOrb(self): #TODO
+    def get_hessianOrbOrb(self,dm1_cas,dm2_cas): #TODO optimize
         ''' This method build the orb-orb part of the hessian '''
-        pass
+        norb = self.norb
+        H = np.zeros((norb,norb,norb,norb))
+        ncore = self.ncore
+        ncas = self.ncas
+        nocc = ncore + ncas
+        nvir = norb - nocc
+        eri = self.eri
+        F_core = self.get_F_core(norb,ncore,self.h1e,self.eri)
+        F_cas = self.get_F_cas(norb,ncas,dm1_cas,self.eri)
+        F_tot = F_core + F_cas
 
-    def get_hamiltonian(self): #TODO
+        #virtual-core virtual-core H_{ai,bj}
+        if ncore>0 and nvir>0:
+            tmp = eri[nocc:, :ncore, nocc:, :ncore]
+            H[nocc:, :ncore, nocc:, :ncore] = 2(4*tmp - np.einsum('aibj->abij',tmp) -np.einsum('aibj->ajib',tmp)) + 2*np.einsum('ij,ab->aibj',np.identity(ncore),F_tot[nocc:,nocc:]) - 2*np.einsum('ab,ij->aibj', np.identity(nvir), F_tot[:ncore,:ncore])
+
+
+        #virtual-core active-core H_{ai,tj}
+        if ncore>0 and nvir>0:
+            tmp = eri[nocc:, :ncore, ncore:nocc, :ncore]
+            eri_tmp = (4*tmp - np.einsum('aibv->avbi',tmp) -np.einsum('aibv->abvi',tmp))
+            H[nocc:, :ncore, ncore:nocc, :ncore] = np.sum('tv,aibv->aibt', cas_dm1, eri_tmp) - np.einsum('ab,tvxyv,vixy ->aibt', np.identity(nvir), dm2_cas,eri[ncore:nocc, :ncore, ncore:nocc, ncore:nocc]) - np.einsum('ab,ti->aibt', np.identity(nvir), F_tot[ncore:nocc, :ncore]) - 0.5*np.einsum('ab,tv,vi->aibt', np.identity(nvir), dm1_cas, F_core[ncore:nocc, :ncore])
+
+        #virtual-core virtual-active H_{ai,bt}
+        if ncore>0 and nvir>0:
+            tmp = eri[nocc:, :ncore, nocc:, ncore:nocc]
+            eri_tmp = (4*tmp - np.einsum('aivj->avji',tmp) -np.einsum('aivj->ajvi',tmp))
+            H[nocc:, :ncore, nocc:, ncore:nocc] = np.sum('tv,aibv->aibt', (2*np.identity(ncas) - cas_dm1), eri_tmp) - np.einsum('ji,tvxyv,avxy -> aitj', np.identity(ncore), dm2_cas,eri[nocc:, ncore:nocc, ncore:nocc, ncore:nocc]) + 2*np.einsum('ij,at-> aitj', np.identity(ncore), F_tot[nocc:, ncore:nocc]) - 0.5*np.einsum('ij,tv,av-> aitj', np.identity(ncore), dm1_cas, F_core[nocc:, ncore:nocc])
+
+        #active-core active-core H_{ti,uj}
+        if ncore>0:
+            tmp1 = 2*np.einsum('utvx,vxij->tiuj', dm2_cas, eri[ncore:nocc, ncore:nocc, :ncore, :ncore]) + 2*np.einsum('uxvt,vxij->tiuj', dm2_cas, eri[ncore:nocc, ncore:nocc, :ncore, :ncore]) + 2*np.einsum('uxtv,vxij->tiuj', dm2_cas, eri[ncore:nocc, :ncore, ncore:nocc, :ncore])
+
+            tmp = eri[ncore:nocc, :ncore, ncore:nocc, :ncore]
+            eri_tmp1 = (4*tmp - np.einsum('viuj->uivj',tmp) -np.einsum('viuj->uvij',tmp))
+            eri_tmp2 = (4*tmp - np.einsum('vjti->tjvi',tmp) -np.einsum('vjti->tvij',tmp))
+            tmp2 = np.einsum('tv,viuj->tiuj', np.identity(ncas) - cas_dm1, eri_tmp1) + np.einsum('uv,vjti->tiuj', np.identity(ncas) - cas_dm1, eri_tmp2)
+
+            tmp3 = np.einsum('tu,ij->tiuj', cas_dm1, F_core[:ncore,:ncore]) - 2*np.einsum('ij,tvxy,uvxy->tiuj', np.identity(ncore), cas_dm2, eri[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc]) - np.einsum('ij,uv,tv->tiuj', np.identity(ncore), cas_dm1, F_core[ncore:nocc, ncore:nocc]) + 2*np.einsum('ij,tu->tiuj', np.identity(ncore), F_tot[ncore:nocc, ncore:nocc]) - 2*np.einsum('tu,ij->tiuj', np.identity(ncas), F_tot[:ncore,:ncore])
+
+            H[ncore:nocc, :ncore, ncore:nocc, :ncore] = tmp1 + tmp2 + tmp3
+
+        #active-core virtual-active H_{ti,au}
+        if ncore>0 and nvir>0:
+            tmp1 = - 2*np.einsum('tuvx,aivx->tiau', dm2_cas, eri[nocc:, :ncore, ncore:nocc, ncore:nocc]) + 2*np.einsum('tvux,axvi->tiau', dm2_cas, eri[nocc:, ncore:nocc, ncore:nocc, :ncore]) + 2*np.einsum('tvxu,axvi->tiau', dm2_cas, eri[nocc:, ncore:nocc, ncore:nocc, :ncore])
+
+            tmp = eri[nocc:, ncore:nocc, ncore:nocc, :ncore]
+            eri_tmp = (4*tmp - np.einsum('avti->aitv',tmp) -np.einsum('avti->atvi',tmp))
+            tmp2 = np.einsum('uv,aitv->tiau', dm1_cas, eri_tmp) - np.einsum('tu,ai->tiau', dm1_cas, F_core[nocc:, :ncore]) + np.einsum('tu,ai->tiau',np.identity(ncas),F_tot[nocc:,:ncore])
+
+            H[ncore:nocc, :ncore, nocc:, ncore:nocc] = tmp1 + tmp2
+
+        #virtual-active virtual-active H_{at,bu}
+        if nvir>0:
+            tmp1 = 2*np.einsum('tuvx,abvx->atbu', dm2_cas, eri[nocc:, nocc:, ncore:nocc, ncore:nocc]) + 2*np.einsum('tvux,axvb->atbu', dm2_cas, eri[nocc:, ncore:nocc, nocc:, ncore:nocc]) + 2*np.einsum('tvxu,axvb->atbu', dm2_cas, eri[nocc:, ncore:nocc, nocc:, ncore:nocc])
+
+            tmp2 = - np.einsum('ab,tvxy,uvxy->atbu',np.identity(nvir),dm2_cas,eri[ncore:nocc,ncore:nocc,ncore:nocc,ncore:nocc]) - 0.5*np.einsum('ab,tv,uv->atbu',np.identity(nvir),dm1_cas,F_core[ncore:nocc,nocc:])
+
+            H[nocc:, ncore:nocc, nocc:, ncore:nocc] = tmp1 + tmp2 + np.einsum('atbu->aubt',tmp2) + np.einsum('tu,ab->atbu', dm1_cas, F_core[nocc:, nocc:])
+
+        # anti-symmetrize the Hessian
+        #TODO not sure about this
+
+        H = H + np.einsum('pqrs->rspq',H) + np.einsum('pqrs->qpsr',H) + np.einsum('pqrs->srqp',H)
+
+        return(H)
+
+    def get_hamiltonian(self):
+        ''' This method build the Hamiltonian matrix '''
         H = np.zeros((self.nDet,self.nDet))
         id = np.identity(self.nDet)
         for i in range(self.nDet):
@@ -353,11 +423,10 @@ class NR_CASSCF(lib.StreamObject):
                 H[i,j] = np.einsum('pq,pq',self.h1e,dm1) + np.einsum('pqrs,pqrs',self.eri,dm2)
         return H
 
-    def get_hessianCICI(self): #TODO
+    def get_hessianCICI(self):
         ''' This method build the CI-CI part of the hessian '''
         mat_CI = self.mat_CI
         hessian_CICI = np.zeros((len(mat_CI)-1,len(mat_CI)-1))
-        np.identity(self.nDet, dtype="float")
         H = self.get_hamiltonian()
         ciO = mat_CI[:,0]
         eO = np.einsum('i,ij,j',ciO,H,ciO)
@@ -372,13 +441,86 @@ class NR_CASSCF(lib.StreamObject):
 
         return hessian_CICI
 
+    def get_hamiltonianComm(self):
+        ''' This method build the Hamiltonian commutator matrices '''
+        ncore = self.ncore
+        ncas = self.ncas
+        norb = self.norb
+        nocc = ncore + ncas
+        nvir = norb - nocc
+
+        H_ai = np.zeros((nvir,ncore,self.nDet,self.nDet))
+        H_at = np.zeros((nvir,ncas,self.nDet,self.nDet))
+        H_ti = np.zeros((ncas,ncore,self.nDet,self.nDet))
+
+        h1e = self.h1e
+        eri = self.eri
+
+        id = np.identity(self.nDet)
+        for i in range(self.nDet):
+            for j in range(self.nDet):
+                dm1_cas, dm2_cas = self.get_tCASRDM12(id[i],id[j])
+                dm1 = self.CASRDM1_to_RDM1(dm1_cas)
+                dm2 = self.CASRDM2_to_RDM2(dm1_cas,dm2_cas)
+                if ncore>0 and nvir>0:
+                    H_ai[:, :, i, j] = np.einsum('pa,pi->ai', h1e[:, nocc:], dm1[:, :ncore]) + np.einsum('ap,ip->ai', h1e[nocc:, :], dm1[:ncore, :]) + np.einsum('paqr,piqr->ai', eri[:, nocc:, :, :], dm2[:, :ncore, :, :]) + np.einsum('aqpr,iqpr->ai', eri[nocc:, :, :, :], dm2[:ncore, :, :, :])
+                if nvir>0:
+                    H_at[:, :, i, j] = np.einsum('pa,pt->at', h1e[:, nocc:], dm1[:, ncore:nocc]) + np.einsum('ap,tp->at', h1e[nocc:, :], dm1[ncore:nocc, :]) + np.einsum('paqr,ptqr->at', eri[:, nocc:, :, :], dm2[:, ncore:nocc, :, :]) + np.einsum('aqpr,tqpr->at',eri[nocc:, :, :, :], dm2[ncore:nocc, :, :, :])
+                if ncore>0:
+                    H_ti[:, :, i, j] = np.einsum('pt,pi->ti', h1e[:, ncore:nocc], dm1[:, :ncore]) + np.einsum('tp,ip->ti', h1e[ncore:nocc, :], dm1[:ncore, :]) + np.einsum('ptqr,piqr->ti', eri[:, ncore:nocc, :, :], dm2[:, :ncore, :, :]) + np.einsum('tqpr,iqpr->ti', eri[ncore:nocc, :, :, :], dm2[:ncore, :, :, :]) - np.einsum('pi,pt->ti', h1e[:, :ncore], dm1[:, ncore:nocc]) - np.einsum('ip,tp->ti', h1e[:ncore, :], dm1[ncore:nocc, :]) - np.einsum('piqr,ptqr->ti', eri[:, :ncore, :, :], dm2[:, ncore:nocc, :, :]) - np.einsum('iqpr,tqpr->ti', eri[:ncore, :, :, :], dm2[ncore:nocc, :, :, :])
+
+        return H_ai, H_at, H_ti
+
     def get_hessianOrbCI(self): #TODO
         ''' This method build the orb-CI part of the hessian '''
-        pass
+        ncore = self.ncore
+        ncas = self.ncas
+        nocc = ncore + ncas
+        H_OCI = np.zeros((self.norb,self.norb,self.nDet-1))
+        mat_CI = self.mat_CI
+
+        H_ai, H_at, H_ti = self.get_hamiltonianComm()
+
+        ci0 = mat_CI[:,0]
+
+        h1e = self.h1e
+        eri = self.eri
+
+        for k in range(len(mat_CI)-1): # Loop on Hessian indices
+                cleft = mat_CI[:,k+1]
+                H_OCI[nocc:, :ncore, k] = 2*np.einsum('k,aikl,l->ai', cleft, H_ai, ci0)
+                H_OCI[nocc:, ncore:nocc, k] = 2*np.einsum('k,aikl,l->ai', cleft, H_at, ci0)
+                H_OCI[ncore:nocc, :ncore, k] = 2*np.einsum('k,aikl,l->ai', cleft, H_ti, ci0)
+
+        H_OCI = H_OCI + np.einsum('pqs->qps',H_OCI)
+
+        return H_OCI
 
     def get_hessian(self): #TODO
         ''' This method concatenate the orb-orb, orb-CI and CI-CI part of the Hessian '''
-        pass
+        norb = self.norb
+        nDet = self.nDet
+
+        H = np.zeros((norb+nDet-1,norb+nDet-1))
+
+        idx = self.uniq_var_indices(norb,self.frozen)
+
+        dm1_cas, dm2_cas = self.get_CASRDM_12(self.mat_CI[:,0])
+
+        H_OrbOrb = self.get_hessianOrbOrb(dm1_cas,dm2_cas)
+        H_CICI = self.get_hessianCICI()
+        H_OrbCI = self.get_hessianOrbCI()
+
+        H_OrbOrb = H_OrbOrb[:,:,idx]
+        H_OrbOrb = H_OrbOrb[idx,:]
+        H_OrbCI = H_OrbCI[idx,:]
+
+        H[:norb, :norb] = H_OrbOrb
+        H[:norb, norb:] = H_OrbCI
+        H[norb:, :norb] = H_OrbCI.T
+        H[norb:, norb:] = H_CICI
+
+        return H
 
     def kernel(): #TODO
         ''' This method runs the iterative Newton-Raphson loop '''
@@ -391,12 +533,17 @@ if __name__ == '__main__':
         atom = 'H 0 0 0; H 0 0 1.2',
         basis = '6-31g')
 
+
+    # mol = pyscf.M(
+    #     atom = 'H 0 0 0; H 0 0 1.889',
+    #     basis = 'sto-3g')
+
     myhf = mol.RHF().run()
 
     mycas = NR_CASSCF(myhf,2,2)
     print('This is the number of core orbitals automatically calculated',mycas.ncore)
 
-    mycas = NR_CASSCF(myhf,2,2,1)
+    mycas = NR_CASSCF(myhf,2,2,0)
     print('This is the number of core orbitals set by the user',mycas.ncore)
 
     print("The MOs haven't been initialized",mycas.mo_coeff)
@@ -439,3 +586,21 @@ if __name__ == '__main__':
     print("This is the Hamiltonian", mycas.get_hamiltonian())
 
     print("This is the CICI hessian", mycas.get_hessianCICI())
+
+    H_OO = mycas.get_hessianOrbOrb(dm1_cas,dm2_cas)
+    print("This is the OrbOrb hessian", H_OO)
+
+    idx = mycas.uniq_var_indices(mycas.norb,mycas.frozen)
+    print(idx)
+
+    tmp = H_OO[:,:,idx]
+    tmp = tmp[idx,:]
+    print(tmp)
+
+    print('This are the Hamiltonian commutators', mycas.get_hamiltonianComm())
+
+    print("This is the OrbCI hessian", mycas.get_hessianOrbCI())
+
+    print('This is the OrbCI hessian with unique orbital rotations', mycas.get_hessianOrbCI()[idx,:])
+
+    print('This is the hessian', mycas.get_hessian())
