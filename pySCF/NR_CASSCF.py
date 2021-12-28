@@ -45,44 +45,47 @@ class NR_CASSCF(lib.StreamObject):
     def __init__(self,myhf_or_mol,ncas,nelecas,ncore=None,initMO=None,initCI=None,frozen=None): #TODO Initialize the argument and the attributes
         ''' The init method is ran when an instance of the class is created to initialize all the args, kwargs and attributes
         '''
-        if isinstance(myhf_or_mol, gto.Mole): # Check if the arg is an HF object or a molecule object
+        if isinstance(myhf_or_mol, gto.Mole):   # Check if the arg is an HF object or a molecule object
             myhf = scf.RHF(myhf_or_mol)
         else:
             myhf = myhf_or_mol
 
-        mol = myhf.mol
-        self.mol = mol
-        self.nelec = mol.nelec #Access the number of electrons
-        self._scf = myhf
+            mol = myhf.mol
+        self.mol = mol                          # Molecule object
+        self.nelec = mol.nelec                  # Number of electrons
+        self._scf = myhf                        # SCF object
         self.verbose = mol.verbose
         self.stdout = mol.stdout
         self.max_memory = myhf.max_memory
-        self.ncas = ncas
+        self.ncas = ncas                        # Number of active orbitals
         if isinstance(nelecas, (int, np.integer)):
             nelecb = (nelecas-mol.spin)//2
             neleca = nelecas - nelecb
-            self.nelecas = (neleca, nelecb)
+            self.nelecas = (neleca, nelecb)     # Tuple of number of active electrons
         else:
             self.nelecas = (nelecas[0],nelecas[1]).astype(int)
-        self.v1e = mol.intor('int1e_nuc') #Nuclear repulsion matrix elements
-        self.t1e = mol.intor('int1e_kin') #Kinetic energy matrix elements
-        self.h1e_AO =  self.t1e + self.v1e
-        self.norb = len(self.h1e_AO)
+        self.v1e = mol.intor('int1e_nuc')       # Nuclear repulsion matrix elements
+        self.t1e = mol.intor('int1e_kin')       # Kinetic energy matrix elements
+        self.h1e_AO =  self.t1e + self.v1e      # 1-electron matrix elements in the AO basis
+        self.norb = len(self.h1e_AO)            # Number of orbitals
         self.nDeta = (scipy.special.comb(self.ncas,self.nelecas[0])).astype(int)
         self.nDetb = (scipy.special.comb(self.ncas,self.nelecas[1])).astype(int)
         self.nDet = (self.nDeta*self.nDetb).astype(int)
-        self.eri_AO = mol.intor('int2e') #eri in the AO basis in the chemist notation
-        self._ncore = ncore
-        self._initMO = initMO
-        self._initCI = initCI
-        self.frozen = frozen
-        self.mo_coeff = None
-        self.mat_CI = None
+        self.eri_AO = mol.intor('int2e')        # ERI in the AO basis in the chemist notation
+        self._ncore = ncore                     # Number of core orbitals
+        self._initMO = initMO                   # Initial MO coefficients
+        self._initCI = initCI                   # Initial CI coefficients
+        self.frozen = frozen                    # Number of frozen orbitals
+        self.mo_coeff = None                    # MO coeff at this stage of the calculation
+        self.mat_CI = None                      # CI coeff at this stage of the calculation
+        self.h1e = None                         # 1-electron matrix elements in the MO basis
+        self.eri = None                         # ERI in the MO basis in the chemist notation
 
         self.fcisolver = fci.direct_spin1.FCISolver(mol)
 
     @property
     def ncore(self):
+        ''' Initialize the number of core orbitals '''
         if self._ncore is None:
             ncorelec = self.mol.nelectron - sum(self.nelecas)
             assert ncorelec % 2 == 0
@@ -93,6 +96,7 @@ class NR_CASSCF(lib.StreamObject):
 
     @property
     def initMO(self):
+        ''' Initialize the MO coefficients and MO 1- and 2-electrons integrals matrix elements '''
         if self._initMO is None:
             self.mo_coeff = self._scf.mo_coeff
             self.h1e = np.einsum('ip,ij,jq->pq', self._scf.mo_coeff, self.h1e_AO, self._scf.mo_coeff) # We transform the 1-electron integrals to the MO basis
@@ -108,6 +112,7 @@ class NR_CASSCF(lib.StreamObject):
 
     @property #TODO add an option to initialize as a full CASCI diagonalization instead of a diagonal of 1
     def initCI(self):
+        ''' Initialize the CI coefficients '''
         if self._initCI is None:
             self.mat_CI = np.identity(self.nDet, dtype="float")
             return np.identity(self.nDet, dtype="float")
@@ -120,10 +125,16 @@ class NR_CASSCF(lib.StreamObject):
         '''
         pass
 
-    def check_sanity(self): #TODO
-        '''
-        '''
-        pass
+    def check_sanity(self):
+        assert self.ncas > 0
+        ncore = self.ncore
+        nvir = self.mo_coeff.shape[1] - ncore - self.ncas
+        assert ncore >= 0
+        assert nvir >= 0
+        assert ncore * 2 + sum(self.nelecas) == self.mol.nelectron
+        assert 0 <= self.nelecas[0] <= self.ncas
+        assert 0 <= self.nelecas[1] <= self.ncas
+        return self
 
     def energy_nuc(self):
         ''' Retrieve the nuclear energy from the SCF instance '''
@@ -164,7 +175,7 @@ class NR_CASSCF(lib.StreamObject):
         ncas = self.ncas
         dm1 = np.zeros((self.norb,self.norb))
         if ncore > 0:
-            dm1_core = 2*np.identity(self.ncore, dtype="int") #the occocc part of dm1 is a diagonal of 2
+            dm1_core = 2*np.identity(self.ncore, dtype="int") #the OccOcc part of dm1 is a diagonal of 2
             dm1[:ncore,:ncore] = dm1_core
         dm1[ncore:ncore+ncas,ncore:ncore+ncas] = dm1_cas
         return dm1
@@ -173,11 +184,11 @@ class NR_CASSCF(lib.StreamObject):
     def dm2_mo_occ(part,p,q,r,s,dm1):
         ''' This function compute the core part of the 2-RDM. The ijkl, ijpq and pijq can be simplified according to the following equations (Eq(62)-(67)). The piqj is zero as well as all the elements with a virtual index or an odd number of core indices. '''
         if part=='ijkl':
-            return(2*np.kron(p,q)*np.kron(r,s) - np.kron(p,r)*np.kron(q,s))
+            return(2*delta_kron(p,q)*np.kron(r,s) - delta_kron(p,r)*np.kron(q,s))
         elif part=='ijpq':
-            return(np.kron(p,q)*dm1[r,s] - np.kron(p,s)*np.kron(q,r))
+            return(delta_kron(p,q)*dm1[r,s] - delta_kron(p,s)*delta_kron(q,r))
         elif part=='pijq':
-            return(2*np.kron(q,p)*np.kron(r,s) - 0.5*np.kron(q,r)*dm1[p,q])
+            return(2*delta_kron(q,p)*delta_kron(r,s) - 0.5*delta_kron(q,r)*dm1[p,q])
         else:
             return('Wrong specification of part')
 
@@ -186,6 +197,7 @@ class NR_CASSCF(lib.StreamObject):
         ncore = self.ncore
         ncas = self.ncas
         norb = self.norb
+        nocc = ncore + ncas
         dm2 = np.zeros((norb,norb,norb,norb))
         for i in range(ncore):      # really not elegant ... find an alternative way to do this
             for j in range(ncore):
@@ -203,7 +215,7 @@ class NR_CASSCF(lib.StreamObject):
                     for q in range(ncas):
                         dm2[p+ncore,i,j,q+ncore] = self.dm2_mo_occ('pijq',p,i,j,q,dm1_cas)
 
-        dm2[ncore:ncore+ncas,ncore:ncore+ncas,ncore:ncore+ncas,ncore:ncore+ncas] = dm2_cas # Finally we add the uvxy sector
+        dm2[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc] = dm2_cas # Finally we add the uvxy sector
         return dm2
 
     def get_tCASRDM1(self,ci1,ci2):
@@ -251,6 +263,17 @@ class NR_CASSCF(lib.StreamObject):
     def get_genFock(self,dm1_cas):
         ''' This method build the generalized Fock matrix '''
         return self.get_F_core() + self.get_F_cas(dm1_cas)
+
+    # def get_genFockAO(self, dm1_cas):
+    #     ncore = self.ncore
+    #     nocc = ncore + self.ncas
+    #     mo_coeff = self.mo_coeff
+    #     dm1_cas_AO = np.einsum('pq,qr,sr',mo_coeff, dm1_cas, mo_coeff)
+    #
+    #     F_core = self.h1e_AO + 2*np.einsum('pqii->pq', self.eri_AO[:, :, :ncore, :ncore]) - np.einsum('piiq->pq', self.eri_AO[:, :ncore, :ncore, :])
+    #     F_cas = np.einsum('tu,pqtu->pq', dm1_cas_AO, self.eri_AO[:, :, ncore:nocc, ncore:nocc]) - 0.5*np.einsum('tu,putq->pq', dm1_cas_AO, self.eri_AO[:, ncore:nocc, ncore:nocc, :])
+    #
+    #     return
 
     def get_gradOrb(self,dm1_cas,dm2_cas):
         ''' This method build the orbital part of the gradient '''
@@ -331,7 +354,7 @@ class NR_CASSCF(lib.StreamObject):
         mat[idx] = v
         return mat - mat.T
 
-    def get_hessianOrbOrb(self,dm1_cas,dm2_cas): #TODO optimize
+    def get_hessianOrbOrb(self,dm1_cas,dm2_cas):
         ''' This method build the orb-orb part of the hessian '''
         norb = self.norb
         H = np.zeros((norb,norb,norb,norb))
@@ -401,6 +424,8 @@ class NR_CASSCF(lib.StreamObject):
 
         #active-core virtual-active H_{ti,au}
         if ncore>0 and nvir>0:
+            dm2_cas_tvux = np.einsum('tuvx->tvux',dm2_cas)
+            dm2_cas_tvxu = np.einsum('tuvx->tvxu',dm2_cas)
             tmp1 = - 2*np.einsum('tuvx,aivx->tiau', dm2_cas, eri[nocc:, :ncore, ncore:nocc, ncore:nocc]) - 2*np.einsum('tvux,axvi->tiau', dm2_cas, eri[nocc:, ncore:nocc, ncore:nocc, :ncore]) - 2*np.einsum('tvxu,axvi->tiau', dm2_cas, eri[nocc:, ncore:nocc, ncore:nocc, :ncore])
 
             avti = eri[nocc:, ncore:nocc, ncore:nocc, :ncore]
@@ -418,7 +443,11 @@ class NR_CASSCF(lib.StreamObject):
 
         #virtual-active virtual-active H_{at,bu}
         if nvir>0:
-            tmp1 = 2*np.einsum('tuvx,abvx->atbu', dm2_cas, eri[nocc:, nocc:, ncore:nocc, ncore:nocc]) + 2*np.einsum('txvu,axbv->atbu', dm2_cas, eri[nocc:, ncore:nocc, nocc:, ncore:nocc]) + 2*np.einsum('tvxu,axbv->atbu', dm2_cas, eri[nocc:, ncore:nocc, nocc:, ncore:nocc])
+            dm2_cas_txvu = np.einsum('tuvx->txvu',dm2_cas)
+            dm2_cas_txuv = np.einsum('tuvx->txuv',dm2_cas)
+            tmp1 = 2*np.einsum('tuvx,abvx->atbu', dm2_cas, eri[nocc:, nocc:, ncore:nocc, ncore:nocc]) + 2*np.einsum('txvu,axbv->atbu', dm2_cas_txvu, eri[nocc:, ncore:nocc, nocc:, ncore:nocc]) + 2*np.einsum('txuv,axbv->atbu', dm2_cas_txuv, eri[nocc:, ncore:nocc, nocc:, ncore:nocc])
+
+
             tmp2 = - np.einsum('ab,tvxy,uvxy->atbu',np.identity(nvir),dm2_cas,eri[ncore:nocc,ncore:nocc,ncore:nocc,ncore:nocc]) - np.einsum('ab,tv,uv->atbu',np.identity(nvir),dm1_cas,F_core[ncore:nocc,nocc:])
 
             H[nocc:, ncore:nocc, nocc:, ncore:nocc] = tmp1 + tmp2 + 2*np.einsum('atbu->aubt',tmp2) + 2*np.einsum('tu,ab->atbu', dm1_cas, F_core[nocc:, nocc:])
@@ -451,11 +480,11 @@ class NR_CASSCF(lib.StreamObject):
         h1e = self.h1e
         eri = self.eri
 
-        for k in range(len(mat_CI)-1): # Loop on Hessian indices
-                cleft = mat_CI[:,k+1]
-                for l in range(len(mat_CI)-1):
-                    cright = mat_CI[:,l+1]
-                    hessian_CICI[k,l] = 2*np.einsum('i,ij,j',cleft,H,cright) - 2*np.kron(k,l)*eO
+        for k in range(1,len(mat_CI)): # Loop on Hessian indices
+                cleft = mat_CI[:,k]
+                for l in range(1,len(mat_CI)):
+                    cright = mat_CI[:,l]
+                    hessian_CICI[k-1,l-1] = 2*np.einsum('i,ij,j',cleft, H, cright) - 2*delta_kron(k,l)*eO
 
         return hessian_CICI
 
@@ -552,7 +581,7 @@ class NR_CASSCF(lib.StreamObject):
         return ci
 
     def numericalGrad(self):
-        epsilon = 0.0000001
+        epsilon = 0.00000001
         dm1_cas, dm2_cas = self.get_CASRDM_12(self.mat_CI[:,0])
         e0 = self.get_energy(self.h1e, self.eri, dm1_cas, dm2_cas)
         # Orbital gradient
@@ -592,7 +621,7 @@ class NR_CASSCF(lib.StreamObject):
         return g
 
     def numericalHessian(self): #TODO
-        epsilon = 0.0001
+        epsilon = 0.00001
         dm1_cas, dm2_cas = self.get_CASRDM_12(self.mat_CI[:,0])
         e0 = self.get_energy(self.h1e, self.eri, dm1_cas, dm2_cas)
         #OrbOrbHessian
@@ -605,6 +634,56 @@ class NR_CASSCF(lib.StreamObject):
             for q in range(norb):
                 for r in range(norb):
                     for s in range(norb):
+                        # Kpp = np.zeros((norb,norb))
+                        # Kpp[p,q] = epsilon
+                        # Kpp[q,p] = -epsilon
+                        # Kpp[r,s] = epsilon
+                        # Kpp[s,r] = -epsilon
+                        #
+                        # Kpm = np.zeros((norb,norb))
+                        # Kpm[p,q] = epsilon
+                        # Kpm[q,p] = -epsilon
+                        # Kpm[r,s] = -epsilon
+                        # Kpm[s,r] = epsilon
+                        #
+                        # Kmp = np.zeros((norb,norb))
+                        # Kmp[p,q] = -epsilon
+                        # Kmp[q,p] = epsilon
+                        # Kmp[r,s] = epsilon
+                        # Kmp[s,r] = -epsilon
+                        #
+                        # Kmm = np.zeros((norb,norb))
+                        # Kmm[p,q] = -epsilon
+                        # Kmm[q,p] = epsilon
+                        # Kmm[r,s] = -epsilon
+                        # Kmm[s,r] = epsilon
+                        #
+                        # mo_coeffpp = self.rotateOrb(Kpp)
+                        # mo_coeffpm = self.rotateOrb(Kpm)
+                        # mo_coeffmp = self.rotateOrb(Kmp)
+                        # mo_coeffmm = self.rotateOrb(Kmm)
+                        #
+                        # h1eUpdatepp = np.einsum('ip,ij,jq->pq', mo_coeffpp, self.h1e_AO, mo_coeffpp)
+                        # h1eUpdatepm = np.einsum('ip,ij,jq->pq', mo_coeffpm, self.h1e_AO, mo_coeffpm)
+                        # h1eUpdatemp = np.einsum('ip,ij,jq->pq', mo_coeffmp, self.h1e_AO, mo_coeffmp)
+                        # h1eUpdatemm = np.einsum('ip,ij,jq->pq', mo_coeffmm, self.h1e_AO, mo_coeffmm)
+                        #
+                        # eriUpdatepp = np.asarray(mol.ao2mo(mo_coeffpp))
+                        # eriUpdatepp = ao2mo.restore(1, eriUpdatepp, norb)
+                        # eriUpdatepm = np.asarray(mol.ao2mo(mo_coeffpm))
+                        # eriUpdatepm = ao2mo.restore(1, eriUpdatepm, norb)
+                        # eriUpdatemp = np.asarray(mol.ao2mo(mo_coeffmp))
+                        # eriUpdatemp = ao2mo.restore(1, eriUpdatemp, norb)
+                        # eriUpdatemm = np.asarray(mol.ao2mo(mo_coeffmm))
+                        # eriUpdatemm = ao2mo.restore(1, eriUpdatemm, norb)
+                        #
+                        # eUpdatepp = self.get_energy(h1eUpdatepp, eriUpdatepp, dm1_cas, dm2_cas)
+                        # eUpdatepm = self.get_energy(h1eUpdatepm, eriUpdatepm, dm1_cas, dm2_cas)
+                        # eUpdatemp = self.get_energy(h1eUpdatemp, eriUpdatemp, dm1_cas, dm2_cas)
+                        # eUpdatemm = self.get_energy(h1eUpdatemm, eriUpdatemm, dm1_cas, dm2_cas)
+                        #
+                        # H_OrbOrb[p,q,r,s] = (eUpdatepp + eUpdatemm - eUpdatepm - eUpdatemp)/(4*(epsilon**2))
+
                         Kpqrs = np.zeros((norb,norb))
                         Kpqrs[p,q] = epsilon
                         Kpqrs[q,p] = -epsilon
@@ -640,20 +719,18 @@ class NR_CASSCF(lib.StreamObject):
 
                         H_OrbOrb[p,q,r,s] = (eUpdatepqrs + e0 - eUpdatepq - eUpdaters)/(epsilon**2)
 
+
+        # print(H_OrbOrb)
         idx = self.uniq_var_indices(self.norb,self.frozen)
+        idxidx = np.einsum('pq,rs->pqrs',idx,idx)
+        # print(H_OrbOrb[idxidx])
         H_OrbOrb = H_OrbOrb[:,:,idx]
         H_OrbOrb = H_OrbOrb[idx,:]
-
-        #OrbCIHessian
 
         #CICIHessian
         H_CICI = np.zeros((self.nDet - 1,self.nDet - 1))
         for k in range(1,self.nDet):
             for l in range(1,self.nDet):
-                # Skl = np.zeros((self.nDet,self.nDet)) #the commented part is a numerical derivative to the right, the new one is centred derivative
-                # Sk = np.zeros((self.nDet,self.nDet))
-                # Sl = np.zeros((self.nDet,self.nDet))
-
                 Spp = np.zeros((self.nDet,self.nDet))
                 Spm = np.zeros((self.nDet,self.nDet))
                 Smp = np.zeros((self.nDet,self.nDet))
@@ -661,47 +738,71 @@ class NR_CASSCF(lib.StreamObject):
 
                 for i in range(self.nDet):
                     for j in range(self.nDet):
-                        # Skl[i,j] = epsilon*(self.mat_CI[i,k]*self.mat_CI[j,0] - self.mat_CI[j,k]*self.mat_CI[i,0] + self.mat_CI[i,l]*self.mat_CI[j,0] - self.mat_CI[j,l]*self.mat_CI[i,0])
-                        # Sk[i,j] = epsilon*(self.mat_CI[i,k]*self.mat_CI[j,0] - self.mat_CI[j,k]*self.mat_CI[i,0])
-                        # Sl[i,j] = epsilon*(self.mat_CI[i,l]*self.mat_CI[j,0] - self.mat_CI[j,l]*self.mat_CI[i,0])
-
                         Spp[i,j] = epsilon*(self.mat_CI[i,k]*self.mat_CI[j,0] - self.mat_CI[j,k]*self.mat_CI[i,0]) + epsilon*(self.mat_CI[i,l]*self.mat_CI[j,0] - self.mat_CI[j,l]*self.mat_CI[i,0])
                         Spm[i,j] = epsilon*(self.mat_CI[i,k]*self.mat_CI[j,0] - self.mat_CI[j,k]*self.mat_CI[i,0]) - epsilon*(self.mat_CI[i,l]*self.mat_CI[j,0] - self.mat_CI[j,l]*self.mat_CI[i,0])
                         Smp[i,j] = - epsilon*(self.mat_CI[i,k]*self.mat_CI[j,0] - self.mat_CI[j,k]*self.mat_CI[i,0]) + epsilon*(self.mat_CI[i,l]*self.mat_CI[j,0] - self.mat_CI[j,l]*self.mat_CI[i,0])
                         Smm[i,j] = - epsilon*(self.mat_CI[i,k]*self.mat_CI[j,0] - self.mat_CI[j,k]*self.mat_CI[i,0]) - epsilon*(self.mat_CI[i,l]*self.mat_CI[j,0] - self.mat_CI[j,l]*self.mat_CI[i,0])
-
-                # ciUpdatekl = self.rotateCI(Skl)
-                # ciUpdatek = self.rotateCI(Sk)
-                # ciUpdatel = self.rotateCI(Sl)
 
                 ciUpdatepp = self.rotateCI(Spp)
                 ciUpdatepm = self.rotateCI(Spm)
                 ciUpdatemp = self.rotateCI(Smp)
                 ciUpdatemm = self.rotateCI(Smm)
 
-                # dm1_casUpdatekl, dm2_casUpdatekl = self.get_CASRDM_12(ciUpdatekl[:,0])
-                # dm1_casUpdatek, dm2_casUpdatek = self.get_CASRDM_12(ciUpdatek[:,0])
-                # dm1_casUpdatel, dm2_casUpdatel = self.get_CASRDM_12(ciUpdatel[:,0])
-
                 dm1_casUpdatepp, dm2_casUpdatepp = self.get_CASRDM_12(ciUpdatepp[:,0])
                 dm1_casUpdatepm, dm2_casUpdatepm = self.get_CASRDM_12(ciUpdatepm[:,0])
                 dm1_casUpdatemp, dm2_casUpdatemp = self.get_CASRDM_12(ciUpdatemp[:,0])
                 dm1_casUpdatemm, dm2_casUpdatemm = self.get_CASRDM_12(ciUpdatemm[:,0])
-
-                # eUpdatekl = self.get_energy(self.h1e, self.eri, dm1_casUpdatekl, dm2_casUpdatekl)
-                # eUpdatek = self.get_energy(self.h1e, self.eri, dm1_casUpdatek, dm2_casUpdatek)
-                # eUpdatel = self.get_energy(self.h1e, self.eri, dm1_casUpdatel, dm2_casUpdatel)
 
                 eUpdatepp = self.get_energy(self.h1e, self.eri, dm1_casUpdatepp, dm2_casUpdatepp)
                 eUpdatepm = self.get_energy(self.h1e, self.eri, dm1_casUpdatepm, dm2_casUpdatepm)
                 eUpdatemp = self.get_energy(self.h1e, self.eri, dm1_casUpdatemp, dm2_casUpdatemp)
                 eUpdatemm = self.get_energy(self.h1e, self.eri, dm1_casUpdatemm, dm2_casUpdatemm)
 
-                # H_CICI[k-1,l-1] = (eUpdatekl + e0 - eUpdatek - eUpdatel)/(epsilon**2)
+                H_CICI[k-1,l-1] = (eUpdatepp + eUpdatemm - eUpdatepm - eUpdatemp)/(4*(epsilon**2))
 
-                H_CICI[k-1,l-1] = (eUpdatepp + eUpdatemm - eUpdatepm - eUpdatemp)/(4*epsilon**2)
+        #OrbCIHessian
+        H_OrbCI = np.zeros((self.norb,self.norb,self.nDet - 1))
+        for p in range(norb):
+            for q in range(norb):
+                Kp = np.zeros((norb,norb))
+                Kp[p,q] = epsilon
+                Kp[q,p] = -epsilon
 
-        return H_OrbOrb, H_CICI
+                Km = np.zeros((norb,norb))
+                Km[p,q] = -epsilon
+                Km[q,p] = epsilon
+
+                mo_coeffp = self.rotateOrb(Kp)
+                mo_coeffm = self.rotateOrb(Km)
+
+                h1eUpdatep = np.einsum('ip,ij,jq->pq', mo_coeffp, self.h1e_AO, mo_coeffp)
+                h1eUpdatem = np.einsum('ip,ij,jq->pq', mo_coeffm, self.h1e_AO, mo_coeffm)
+
+                eriUpdatep = np.asarray(mol.ao2mo(mo_coeffp))
+                eriUpdatep = ao2mo.restore(1, eriUpdatep, norb)
+                eriUpdatem = np.asarray(mol.ao2mo(mo_coeffm))
+                eriUpdatem = ao2mo.restore(1, eriUpdatem, norb)
+                for k in range(1,self.nDet):
+                    Sp = np.zeros((self.nDet,self.nDet))
+                    Sm = np.zeros((self.nDet,self.nDet))
+                    for i in range(self.nDet):
+                        for j in range(self.nDet):
+                                    Sp[i,j] = epsilon*(self.mat_CI[i,k]*self.mat_CI[j,0] - self.mat_CI[j,k]*self.mat_CI[i,0])
+                                    Sm[i,j] = -epsilon*(self.mat_CI[i,k]*self.mat_CI[j,0] - self.mat_CI[j,k]*self.mat_CI[i,0])
+                    ciUpdatep = self.rotateCI(Sp)
+                    ciUpdatem = self.rotateCI(Sm)
+
+                    dm1_casUpdatep, dm2_casUpdatep = self.get_CASRDM_12(ciUpdatep[:,0])
+                    dm1_casUpdatem, dm2_casUpdatem = self.get_CASRDM_12(ciUpdatem[:,0])
+
+                    eUpdatepp = self.get_energy(h1eUpdatep, eriUpdatep, dm1_casUpdatep, dm2_casUpdatep)
+                    eUpdatepm = self.get_energy(h1eUpdatep, eriUpdatep, dm1_casUpdatem, dm2_casUpdatem)
+                    eUpdatemp = self.get_energy(h1eUpdatem, eriUpdatem, dm1_casUpdatep, dm2_casUpdatep)
+                    eUpdatemm = self.get_energy(h1eUpdatem, eriUpdatem, dm1_casUpdatem, dm2_casUpdatem)
+
+                    H_OrbCI[p,q,k-1] = (eUpdatepp + eUpdatemm - eUpdatepm - eUpdatemp)/(4*(epsilon**2))
+
+        return H_OrbOrb, H_CICI, H_OrbCI[idx,:]
 
     def get_energy(self, h1e, eri, dm1_cas, dm2_cas):
         dm1 = self.CASRDM1_to_RDM1(dm1_cas)
@@ -717,101 +818,184 @@ class NR_CASSCF(lib.StreamObject):
 if __name__ == '__main__':
 
     def matprint(mat, fmt="g"):
+        if len(np.shape(np.asarray(mat)))==1:
+            mat = mat.reshape(1,len(mat))
+
         col_maxes = [max([len(("{:"+fmt+"}").format(x)) for x in col]) for col in mat.T]
         for x in mat:
             for i, y in enumerate(x):
                 print(("{:"+str(col_maxes[i])+fmt+"}").format(y), end="  ")
             print("")
 
+    def delta_kron(i,j):
+        if i==j:
+            return 1
+        else:
+            return 0
+
+    def test_run(mycas):
+
+        # print("The MOs haven't been initialized",mycas.mo_coeff)
+        mycas.initMO
+        print("InitMO")
+        matprint(mycas.initMO)
+        print("")
+        # print("The MOs are now equal to their init value",mycas.mo_coeff)
+        mycas.initCI
+        print("InitCI")
+        matprint(mycas.initCI)
+        print("")
+        # print("The CI matrix is now equal to its init value",mycas.mat_CI)
+
+        mycas.check_sanity()
+
+        # print("We compute the 4 init 1CASRDM corresponding to the four CI vectors in mycas.mat_CI")
+        # print(mycas.get_CASRDM_1(mycas.mat_CI[:,0]))
+        # print(mycas.get_CASRDM_1(mycas.mat_CI[:,1]))
+        # print(mycas.get_CASRDM_1(mycas.mat_CI[:,2]))
+        # print(mycas.get_CASRDM_1(mycas.mat_CI[:,3]))
+
+        dm1_cas, dm2_cas = mycas.get_CASRDM_12(mycas.mat_CI[:,0])
+
+        # print("One init 2CASRDM",dm2_cas)
+        # print("Transform the 1CASRDM to 1RDM", mycas.CASRDM1_to_RDM1(mycas.get_CASRDM_1(mycas.mat_CI[:,0])))
+        # print("2CASRDM transformed into 2RDM",mycas.CASRDM2_to_RDM2(dm1_cas, dm2_cas))
+
+        # t_dm1 = mycas.get_tCASRDM1(mycas.mat_CI[:,0],mycas.mat_CI[:,0])
+        # print("Two 1el transition density matrices",t_dm1)
+        # t_dm1 = mycas.get_tCASRDM1(mycas.mat_CI[:,0],mycas.mat_CI[:,1])
+        # print(t_dm1)
+        # t_dm1, t_dm2 = mycas.get_tCASRDM12(mycas.mat_CI[:,0],mycas.mat_CI[:,1])
+        # print("A 2TDM",t_dm2)
+
+        # print("Generalized Fock operator")
+        # matprint(mycas.get_genFock(dm1_cas))
+        # print("")
+        g_orb = mycas.get_gradOrb(dm1_cas, dm2_cas)
+        # print("Orbital gradient")
+        # matprint(g_orb)
+        # print("")
+        # print("This is the exponential of the gradient")
+        # matprint(scipy.linalg.expm(g_orb))
+        # print("")
+
+        g_ci = mycas.get_gradCI()
+        # print("CI gradient")
+        # matprint(g_ci)
+        # print("")
+
+        print("Full gradient")
+        AlgGrad = mycas.form_grad(g_orb,g_ci)
+        matprint(AlgGrad)
+        print("")
+        print('This is the numerical gradient')
+        NumGrad = mycas.numericalGrad()
+        matprint(NumGrad)
+        print("")
+
+        print("Is the numerical gradient equal to the algebraic one?", np.allclose(AlgGrad,NumGrad,atol=1e-06))
+
+        print("This is the Hamiltonian")
+        # matprint(mycas.get_hamiltonian())
+        print("")
+        print("This is the CICI hessian")
+        # matprint(mycas.get_hessianCICI())
+        print("")
+
+        # H_OO = mycas.get_hessianOrbOrb(dm1_cas,dm2_cas)
+        # print("This is the OrbOrb hessian", H_OO)
+        # idx = mycas.uniq_var_indices(mycas.norb,mycas.frozen)
+        # print("This is the mask of uniq orbitals";idx)
+        # tmp = H_OO[:,:,idx]
+        # tmp = tmp[idx,:]
+        # print("This is the hessian of independant rotations",tmp)
+
+        # print('This are the Hamiltonian commutators', mycas.get_hamiltonianComm())
+        # print("This is the OrbCI hessian", mycas.get_hessianOrbCI())
+        # print('This is the OrbCI hessian with unique orbital rotations', mycas.get_hessianOrbCI()[idx,:])
+
+        print('This is the hessian')
+        # matprint(mycas.get_hessian())
+        print("")
+
+        numOO, numCICI, numOCI = mycas.numericalHessian()
+
+        # print('This is the CICI numerical Hessian')
+        # matprint(numCICI)
+        # print("")
+        # print("This is the CICI hessian")
+        # matprint(mycas.get_hessianCICI())
+        # print("")
+
+        print('This is the orborb numerical Hessian')
+        matprint(numOO)
+        print('This is the orborb hessian')
+        matprint(mycas.get_hessian()[:mycas.norb,:mycas.norb])
+
+        # ncore = mycas.ncore
+        # nocc = mycas.ncas + ncore
+        # print(mycas.eri[:, :, ncore:nocc, ncore:nocc])
+
+        # mycas.get_hessian()
+        # print(numOCI)
+
+        return
+
     # mol = pyscf.M(
     #     atom = 'H 0 0 0; H 0 0 1.05',
     #     basis = 'sto-3g')
     # myhf = mol.RHF().run()
     # mycas = NR_CASSCF(myhf,2,2)
-    # print('This is the number of core orbitals',mycas.ncore)
-
+    #
+    # test_run(mycas)
+    #
     # mol = pyscf.M(
-    #     atom = 'H 0 0 0; H 0 0 1.2',
-    #     basis = '6-31g')
+    #     atom = 'H 0 0 0; H 0 0 1.05',
+    #     basis = 'sto-3g')
     # myhf = mol.RHF().run()
-    # mycas = NR_CASSCF(myhf,2,2)
-    # print('This is the number of core orbitals',mycas.ncore)
+    # mat = np.asarray([[1/np.sqrt(2),1/np.sqrt(2),0,0],[1/np.sqrt(2),-1/np.sqrt(2),0,0],[0,0,1,0],[0,0,0,1]])
+    # mycas = NR_CASSCF(myhf,2,2,initCI=mat)
+    #
+    # test_run(mycas)
 
     mol = pyscf.M(
         atom = 'H 0 0 0; H 0 0 1.2',
         basis = '6-31g')
     myhf = mol.RHF().run()
-    mat=np.asarray([[1/np.sqrt(2),1/np.sqrt(2),0,0],[1/np.sqrt(2),-1/np.sqrt(2),0,0],[0,0,1,0],[0,0,0,1]])
-    mycas = NR_CASSCF(myhf,2,2,0,initCI=mat)
-    print('This is the number of core orbitals',mycas.ncore)
+    mycas = NR_CASSCF(myhf,2,2)
 
-    print("InitMO",mycas.initMO)
-    print("InitCI",mycas.initCI)
+    test_run(mycas)
 
-    # print("The MOs haven't been initialized",mycas.mo_coeff)
-    # print("The MOs are now equal to their init value",mycas.mo_coeff)
-    # print("The CI matrix is now equal to its init value",mycas.mat_CI)
+    # mol = pyscf.M(
+    #     atom = 'H 0 0 0; H 0 0 1.2',
+    #     basis = '6-31g')
+    # myhf = mol.RHF().run()
+    # mat = np.asarray([[1/np.sqrt(2),1/np.sqrt(2),0,0],[1/np.sqrt(2),-1/np.sqrt(2),0,0],[0,0,1,0],[0,0,0,1]])
+    # mycas = NR_CASSCF(myhf,2,2,initCI=mat)
+    #
+    # test_run(mycas)
 
-    # print("We compute the 4 init 1CASRDM",mycas.get_CASRDM_1(mycas.mat_CI[:,0]))
-    # print(mycas.get_CASRDM_1(mycas.mat_CI[:,1]))
-    # print(mycas.get_CASRDM_1(mycas.mat_CI[:,2]))
-    # print(mycas.get_CASRDM_1(mycas.mat_CI[:,3]))
+    # In the two sto-3g cases, the orbital gradient is equal to zero. This is expected because the orbitals are determined by the symmetry of the system.
+    # In the first 6-31g case, the orbital gradient is equal to zero because the wave function is the ground state determinant. In the second case, the orbital gradient is non-zero.
+    # If we run several times this script we may obtain different results, i.e. the molecular orbitals of H2 are determined up to a sign.
+    # + -  is equivalent to - +
+    # + +                   + +
+    # It changes the sign of some terms of the orbital gradient.
 
-    dm1_cas, dm2_cas = mycas.get_CASRDM_12(mycas.mat_CI[:,0])
+    # The CICI and OrbCI hessians are in agreement with their numerical counterpart. Still need to work on the OrbOrb part ...
 
-    # print("One init 2CASRDM",dm2_cas)
-    # print("Transform the 1CASRDM to 1RDM", mycas.CASRDM1_to_RDM1(mycas.get_CASRDM_1(mycas.mat_CI[:,0])))
-    # print("2CASRDM transformed into 2RDM",mycas.CASRDM2_to_RDM2(dm1_cas, dm2_cas))
+    # When OrbOrb will be fixed, I need to test the code with ncore>0.
 
-    # t_dm1 = mycas.get_tCASRDM1(mycas.mat_CI[:,0],mycas.mat_CI[:,0])
-    # print("Two 1el transition density matrices",t_dm1)
-    # t_dm1 = mycas.get_tCASRDM1(mycas.mat_CI[:,0],mycas.mat_CI[:,1])
-    # print(t_dm1)
-    # t_dm1, t_dm2 = mycas.get_tCASRDM12(mycas.mat_CI[:,0],mycas.mat_CI[:,1])
-    # print("A 2TDM",t_dm2)
 
-    print("Generalized Fock operator", mycas.get_genFock(dm1_cas))
-    g_orb = mycas.get_gradOrb(dm1_cas, dm2_cas)
-    print("Orbital gradient", g_orb)
-    print("This is the exponential of the gradient", scipy.linalg.expm(g_orb))
 
-    g_ci = mycas.get_gradCI()
-    print("CI gradient",g_ci)
 
-    print("Full gradient")
-    print(mycas.form_grad(g_orb,g_ci))
-    print('This is the numerical gradient')
-    print(mycas.numericalGrad())
+    #TODO
+    # add this code
+    # h1 = myhf.mo_coeff.T.dot(myhf.get_hcore()).dot(myhf.mo_coeff)
+    # h2 = ao2mo.kernel(mol,myhf.mo_coeff)
+    # h2 = ao2mo.restore(1,h2,mol.nao_nr())
+    # H_fci=fci.direct_spin1.pspace(h1,h2,mol.nao_nr(),mol.nelec,np=10000)[1]
+    #
+    # matprint(H_fci)
 
-    # print("This is the Hamiltonian", mycas.get_hamiltonian())
-    # print("This is the CICI hessian", mycas.get_hessianCICI())
 
-    # H_OO = mycas.get_hessianOrbOrb(dm1_cas,dm2_cas)
-    # print("This is the OrbOrb hessian", H_OO)
-    # idx = mycas.uniq_var_indices(mycas.norb,mycas.frozen)
-    # print("This is the mask of uniq orbitals";idx)
-    # tmp = H_OO[:,:,idx]
-    # tmp = tmp[idx,:]
-    # print("This is the hessian of independant rotations",tmp)
-
-    # print('This are the Hamiltonian commutators', mycas.get_hamiltonianComm())
-    # print("This is the OrbCI hessian", mycas.get_hessianOrbCI())
-    # print('This is the OrbCI hessian with unique orbital rotations', mycas.get_hessianOrbCI()[idx,:])
-
-    print('This is the hessian', mycas.get_hessian())
-
-    # numOO, numCICI = mycas.numericalHessian()
-
-    # print('This is the CICI numerical Hessian')
-    # matprint(numCICI)
-    print("This is the CICI hessian")
-    matprint(mycas.get_hessianCICI())
-
-    # print('This is the orborb numerical Hessian')
-    # matprint(numOO)
-    print('This is the orborb hessian')
-    matprint(mycas.get_hessian()[:mycas.norb,:mycas.norb])
-
-    ncore = mycas.ncore
-    nocc = mycas.ncas + ncore
-    print(mycas.eri[:, :, ncore:nocc, ncore:nocc])
