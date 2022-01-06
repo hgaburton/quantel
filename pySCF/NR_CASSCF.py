@@ -235,8 +235,8 @@ class NR_CASSCF(lib.StreamObject):
             dm1 = mycas.CASRDM1_to_RDM1(dm1_cas)
             for i in range(ncore):
                 for j in range(ncore):
-                    for p in range(ncore,ncas):
-                        for q in range(ncore,ncas):
+                    for p in range(ncore,ncore+ncas):
+                        for q in range(ncore,ncore+ncas):
                             dm2[i,j,p,q] = delta_kron(i,j)*dm1[p,q] - delta_kron(i,q)*delta_kron(j,p)
                             dm2[p,q,i,j] = dm2[i,j,p,q]
 
@@ -253,8 +253,8 @@ class NR_CASSCF(lib.StreamObject):
             dm1 = mycas.CASRDM1_to_RDM1(dm1_cas,True)
             for i in range(ncore):
                 for j in range(ncore):
-                    for p in range(ncore,ncas):
-                        for q in range(ncore,ncas):
+                    for p in range(ncore,ncore+ncas):
+                        for q in range(ncore,ncore+ncas):
                             dm2[i,j,p,q] = delta_kron(i,j)*dm1[p,q]
                             dm2[p,q,i,j] = delta_kron(i,j)*dm1[q,p]
 
@@ -491,14 +491,21 @@ class NR_CASSCF(lib.StreamObject):
             viuj = eri[ncore:nocc, :ncore, ncore:nocc, :ncore]
             uivj = eri[ncore:nocc, :ncore, ncore:nocc, :ncore]
             uvij = eri[ncore:nocc, ncore:nocc, :ncore, :ncore]
+
             uivj = np.einsum('uivj->viuj', uivj)
             uvij = np.einsum('uvij->viuj', uvij)
+
             tmp2 = 2*np.einsum('tv,viuj->tiuj', np.identity(ncas) - dm1_cas, 4*viuj - uivj - uvij)
+
             tmp2 = tmp2 + np.einsum('tiuj->uitj', tmp2)
 
-            tmp3 = 2*np.einsum('tu,ij->tiuj', dm1_cas, F_core[:ncore, :ncore]) - 4*np.einsum('ij,tvxy,uvxy->tiuj', np.identity(ncore), dm2_cas, eri[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc]) - 2*np.einsum('ij,uv,tv->tiuj', np.identity(ncore), dm1_cas, F_core[ncore:nocc, ncore:nocc]) + 4*np.einsum('ij,tu->tiuj', np.identity(ncore), F_tot[ncore:nocc, ncore:nocc]) - 4*np.einsum('tu,ij->tiuj', np.identity(ncas), F_tot[:ncore, :ncore])
+            tmp3 = 2*np.einsum('tu,ij->tiuj', dm1_cas, F_core[:ncore, :ncore]) - 4*np.einsum('ij,tvxy,uvxy->tiuj', np.identity(ncore), dm2_cas, eri[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc]) - 2*np.einsum('ij,uv,tv->tiuj', np.identity(ncore), dm1_cas, F_core[ncore:nocc, ncore:nocc])
 
-            H[ncore:nocc, :ncore, ncore:nocc, :ncore] = tmp1 + tmp2 + tmp3
+            tmp4 = 4*np.einsum('ij,tu->tiuj', np.identity(ncore), F_tot[ncore:nocc, ncore:nocc]) - 4*np.einsum('tu,ij->tiuj', np.identity(ncas), F_tot[:ncore, :ncore])
+
+            H[ncore:nocc, :ncore, ncore:nocc, :ncore] = tmp1 + tmp2 + tmp3 + tmp4
+
+            H[ncore:nocc, :ncore, ncore:nocc, :ncore] = 0.5*(H[ncore:nocc, :ncore, ncore:nocc, :ncore] + np.einsum('tiuj->ujti',H[ncore:nocc, :ncore, ncore:nocc, :ncore])) #I have to think about this ...
 
         return(H)
 
@@ -576,7 +583,7 @@ class NR_CASSCF(lib.StreamObject):
         id = np.identity(self.nDet)
         for i in range(self.nDet):
             for j in range(self.nDet):
-                dm1_cas, dm2_cas = self.get_tCASRDM12(id[i],id[j])
+                dm1_cas, dm2_cas = self.get_tCASRDM12(id[:,i],id[:,j])
                 dm1 = self.CASRDM1_to_RDM1(dm1_cas,True)
                 dm2 = self.CASRDM2_to_RDM2(dm1_cas,dm2_cas,True)
                 H[i,j] = np.einsum('pq,pq',h1e,dm1) + np.einsum('pqrs,pqrs',eri,dm2)
@@ -611,7 +618,6 @@ class NR_CASSCF(lib.StreamObject):
 
         H_OCI = H_OCI + np.einsum('pqs->qps',H_OCI)
 
-        print(H_OCI)
         return H_OCI
 
     def get_hessian(self): #TODO
@@ -630,9 +636,6 @@ class NR_CASSCF(lib.StreamObject):
         H_OrbCI = H_OrbCI[idx,:]
         H_OrbOrb = H_OrbOrb[:,:,idx]
         H_OrbOrb = H_OrbOrb[idx,:]
-
-        print("ORBORB")
-        matprint(H_OrbOrb)
 
         nIndepOrb = len(H_OrbOrb)
         H = np.zeros((nIndepOrb+nDet-1,nIndepOrb+nDet-1))
@@ -1046,7 +1049,6 @@ if __name__ == '__main__':
         matprint(F)
 
         g_orb = mycas.get_gradOrb(dm1_cas, dm2_cas)
-        nindeporb = len(g_orb)
         print("Orbital gradient")
         matprint(g_orb)
         print("")
@@ -1060,6 +1062,9 @@ if __name__ == '__main__':
         AlgGrad = mycas.form_grad(g_orb,g_ci)
         matprint(AlgGrad)
         print("")
+
+        nindeporb = len(AlgGrad) - len(g_ci)
+
         print('This is the numerical gradient')
         NumGrad = mycas.numericalGrad()
         matprint(NumGrad)
@@ -1074,10 +1079,10 @@ if __name__ == '__main__':
         matprint(GenGrad)
         print("Is the numerical gradient equal to the general one?", np.allclose(GenGrad,NumGrad,atol=1e-06))
 
-        print("Own hamiltonian")
-        matprint(mycas.get_hamiltonian())
-        print("True hamiltonian")
-        matprint(mycas.fcisolver.pspace(mycas.h1eff, mycas.h2eff, mycas.ncas, mycas.nelecas, np=1000000)[1])
+        # print("Own hamiltonian")
+        # matprint(mycas.get_hamiltonian())
+        # print("True hamiltonian")
+        # matprint(mycas.fcisolver.pspace(mycas.h1eff, mycas.h2eff, mycas.ncas, mycas.nelecas, np=1000000)[1])
 
         # print("This is the CICI hessian")
         # # matprint(mycas.get_hessianCICI())
@@ -1100,24 +1105,30 @@ if __name__ == '__main__':
         # print("")
 
 
-        # numOO, numCICI, numOCI = mycas.numericalHessian()
+        numOO, numCICI, numOCI = mycas.numericalHessian()
 
-        # print('This is the CICI numerical Hessian')
-        # matprint(numCICI)
-        # print("")
-        # print("This is the CICI hessian")
-        # matprint(mycas.get_hessianCICI())
-        # print("")
-        #
-        # # print('This is the orborb numerical Hessian')
-        # # matprint(numOO)
-        # print('This is the orborb hessian')
-        # matprint(mycas.get_hessian()[:nindeporb,:nindeporb])
-        #
-        # # print('This is the OrbCI numerical Hessian')
-        # # matprint(numOCI)
-        # print('This is the OrbCI hessian with unique orbital rotations')
-        # matprint(mycas.get_hessianOrbCI()[idx,:])
+        print('This is the CICI numerical Hessian')
+        matprint(numCICI)
+        print("")
+        print("This is the CICI hessian")
+        CICI = mycas.get_hessianCICI()
+        matprint(CICI)
+        print("")
+        print("Is the numerical CICI hessian equal to the general one?", np.allclose(numCICI,CICI,atol=1e-06))
+
+        print('This is the orborb numerical Hessian')
+        matprint(numOO)
+        print('This is the orborb hessian')
+        OO = mycas.get_hessian()[:nindeporb,:nindeporb]
+        matprint(OO)
+        print("Is the numerical OrbOrb hessian equal to the general one?", np.allclose(numOO,OO,atol=1e-06))
+
+        print('This is the OrbCI numerical Hessian')
+        matprint(numOCI)
+        print('This is the OrbCI hessian with unique orbital rotations')
+        OCI = mycas.get_hessianOrbCI()[idx,:]
+        matprint(OCI)
+        print("Is the numerical OrbCI hessian equal to the general one?", np.allclose(numOCI,OCI,atol=1e-06))
 
         return
 
@@ -1155,14 +1166,14 @@ if __name__ == '__main__':
     #
     # test_run(mycas)
 
-    mol = pyscf.M(
-        atom = 'Be 0 0 0',
-        basis = 'sto-3g')
-    myhf = mol.RHF().run()
-    mycas = NR_CASSCF(myhf,4,2,ncore=1)
-    print(mycas.norb,mycas.nelec)
-
-    test_run(mycas)
+    # mol = pyscf.M(
+    #     atom = 'Be 0 0 0',
+    #     basis = 'sto-3g')
+    # myhf = mol.RHF().run()
+    # mycas = NR_CASSCF(myhf,4,2,ncore=1)
+    # print(mycas.norb,mycas.nelec)
+    #
+    # test_run(mycas)
 
     # mol = pyscf.M(
     #     atom = 'H 0 0 0; He 0 0 1.05',
@@ -1174,17 +1185,18 @@ if __name__ == '__main__':
     #
     # test_run(mycas)
     #
-    # mol = pyscf.M(
-    #     atom = 'H 0 0 0; He 0 0 1.05',
-    #     basis = '6-31g',
-    #     charge = -1
-    #     )
-    # myhf = mol.RHF().run()
-    # mat = np.identity(mycas.nDet)
-    # mat[:2,:2] = [[1/np.sqrt(2),1/np.sqrt(2)],[1/np.sqrt(2),-1/np.sqrt(2)]]
-    # mycas = NR_CASSCF(myhf,3,2,ncore=1,initCI=mat)
-    #
-    # test_run(mycas)
+    mol = pyscf.M(
+        atom = 'H 0 0 0; He 0 0 1.05',
+        basis = '6-31g',
+        charge = -1
+        )
+    myhf = mol.RHF().run()
+    mycas = NR_CASSCF(myhf,3,2,ncore=1)
+    mat = np.identity(mycas.nDet)
+    mat[:2,:2] = [[1/np.sqrt(2),1/np.sqrt(2)],[1/np.sqrt(2),-1/np.sqrt(2)]]
+    mycas = NR_CASSCF(myhf,3,2,ncore=1,initCI=mat)
+
+    test_run(mycas)
 
 
 
