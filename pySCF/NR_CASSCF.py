@@ -17,6 +17,124 @@ from pyscf.mcscf import casci
 from pyscf import fci
 from pyscf.fci import spin_op
 
+# sys.stdout = open('/home/antoinem/PLR1/pyscf/results.txt', "w")
+
+def kernel(self):
+    print("Initialization of the Newton-Raphson loop")
+    mycas.initMO # We initialize the quantities that need it
+    mycas.initCI
+    mycas.initHeff
+
+    mycas.check_sanity() # Check that the definition of the CAS by the user is sane
+
+    enuc = self._scf.energy_nuc()
+
+    step = 0
+    conv = 1
+
+    print("Start of the iteration")
+
+    while conv > self.conv_threshold and step < self.max_iterations:
+        print("Iteration ", step)
+
+        # Compute gradient and Hessian
+        dm1_cas, dm2_cas = self.get_CASRDM_12(self.mat_CI[:,0])
+
+        dm1 = self.CASRDM1_to_RDM1(dm1_cas)
+        dm2 = self.CASRDM2_to_RDM2(dm1_cas,dm2_cas)
+
+        g_orb = self.get_gradOrb(dm1_cas, dm2_cas)
+        g_ci = self.get_gradCI()
+        g = self.form_grad(g_orb,g_ci)
+
+        nIndepRot = len(g) - len(g_ci)
+
+        H = self.get_hessian()
+
+        # Update rotation parameters
+        NR = -0.5*np.dot(scipy.linalg.inv(H),g)
+
+        NR_Orb = NR[:nIndepRot]
+        NR_Orb = self.unpack_uniq_var(NR_Orb)
+
+        NR_CI = NR[nIndepRot:]
+        S = np.zeros((self.nDet,self.nDet))
+        for k in range(1,self.nDet):
+            for i in range(self.nDet):
+                for j in range(self.nDet):
+                    S[i,j] += NR_CI[k-1]*(self.mat_CI[i,k]*self.mat_CI[j,0] - self.mat_CI[j,k]*self.mat_CI[i,0])
+        NR_CI = S
+
+        self.mo_coeff = self.rotateOrb(NR_Orb)
+        self.mat_CI = self.rotateCI(NR_CI)
+
+        # print("This is the updated mo_coeff", self.mo_coeff)
+        # print("This is the updated mat_CI", self.mat_CI)
+
+        # Update integrals and density matrices
+        self.h1e = np.einsum('ip,ij,jq->pq', self.mo_coeff, self.h1e_AO, self.mo_coeff)
+        self.eri = np.asarray(mol.ao2mo(self.mo_coeff))
+        self.eri = ao2mo.restore(1, self.eri, self.norb)
+        self.h1eff, self.energy_core = self.h1e_for_cas(self.mo_coeff)
+        self.h2eff = self.get_h2eff(self.mo_coeff)
+        self.h2eff = ao2mo.restore(1,self.h2eff,self.ncas)
+        dm1_cas, dm2_cas = self.get_CASRDM_12(self.mat_CI[:,0])
+
+        # print("This is the updated dm1_cas", dm1_cas)
+        # print("This is the updated dm2_cas", dm2_cas)
+
+        nrj = self.get_energy(self.h1e, self.eri, dm1_cas, dm2_cas)
+        print("This is the updated nrj", nrj + enuc)
+        nrj = self.get_energy_cas(self.h1eff, self.h2eff, dm1_cas, dm2_cas)
+        print("This is the updated nrj", nrj + enuc + self.energy_core)
+
+        conv = np.max(g)
+        print("At this iteration the convergence is ", conv)
+        step += 1
+
+    print("The squared spin value of the wave function is ", self.spin_square(self.mat_CI[:,0]))
+
+    return
+
+def ternary(n,length):
+    if n == 0:
+        return '0'
+    nums = []
+    while n:
+        n, r = divmod(n, 3)
+        nums.append(r)
+    while len(nums)<length:
+        nums.append(0)
+    nums.reverse()
+    return nums
+
+def grid_search(self):
+    ''' This function runs the Newton-Raphson algorithm for a grid of starting point '''
+
+    # Grid loop
+    for orb_gridpoint in range(NBORBINDEP**2):
+        tmp_orb = ternary(i)
+        K = np.zeros((NBORBINDEP, NBORBINDEP))
+        K[np.triu_indices(NBORBINDEP, 1)] = (np.pi/2)*tmp_orb
+        for ci_gridpoint in range(NBCIINDEP**2):
+            tmp_ci = ternary(i)
+            S = np.zeros((NBCIINDEP, NBCIINDEP))
+            S[np.triu_indices(NBCIINDEP, 1)] = (np.pi/2)*tmp_ci
+
+
+    # Run the calculations
+    mycas = NR_CASSCF(myhf,2,2,initCI=mat)
+    mycas.kernel()
+
+    #Compare results and store if needed
+
+    #Print the results
+
+    return
+
+
+
+
 ##### Definition of the class #####
 
 class NR_CASSCF(lib.StreamObject):
@@ -83,6 +201,9 @@ class NR_CASSCF(lib.StreamObject):
         self.h2eff = None
 
         self.fcisolver = fci.direct_spin1.FCISolver(mol)
+
+        self.conv_threshold = 1e-06
+        self.max_iterations = 512
 
     @property
     def ncore(self):
@@ -151,6 +272,68 @@ class NR_CASSCF(lib.StreamObject):
     def get_hcore(self, mol=None):
         ''' Retrieve the 1 electron Hamiltonian from the SCF instance '''
         return self._scf.get_hcore(mol)
+
+    #Taken from pyscf
+    def get_jk(self, mol, dm, hermi=1, with_j=True, with_k=True, omega=None):
+        return self._scf.get_jk(mol, dm, hermi,
+                                with_j=with_j, with_k=with_k, omega=omega)
+
+    def get_veff(self, mol=None, dm=None, hermi=1):
+        if mol is None: mol = self.mol
+        if dm is None:
+            mocore = self.mo_coeff[:,:self.ncore]
+            dm = np.dot(mocore, mocore.conj().T) * 2
+        # don't call self._scf.get_veff because _scf might be DFT object
+        vj, vk = self.get_jk(mol, dm, hermi)
+        return vj - vk * .5
+
+    def h1e_for_cas(self, mo_coeff=None, ncas=None, ncore=None):
+        '''CAS sapce one-electron hamiltonian
+
+        Args:
+            casci : a CASSCF/CASCI object or RHF object
+
+        Returns:
+            A tuple, the first is the effective one-electron hamiltonian defined in CAS space,
+            the second is the electronic energy from core.
+        '''
+        if mo_coeff is None: mo_coeff = self.mo_coeff
+        if ncas is None: ncas = self.ncas
+        if ncore is None: ncore = self.ncore
+        mo_core = mo_coeff[:,:ncore]
+        mo_cas = mo_coeff[:,ncore:ncore+ncas]
+
+        hcore = self.get_hcore()
+        energy_core = self.energy_nuc()
+        if mo_core.size == 0:
+            corevhf = 0
+        else:
+            core_dm = np.dot(mo_core, mo_core.conj().T) * 2
+            corevhf = self.get_veff(self.mol, core_dm)
+            energy_core += np.einsum('ij,ji', core_dm, hcore).real
+            energy_core += np.einsum('ij,ji', core_dm, corevhf).real * .5
+        h1eff = reduce(np.dot, (mo_cas.conj().T, hcore+corevhf, mo_cas))
+        return h1eff, energy_core
+
+    def get_h2eff(self, mo_coeff=None):
+        '''Compute the active space two-particle Hamiltonian. '''
+        ncore = self.ncore
+        ncas = self.ncas
+        nocc = ncore + ncas
+        if mo_coeff is None:
+            ncore = self.ncore
+            mo_coeff = self.mo_coeff[:,ncore:nocc]
+        elif mo_coeff.shape[1] != ncas:
+            mo_coeff = mo_coeff[:,ncore:nocc]
+
+        if self._scf._eri is not None:
+            eri = ao2mo.full(self._scf._eri, mo_coeff,
+                             max_memory=self.max_memory)
+        else:
+            eri = ao2mo.full(self.mol, mo_coeff, verbose=self.verbose,
+                             max_memory=self.max_memory)
+        return eri
+
 
     def get_CASRDM_1(self,ci):
         ''' This method compute the 1-RDM in the CAS space of a given ci wave function '''
@@ -266,6 +449,70 @@ class NR_CASSCF(lib.StreamObject):
         dm2[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc] = dm2_cas # Finally we add the uvxy sector
         return dm2
 
+    @staticmethod
+    def check_symmetry(tensor):
+        if np.allclose(tensor,np.einsum('pqrs->rspq',tensor),atol=1e-06):
+            print("The tensor have the PQRS/RSPQ symmetry")
+        if np.allclose(tensor,np.einsum('pqrs->qpsr',tensor),atol=1e-06):
+            print("The tensor have the PQRS/QPSR symmetry")
+        if np.allclose(tensor,np.einsum('pqrs->qprs',tensor),atol=1e-06):
+            print("The tensor have the PQRS/QPRS symmetry")
+        return
+
+    def get_hamiltonian(self):
+        ''' This method build the Hamiltonian matrix '''
+        ncore = self.ncore
+        ncas = self.ncas
+        norb = self.norb
+        nocc = ncore + ncas
+        nvir = norb - nocc
+
+        H = np.zeros((self.nDet,self.nDet))
+
+        h1e = self.h1e
+        eri = self.eri
+
+        id = np.identity(self.nDet)
+        for i in range(self.nDet):
+            for j in range(self.nDet):
+                dm1_cas, dm2_cas = self.get_tCASRDM12(id[:,i],id[:,j])
+                dm1 = self.CASRDM1_to_RDM1(dm1_cas,True)
+                dm2 = self.CASRDM2_to_RDM2(dm1_cas,dm2_cas,True)
+                H[i,j] = np.einsum('pq,pq',h1e,dm1) + np.einsum('pqrs,pqrs',eri,dm2)
+        return H
+
+    def uniq_var_indices(self, nmo, frozen):
+        ''' This function creates a matrix of boolean of size (norb,norb). A True element means that this rotation should be taken into account during the optimization. Taken from pySCF.mcscf.casscf '''
+        norb = self.norb
+        ncore = self.ncore
+        ncas = self.ncas
+        nocc = ncore + ncas
+        mask = np.zeros((norb,norb),dtype=bool)
+        mask[ncore:nocc,:ncore] = True # Active-Core rotations
+        mask[nocc:,:nocc] = True # Virtual-Core and Virtual-Active rotations
+        # if self.internal_rotation:
+        #    mask[ncore:nocc,ncore:nocc][np.tril_indices(ncas,-1)] = True
+        if frozen is not None:
+            if isinstance(frozen, (int, np.integer)):
+                mask[:frozen] = mask[:,:frozen] = False
+            else:
+                frozen = np.asarray(frozen)
+                mask[frozen] = mask[:,frozen] = False
+        return mask
+
+    def pack_uniq_var(self, mat):
+        ''' This method transforms a matrix of rotations K into a list of unique rotations elements. Taken from pySCF.mcscf.casscf '''
+        idx = self.uniq_var_indices(self.norb,self.frozen)
+        return mat[idx]
+
+    # to anti symmetric matrix
+    def unpack_uniq_var(self, v):
+        ''' This method transforms a list of unique rotations elements into an anti-symmetric rotation matrix. Taken from pySCF.mcscf.casscf '''
+        idx = self.uniq_var_indices(self.norb, self.frozen)
+        mat = np.zeros((self.norb,self.norb))
+        mat[idx] = v
+        return mat - mat.T
+
     def get_F_core(self):
         ncore = self.ncore
         return(self.h1e + 2*np.einsum('pqii->pq', self.eri[:, :, :ncore, :ncore]) - np.einsum('piiq->pq', self.eri[:, :ncore, :ncore, :]))
@@ -295,48 +542,18 @@ class NR_CASSCF(lib.StreamObject):
         if nvir>0:
             g_orb[nocc:,ncore:nocc] = 2*np.einsum('tv,av->at', dm1_cas, F_core[nocc:,ncore:nocc]) + 4*np.einsum('tvxy,avxy->at',dm2_cas, self.eri[nocc:,ncore:nocc,ncore:nocc,ncore:nocc])
 
-        # #virtual-core rotations g_{ai}
-        # if ncore>0 and nvir>0:
-        #
-        #     tmp1 = self.h1e[nocc:, :ncore] + 2*np.einsum('aikk->ai', self.eri[nocc:, :ncore, :ncore, :ncore]) - np.einsum('akik->ai', self.eri[nocc:, :ncore, :ncore, :ncore])
-        #
-        #     tmp2 = np.einsum('tu,aitu->ai', dm1_cas, self.eri[nocc:, :ncore, ncore:nocc, ncore:nocc]) - 0.5*np.einsum('tu,atiu->ai', dm1_cas, self.eri[nocc:, ncore:nocc, :ncore, ncore:nocc])
-        #
-        #     g_orb[nocc:,:ncore] = 4*tmp1 + 4*tmp2
-        #
-        # #active-core rotations g_{ti}
-        # if ncore>0:
-        #     tmp1 = self.h1e[ncore:nocc,:ncore] + 2*np.einsum('tikk->ti', self.eri[ncore:nocc, :ncore, :ncore, :ncore]) - np.einsum('tkik->ti', self.eri[ncore:nocc, :ncore, :ncore, :ncore])
-        #
-        #     tmp2 = np.einsum('uv,tiuv->ti', dm1_cas, self.eri[ncore:nocc, :ncore, ncore:nocc, ncore:nocc]) - 0.5*np.einsum('uv,tuiv->ti', dm1_cas, self.eri[ncore:nocc, ncore:nocc, :ncore, ncore:nocc])
-        #
-        #     tmp3 = np.einsum('tv,iv->ti', dm1_cas, self.h1e[:ncore, ncore:nocc]) + 2*np.einsum('tv,ivkk->ti', dm1_cas, self.eri[:ncore, ncore:nocc, :ncore, :ncore]) - np.einsum('tv,ikvk->ti', dm1_cas, self.eri[:ncore, :ncore, ncore:nocc, :ncore])
-        #
-        #     tmp4 = np.einsum('tvxy,ivxy->ti', dm2_cas, self.eri[:ncore,ncore:nocc,ncore:nocc,ncore:nocc])
-        #
-        #     g_orb[ncore:nocc,:ncore] =  4*tmp1 + 4*tmp2 - 2*tmp3 - 4*tmp4
-        #
-        # #virtual-active rotations g_{at}
-        # if nvir>0:
-        #
-        #     tmp1 =  np.einsum('tv,av->at', dm1_cas, self.h1e[nocc:, ncore:nocc]) + 2*np.einsum('tv,avkk->at', dm1_cas, self.eri[nocc:, ncore:nocc, :ncore, :ncore]) - np.einsum('tv,akvk->at', dm1_cas, self.eri[nocc:, :ncore, ncore:nocc, :ncore])
-        #
-        #     tmp2 = np.einsum('tvxy,avxy->at',dm2_cas, self.eri[nocc:,ncore:nocc,ncore:nocc,ncore:nocc])
-        #
-        #     g_orb[nocc:,ncore:nocc] = 2*tmp1 + 4*tmp2
-
         return g_orb - g_orb.T # this gradient is a matrix, be careful we need to pack it before joining it with the CI part
 
-    def get_gradOrbOK(self,dm1_cas,dm2_cas):
-        g_orb = np.zeros((self.norb,self.norb))
-        ncore = self.ncore
-        ncas = self.ncas
-        nocc = ncore + ncas
-        nvir = self.norb - nocc
-        dm1 = self.CASRDM1_to_RDM1(dm1_cas)
-        dm2 = self.CASRDM2_to_RDM2(dm1_cas,dm2_cas)
-        F = np.einsum('xq,qy->xy', dm1, self.h1e) + 2*np.einsum('xqrs,yqrs->xy', dm2, self.eri)
-        return -2*(F - F.T)
+    # def get_gradOrbOK(self,dm1_cas,dm2_cas):
+    #     g_orb = np.zeros((self.norb,self.norb))
+    #     ncore = self.ncore
+    #     ncas = self.ncas
+    #     nocc = ncore + ncas
+    #     nvir = self.norb - nocc
+    #     dm1 = self.CASRDM1_to_RDM1(dm1_cas)
+    #     dm2 = self.CASRDM2_to_RDM2(dm1_cas,dm2_cas)
+    #     F = np.einsum('xq,qy->xy', dm1, self.h1e) + 2*np.einsum('xqrs,yqrs->xy', dm2, self.eri)
+    #     return -2*(F - F.T)
 
     def get_gradCI(self):
         ''' This method build the CI part of the gradient '''
@@ -359,40 +576,6 @@ class NR_CASSCF(lib.StreamObject):
         uniq_g_orb = self.pack_uniq_var(g_orb) #We apply the mask to obtain a list of unique rotations
         g = np.concatenate((uniq_g_orb,g_ci))
         return g
-
-    def uniq_var_indices(self, nmo, frozen):
-        ''' This function creates a matrix of boolean of size (norb,norb). A True element means that this rotation should be taken into account during the optimization. Taken from pySCF.mcscf.casscf '''
-        norb = self.norb
-        ncore = self.ncore
-        ncas = self.ncas
-        nocc = ncore + ncas
-        mask = np.zeros((norb,norb),dtype=bool)
-        mask[ncore:nocc,:ncore] = True # Active-Core rotations
-        mask[nocc:,:nocc] = True # Virtual-Core and Virtual-Active rotations
-        # if self.internal_rotation:
-        #    mask[ncore:nocc,ncore:nocc][np.tril_indices(ncas,-1)] = True
-        if frozen is not None:
-            if isinstance(frozen, (int, np.integer)):
-                mask[:frozen] = mask[:,:frozen] = False
-            else:
-                frozen = np.asarray(frozen)
-                mask[frozen] = mask[:,frozen] = False
-        return mask
-
-    def pack_uniq_var(self, mat):
-        ''' This method transforms a matrix of rotations K into a list of unique rotations elements. Taken from pySCF.mcscf.casscf '''
-        nmo = self.mo_coeff.shape[1]
-        idx = self.uniq_var_indices(nmo,self.frozen)
-        return mat[idx]
-
-    # to anti symmetric matrix
-    def unpack_uniq_var(self, v):
-        ''' This method transforms a list of unique rotations elements into an anti-symmetric rotation matrix. Taken from pySCF.mcscf.casscf '''
-        nmo = self.mo_coeff.shape[1]
-        idx = self.uniq_var_indices(nmo, self.ncore, self.ncas, self.frozen)
-        mat = np.zeros((nmo,nmo))
-        mat[idx] = v
-        return mat - mat.T
 
     def get_hessianOrbOrb(self,dm1_cas,dm2_cas):
         ''' This method build the orb-orb part of the hessian '''
@@ -567,30 +750,6 @@ class NR_CASSCF(lib.StreamObject):
 
         return H_ai, H_at, H_ti
 
-    def get_hamiltonian(self):
-        ''' This method build the Hamiltonian matrices '''
-        ncore = self.ncore
-        ncas = self.ncas
-        norb = self.norb
-        nocc = ncore + ncas
-        nvir = norb - nocc
-
-        H = np.zeros((self.nDet,self.nDet))
-
-        h1e = self.h1e
-        eri = self.eri
-
-        id = np.identity(self.nDet)
-        for i in range(self.nDet):
-            for j in range(self.nDet):
-                dm1_cas, dm2_cas = self.get_tCASRDM12(id[:,i],id[:,j])
-                dm1 = self.CASRDM1_to_RDM1(dm1_cas,True)
-                dm2 = self.CASRDM2_to_RDM2(dm1_cas,dm2_cas,True)
-                H[i,j] = np.einsum('pq,pq',h1e,dm1) + np.einsum('pqrs,pqrs',eri,dm2)
-        # matprint(H1EL)
-        # matprint(H2EL)
-        return H
-
     def get_hessianOrbCI(self): #TODO
         ''' This method build the orb-CI part of the hessian '''
         ncore = self.ncore
@@ -653,8 +812,8 @@ class NR_CASSCF(lib.StreamObject):
 
     def rotateCI(self,S): #TODO check the renormalization ?
         ci = np.dot(scipy.linalg.expm(S),self.mat_CI)
-        #We need to renormalize the CI states
-        ci = ci/np.dot(ci[:,0], ci[:,0].T)
+        # We need to renormalize the CI states
+        # ci = ci/np.dot(ci[:,0], ci[:,0].T)
         return ci
 
     def numericalGrad(self):
@@ -670,7 +829,7 @@ class NR_CASSCF(lib.StreamObject):
                 K[q,p] = -epsilon
                 mo_coeff = self.rotateOrb(K)
                 h1eUpdate = np.einsum('ip,ij,jq->pq', mo_coeff, self.h1e_AO, mo_coeff)
-                eriUpdate = np.asarray(mol.ao2mo(mo_coeff))
+                eriUpdate = np.asarray(mol.(mo_coeff))
                 eriUpdate = ao2mo.restore(1, eriUpdate, self.norb) # eri in the MO basis with chemist notation
                 eUpdate = self.get_energy(h1eUpdate, eriUpdate, dm1_cas, dm2_cas)
                 g_orb[p,q] = (eUpdate - e0)/epsilon
@@ -864,96 +1023,16 @@ class NR_CASSCF(lib.StreamObject):
         E = np.einsum('pq,pq', h1e, dm1) + np.einsum('pqrs,pqrs', eri, dm2)
         return E
 
-    def get_energy_cas(self, h1e, eri, dm1_cas, dm2_cas):
-        E = np.einsum('pq,pq', h1e, dm1_cas) + np.einsum('pqrs,pqrs', eri, dm2_cas)
+    def get_energy_cas(self, h1eff, h2eff, dm1_cas, dm2_cas):
+        E = np.einsum('pq,pq', h1eff, dm1_cas) + np.einsum('pqrs,pqrs', h2eff, dm2_cas)
         return E
 
-    def kernel(): #TODO
+    def spin_square(self,fcivec):
+        return self.fcisolver.spin_square(fcivec,self.norb,self.nelec)
+
+    def kernel(self):
         ''' This method runs the iterative Newton-Raphson loop '''
-        pass
-
-    @staticmethod
-    def check_symmetry(tensor):
-        if np.allclose(tensor,np.einsum('pqrs->rspq',tensor),atol=1e-06):
-            print("The tensor have the PQRS/RSPQ symmetry")
-        if np.allclose(tensor,np.einsum('pqrs->qpsr',tensor),atol=1e-06):
-            print("The tensor have the PQRS/QPSR symmetry")
-        if np.allclose(tensor,np.einsum('pqrs->qprs',tensor),atol=1e-06):
-            print("The tensor have the PQRS/QPRS symmetry")
-        return
-
-
-    #Taken from pyscf
-
-    def get_jk(self, mol, dm, hermi=1, with_j=True, with_k=True, omega=None):
-        return self._scf.get_jk(mol, dm, hermi,
-                                with_j=with_j, with_k=with_k, omega=omega)
-
-    def get_veff(self, mol=None, dm=None, hermi=1):
-        if mol is None: mol = self.mol
-        if dm is None:
-            mocore = self.mo_coeff[:,:self.ncore]
-            dm = np.dot(mocore, mocore.conj().T) * 2
-        # don't call self._scf.get_veff because _scf might be DFT object
-        vj, vk = self.get_jk(mol, dm, hermi)
-        return vj - vk * .5
-
-    def h1e_for_cas(self, mo_coeff=None, ncas=None, ncore=None):
-        '''CAS sapce one-electron hamiltonian
-
-        Args:
-            casci : a CASSCF/CASCI object or RHF object
-
-        Returns:
-            A tuple, the first is the effective one-electron hamiltonian defined in CAS space,
-            the second is the electronic energy from core.
-        '''
-        if mo_coeff is None: mo_coeff = self.mo_coeff
-        if ncas is None: ncas = self.ncas
-        if ncore is None: ncore = self.ncore
-        mo_core = mo_coeff[:,:ncore]
-        mo_cas = mo_coeff[:,ncore:ncore+ncas]
-
-        hcore = self.get_hcore()
-        energy_core = self.energy_nuc()
-        if mo_core.size == 0:
-            corevhf = 0
-        else:
-            core_dm = np.dot(mo_core, mo_core.conj().T) * 2
-            corevhf = self.get_veff(self.mol, core_dm)
-            energy_core += np.einsum('ij,ji', core_dm, hcore).real
-            energy_core += np.einsum('ij,ji', core_dm, corevhf).real * .5
-        h1eff = reduce(np.dot, (mo_cas.conj().T, hcore+corevhf, mo_cas))
-        return h1eff, energy_core
-
-    def get_h2eff(self, mo_coeff=None):
-        '''Compute the active space two-particle Hamiltonian.
-
-        Note It is different to get_h2cas when df.approx_hessian is applied.
-        in which get_h2eff function returns the DF integrals while get_h2cas
-        returns the regular 2-electron integrals.
-        '''
-        return self.ao2mo(mo_coeff)
-
-    def ao2mo(self, mo_coeff=None):
-        '''Compute the active space two-particle Hamiltonian.
-        '''
-        ncore = self.ncore
-        ncas = self.ncas
-        nocc = ncore + ncas
-        if mo_coeff is None:
-            ncore = self.ncore
-            mo_coeff = self.mo_coeff[:,ncore:nocc]
-        elif mo_coeff.shape[1] != ncas:
-            mo_coeff = mo_coeff[:,ncore:nocc]
-
-        if self._scf._eri is not None:
-            eri = ao2mo.full(self._scf._eri, mo_coeff,
-                             max_memory=self.max_memory)
-        else:
-            eri = ao2mo.full(self.mol, mo_coeff, verbose=self.verbose,
-                             max_memory=self.max_memory)
-        return eri
+        return kernel(self)
 
 
 ##### Main #####
@@ -1105,30 +1184,35 @@ if __name__ == '__main__':
         # print("")
 
 
-        numOO, numCICI, numOCI = mycas.numericalHessian()
+        # numOO, numCICI, numOCI = mycas.numericalHessian()
+        #
+        # print('This is the CICI numerical Hessian')
+        # matprint(numCICI)
+        # print("")
+        # print("This is the CICI hessian")
+        # CICI = mycas.get_hessianCICI()
+        # matprint(CICI)
+        # print("")
+        # print("Is the numerical CICI hessian equal to the general one?", np.allclose(numCICI,CICI,atol=1e-06))
+        #
+        # print('This is the orborb numerical Hessian')
+        # matprint(numOO)
+        # print('This is the orborb hessian')
+        # OO = mycas.get_hessian()[:nindeporb,:nindeporb]
+        # matprint(OO)
+        # print("Is the numerical OrbOrb hessian equal to the general one?", np.allclose(numOO,OO,atol=1e-06))
+        #
+        # print('This is the OrbCI numerical Hessian')
+        # matprint(numOCI)
+        # print('This is the OrbCI hessian with unique orbital rotations')
+        # OCI = mycas.get_hessianOrbCI()[idx,:]
+        # matprint(OCI)
+        # print("Is the numerical OrbCI hessian equal to the general one?", np.allclose(numOCI,OCI,atol=1e-06))
+        #
+        # print("This is the Hessian")
+        # matprint(mycas.get_hessian())
 
-        print('This is the CICI numerical Hessian')
-        matprint(numCICI)
-        print("")
-        print("This is the CICI hessian")
-        CICI = mycas.get_hessianCICI()
-        matprint(CICI)
-        print("")
-        print("Is the numerical CICI hessian equal to the general one?", np.allclose(numCICI,CICI,atol=1e-06))
-
-        print('This is the orborb numerical Hessian')
-        matprint(numOO)
-        print('This is the orborb hessian')
-        OO = mycas.get_hessian()[:nindeporb,:nindeporb]
-        matprint(OO)
-        print("Is the numerical OrbOrb hessian equal to the general one?", np.allclose(numOO,OO,atol=1e-06))
-
-        print('This is the OrbCI numerical Hessian')
-        matprint(numOCI)
-        print('This is the OrbCI hessian with unique orbital rotations')
-        OCI = mycas.get_hessianOrbCI()[idx,:]
-        matprint(OCI)
-        print("Is the numerical OrbCI hessian equal to the general one?", np.allclose(numOCI,OCI,atol=1e-06))
+        mycas.kernel()
 
         return
 
@@ -1148,6 +1232,15 @@ if __name__ == '__main__':
     # mycas = NR_CASSCF(myhf,2,2,initCI=mat)
     #
     # test_run(mycas)
+
+    mol = pyscf.M(
+        atom = 'H 0 0 0; H 0 0 1.05',
+        basis = 'sto-3g')
+    myhf = mol.RHF().run()
+    mat = np.asarray([[0,0,0,1],[0,1,0,0],[0,0,1,0],[1,0,0,0]])
+    mycas = NR_CASSCF(myhf,2,2,initCI=mat)
+
+    test_run(mycas)
 
     # mol = pyscf.M(
     #     atom = 'H 0 0 0; H 0 0 1.2',
@@ -1184,19 +1277,19 @@ if __name__ == '__main__':
     # mycas = NR_CASSCF(myhf,3,2,ncore=1)
     #
     # test_run(mycas)
-    #
-    mol = pyscf.M(
-        atom = 'H 0 0 0; He 0 0 1.05',
-        basis = '6-31g',
-        charge = -1
-        )
-    myhf = mol.RHF().run()
-    mycas = NR_CASSCF(myhf,3,2,ncore=1)
-    mat = np.identity(mycas.nDet)
-    mat[:2,:2] = [[1/np.sqrt(2),1/np.sqrt(2)],[1/np.sqrt(2),-1/np.sqrt(2)]]
-    mycas = NR_CASSCF(myhf,3,2,ncore=1,initCI=mat)
 
-    test_run(mycas)
+    # mol = pyscf.M(
+    #     atom = 'H 0 0 0; He 0 0 1.05',
+    #     basis = '6-31g',
+    #     charge = -1
+    #     )
+    # myhf = mol.RHF().run()
+    # mycas = NR_CASSCF(myhf,3,2,ncore=1)
+    # mat = np.identity(mycas.nDet)
+    # mat[:2,:2] = [[1/np.sqrt(2),1/np.sqrt(2)],[1/np.sqrt(2),-1/np.sqrt(2)]]
+    # mycas = NR_CASSCF(myhf,3,2,ncore=1,initCI=mat)
+    #
+    # test_run(mycas)
 
 
 
