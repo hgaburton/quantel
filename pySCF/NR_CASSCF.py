@@ -17,13 +17,17 @@ from pyscf.mcscf import casci
 from pyscf import fci
 from pyscf.fci import spin_op
 
-# sys.stdout = open('/home/antoinem/PLR1/pyscf/results.txt', "w")
+sys.stdout = open('/home/antoinem/PLR1/pyscf/results.txt', "w")
 
 def kernel(self):
     print("Initialization of the Newton-Raphson loop")
-    mycas.initMO # We initialize the quantities that need it
-    mycas.initCI
-    mycas.initHeff
+    self.initMO # We initialize the quantities that need it
+    self.initCI
+
+    self.initializeMO()
+    self.initializeCI()
+
+    self.initHeff
 
     mycas.check_sanity() # Check that the definition of the CAS by the user is sane
 
@@ -32,17 +36,16 @@ def kernel(self):
     step = 0
     conv = 1
 
-    print("Start of the iteration")
+    print("Start of the iterative loop \n")
+
+    dm1_cas, dm2_cas = self.get_CASRDM_12(self.mat_CI[:,0])
+
+    dm1 = self.CASRDM1_to_RDM1(dm1_cas)
+    dm2 = self.CASRDM2_to_RDM2(dm1_cas,dm2_cas)
 
     while conv > self.conv_threshold and step < self.max_iterations:
-        print("Iteration ", step)
 
         # Compute gradient and Hessian
-        dm1_cas, dm2_cas = self.get_CASRDM_12(self.mat_CI[:,0])
-
-        dm1 = self.CASRDM1_to_RDM1(dm1_cas)
-        dm2 = self.CASRDM2_to_RDM2(dm1_cas,dm2_cas)
-
         g_orb = self.get_gradOrb(dm1_cas, dm2_cas)
         g_ci = self.get_gradCI()
         g = self.form_grad(g_orb,g_ci)
@@ -52,7 +55,7 @@ def kernel(self):
         H = self.get_hessian()
 
         # Update rotation parameters
-        NR = -0.5*np.dot(scipy.linalg.inv(H),g)
+        NR = -1*np.dot(scipy.linalg.pinv(H),g)
 
         NR_Orb = NR[:nIndepRot]
         NR_Orb = self.unpack_uniq_var(NR_Orb)
@@ -63,10 +66,9 @@ def kernel(self):
             for i in range(self.nDet):
                 for j in range(self.nDet):
                     S[i,j] += NR_CI[k-1]*(self.mat_CI[i,k]*self.mat_CI[j,0] - self.mat_CI[j,k]*self.mat_CI[i,0])
-        NR_CI = S
 
         self.mo_coeff = self.rotateOrb(NR_Orb)
-        self.mat_CI = self.rotateCI(NR_CI)
+        self.mat_CI = self.rotateCI(S)
 
         # print("This is the updated mo_coeff", self.mo_coeff)
         # print("This is the updated mat_CI", self.mat_CI)
@@ -79,29 +81,63 @@ def kernel(self):
         self.h2eff = self.get_h2eff(self.mo_coeff)
         self.h2eff = ao2mo.restore(1,self.h2eff,self.ncas)
         dm1_cas, dm2_cas = self.get_CASRDM_12(self.mat_CI[:,0])
+        dm1 = self.CASRDM1_to_RDM1(dm1_cas)
+        dm2 = self.CASRDM2_to_RDM2(dm1_cas,dm2_cas)
 
         # print("This is the updated dm1_cas", dm1_cas)
         # print("This is the updated dm2_cas", dm2_cas)
 
-        nrj = self.get_energy(self.h1e, self.eri, dm1_cas, dm2_cas)
-        print("This is the updated nrj", nrj + enuc)
-        nrj = self.get_energy_cas(self.h1eff, self.h2eff, dm1_cas, dm2_cas)
-        print("This is the updated nrj", nrj + enuc + self.energy_core)
+        # nrj = self.get_energy(self.h1e, self.eri, dm1_cas, dm2_cas)
+        # print("This is the updated nrj", nrj + enuc)
+        # nrj = self.get_energy_cas(self.h1eff, self.h2eff, dm1_cas, dm2_cas)
+        # # print("This is the updated nrj", nrj + enuc + self.energy_core)
 
-        conv = np.max(g)
-        print("At this iteration the convergence is ", conv)
+        conv = np.max(np.abs(g))
+        # print("At this iteration the convergence is ", conv)
+
         step += 1
 
-    print("The squared spin value of the wave function is ", self.spin_square(self.mat_CI[:,0]))
+    self.conv = conv
+    self.nb_it = step
 
+    if step==self.max_iterations:
+        print("The Newton-Raphson has not converged!!!")
+        return
+
+    else:
+        print("The Newton-Raphson has converged in ", step, " steps.\n")
+
+    if self.ncore==0:
+        nrj = self.get_energy_cas(self.h1eff, self.h2eff, dm1_cas, dm2_cas)
+        print("The energy at convergence is", nrj + enuc)
+        self.e_tot = nrj + enuc
+    else:
+        nrj = self.get_energy_cas(self.h1eff, self.h2eff, dm1_cas, dm2_cas)
+        print("This is the nrj", nrj + enuc + self.energy_core)
+        self.e_tot = nrj + enuc + self.energy_core
+
+    print("This is the MO coefficients at convergence\n")
+    matprint(self.mo_coeff)
+    print("")
+    print("This is the CI coefficients at convergence\n")
+    matprint(self.mat_CI)
+    print("")
+    print("\This is the CAS DM1 at convergence\n")
+    matprint(dm1_cas)
+    print("")
+    # print("This is the trace of the 1 cas dm", np.trace(dm1_cas))
+
+    spin, mul = self.spin_square(self.mat_CI[:,0])
+    print("The squared spin value of the wave function is ", spin, " and its associated multiplicity is ", mul, ".\n")
     return
 
-def ternary(n,length):
+def grid_point(nb_point, n, length):
+    ''' This function compute the decomposition of a number n in the nb_point basis. For example if nb_point=2, it gives the binary decomposition. This is used to build the grid. '''
     if n == 0:
-        return '0'
+        return np.zeros((length))
     nums = []
     while n:
-        n, r = divmod(n, 3)
+        n, r = divmod(n, nb_point)
         nums.append(r)
     while len(nums)<length:
         nums.append(0)
@@ -111,29 +147,48 @@ def ternary(n,length):
 def grid_search(self):
     ''' This function runs the Newton-Raphson algorithm for a grid of starting point '''
 
+    print("Start of the grid calculation\n")
+
+    print("The initial MOs are\n")
+    matprint(self.mo_coeff)
+    print("")
+    print("The initial CI coefficients are\n")
+    matprint(self.mat_CI)
+    print("")
+
+    nb_point = 3
+    Nb_CI_point = nb_point**(self.nDet - 1) # Number of CI points on the grid
+    Nb_orb_point = int(nb_point**(0.5*self.norb*(self.norb-1))) # Number of orbitals points on the grid
+
+    print("There are ", nb_point, " points per rotation elements")
+    print("This gives ", Nb_CI_point, " CI points and ",Nb_orb_point, " orbital points.\n")
+
+    iterator = 0
+
     # Grid loop
-    for orb_gridpoint in range(NBORBINDEP**2):
-        tmp_orb = ternary(i)
-        K = np.zeros((NBORBINDEP, NBORBINDEP))
-        K[np.triu_indices(NBORBINDEP, 1)] = (np.pi/2)*tmp_orb
-        for ci_gridpoint in range(NBCIINDEP**2):
-            tmp_ci = ternary(i)
-            S = np.zeros((NBCIINDEP, NBCIINDEP))
-            S[np.triu_indices(NBCIINDEP, 1)] = (np.pi/2)*tmp_ci
+    for orb_gridpoint in range(Nb_orb_point):
+        index_orb = grid_point(nb_point, orb_gridpoint, int(0.5*self.norb*(self.norb-1)))
+        K = np.zeros((self.norb, self.norb))
+        K[np.triu_indices(self.norb, 1)] = index_orb
+        K = np.asarray(K - K.T)*0.5*np.pi # Create the rotation associated to index_orb
+        K = self.rotateOrb(K) # Rotate the mo coeff
 
+        for ci_gridpoint in range(Nb_CI_point):
+            index_ci = grid_point(nb_point, ci_gridpoint, (self.nDet - 1))
+            S = np.zeros((self.nDet, self.nDet))
+            S[0,1:] = index_ci
+            S = np.asarray(S - S.T)*(1/nb_point)*np.pi #Create the rotation associated to index_ci
+            S = self.rotateCI(S) # Rotate the ci coeff
+            iterator += 1
 
-    # Run the calculations
-    mycas = NR_CASSCF(myhf,2,2,initCI=mat)
-    mycas.kernel()
+            # Run the calculations
+            print("Start the Newton-Raphson calcualtion number ", iterator, ".\n")
+            print("The mo coefficients are rotated by ", index_orb, " and the CI coefficients are rotated by ", index_ci, ".\n")
+            tmp_cas = NR_CASSCF(self._scf,self.ncas,self.nelecas,ncore=self.ncore,initMO=K,initCI=S,frozen=self.frozen)
+            tmp_cas.kernel()
 
-    #Compare results and store if needed
-
-    #Print the results
-
+            print("This solution has an index equal to ",tmp_cas.get_index(), ".\n")
     return
-
-
-
 
 ##### Definition of the class #####
 
@@ -159,7 +214,7 @@ class NR_CASSCF(lib.StreamObject):
 
     ''' #TODO Write the documentation
 
-    def __init__(self,myhf_or_mol,ncas,nelecas,ncore=None,initMO=None,initCI=None,frozen=None): #TODO Initialize the argument and the attributes
+    def __init__(self,myhf_or_mol,ncas,nelecas,ncore=None,initMO = None, initCI = None,frozen=None):
         ''' The init method is ran when an instance of the class is created to initialize all the args, kwargs and attributes
         '''
         if isinstance(myhf_or_mol, gto.Mole):   # Check if the arg is an HF object or a molecule object
@@ -180,7 +235,7 @@ class NR_CASSCF(lib.StreamObject):
             neleca = nelecas - nelecb
             self.nelecas = (neleca, nelecb)     # Tuple of number of active electrons
         else:
-            self.nelecas = (nelecas[0],nelecas[1]).astype(int)
+            self.nelecas = np.asarray((nelecas[0],nelecas[1])).astype(int)
         self.v1e = mol.intor('int1e_nuc')       # Nuclear repulsion matrix elements
         self.t1e = mol.intor('int1e_kin')       # Kinetic energy matrix elements
         self.h1e_AO =  self.t1e + self.v1e      # 1-electron matrix elements in the AO basis
@@ -190,20 +245,25 @@ class NR_CASSCF(lib.StreamObject):
         self.nDet = (self.nDeta*self.nDetb).astype(int)
         self.eri_AO = mol.intor('int2e')        # ERI in the AO basis in the chemist notation
         self._ncore = ncore                     # Number of core orbitals
-        self._initMO = initMO                   # Initial MO coefficients
-        self._initCI = initCI                   # Initial CI coefficients
         self.frozen = frozen                    # Number of frozen orbitals
-        self.mo_coeff = None                    # MO coeff at this stage of the calculation
-        self.mat_CI = None                      # CI coeff at this stage of the calculation
-        self.h1e = None                         # 1-electron matrix elements in the MO basis
-        self.eri = None                         # ERI in the MO basis in the chemist notation
+
+        self._initMO = initMO
+        self._initCI = initCI
+
+        self.mo_coeff = None
+        self.mat_CI = None
+
         self.h1eff = None
         self.h2eff = None
 
         self.fcisolver = fci.direct_spin1.FCISolver(mol)
 
-        self.conv_threshold = 1e-06
+        self.conv_threshold = 1e-08
         self.max_iterations = 512
+
+        self.e_tot = None
+        self.conv = None
+        self.nb_it = None
 
     @property
     def ncore(self):
@@ -218,29 +278,51 @@ class NR_CASSCF(lib.StreamObject):
 
     @property
     def initMO(self):
-        ''' Initialize the MO coefficients and MO 1- and 2-electrons integrals matrix elements '''
         if self._initMO is None:
-            self.mo_coeff = self._scf.mo_coeff
-            self.h1e = np.einsum('ip,ij,jq->pq', self._scf.mo_coeff, self.h1e_AO, self._scf.mo_coeff) # We transform the 1-electron integrals to the MO basis
-            self.eri = np.asarray(mol.ao2mo(self._scf.mo_coeff)) # eri in the MO basis as super index matrix (ij|kl) with i>j and k>l VERIFY THIS LAST POINT
-            self.eri = ao2mo.restore(1, self.eri, self.norb) # eri in the MO basis with chemist notation
-            return self._scf.mo_coeff
-        else:
-            self.mo_coeff = initMO
-            self.h1e = np.einsum('ip,ij,jq->pq', self.mo_coeff, self.h1e_AO, self.mo_coeff) # We transform the 1-electron integrals to the MO basis
-            self.eri = np.asarray(mol.ao2mo(self.mo_coeff)) # eri in the MO basis as super index matrix (ij|kl) with i>j and k>l VERIFY THIS LAST POINT
-            self.eri = ao2mo.restore(1, self.eri, norb) # eri in the MO basis with chemist notation
+            self._initMO = self._scf.mo_coeff
+            return
+        else :
             return self._initMO
 
-    @property #TODO add an option to initialize as a full CASCI diagonalization instead of a diagonal of 1
+    @property
     def initCI(self):
-        ''' Initialize the CI coefficients '''
         if self._initCI is None:
-            self.mat_CI = np.identity(self.nDet, dtype="float")
-            return np.identity(self.nDet, dtype="float")
+            self._initCI = np.identity(self.nDet, dtype="float")
+            return
         else:
-            self.mat_CI = self._initCI
             return self._initCI
+
+    # @property
+    # def mo_coeff(self):
+    #     return self.mo_coeff
+    #
+    # @mo_coeff.setter
+    # def mo_coeff(self,value):
+    #     self.mo_coeff = value
+
+
+    # @mo_coeff.setter
+    # def mo_coeff(self):
+    #     if self.mo_coeff is None:
+    #         self.mo_coeff = self._scf.mo_coeff
+    #         self.h1e = np.einsum('ip,ij,jq->pq', self._scf.mo_coeff, self.h1e_AO, self._scf.mo_coeff) # We transform the 1-electron integrals to the MO basis
+    #         self.eri = np.asarray(mol.ao2mo(self._scf.mo_coeff)) # eri in the MO basis as super index matrix (ij|kl) with i>j and k>l VERIFY THIS LAST POINT
+    #         self.eri = ao2mo.restore(1, self.eri, self.norb) # eri in the MO basis with chemist notation
+
+    # @property
+    # def mat_CI(self, value):
+    #     if self.mat_CI is None:
+    #         self.mat_CI = np.identity(self.nDet, dtype="float")
+
+    def initializeMO(self):
+        self.mo_coeff = self._initMO
+        self.h1e = np.einsum('ip,ij,jq->pq', self._initMO, self.h1e_AO, self._initMO) # We transform the 1-electron integrals to the MO basis
+        self.eri = np.asarray(mol.ao2mo(self._initMO)) # eri in the MO basis as super index matrix (ij|kl) with i>j and k>l VERIFY THIS LAST POINT
+        self.eri = ao2mo.restore(1, self.eri, self.norb) # eri in the MO basis with chemist notation
+
+    def initializeCI(self):
+        self.mat_CI = self._initCI
+
 
     @property
     def initHeff(self):
@@ -810,10 +892,8 @@ class NR_CASSCF(lib.StreamObject):
         mo = np.dot(self.mo_coeff, scipy.linalg.expm(K))
         return mo
 
-    def rotateCI(self,S): #TODO check the renormalization ?
+    def rotateCI(self,S):
         ci = np.dot(scipy.linalg.expm(S),self.mat_CI)
-        # We need to renormalize the CI states
-        # ci = ci/np.dot(ci[:,0], ci[:,0].T)
         return ci
 
     def numericalGrad(self):
@@ -829,7 +909,7 @@ class NR_CASSCF(lib.StreamObject):
                 K[q,p] = -epsilon
                 mo_coeff = self.rotateOrb(K)
                 h1eUpdate = np.einsum('ip,ij,jq->pq', mo_coeff, self.h1e_AO, mo_coeff)
-                eriUpdate = np.asarray(mol.(mo_coeff))
+                eriUpdate = np.asarray(mol.ao2mo(mo_coeff))
                 eriUpdate = ao2mo.restore(1, eriUpdate, self.norb) # eri in the MO basis with chemist notation
                 eUpdate = self.get_energy(h1eUpdate, eriUpdate, dm1_cas, dm2_cas)
                 g_orb[p,q] = (eUpdate - e0)/epsilon
@@ -1028,11 +1108,29 @@ class NR_CASSCF(lib.StreamObject):
         return E
 
     def spin_square(self,fcivec):
-        return self.fcisolver.spin_square(fcivec,self.norb,self.nelec)
+        return self.fcisolver.spin_square(fcivec,self.ncas,self.nelecas)
+
+    def get_index(self):
+        hess = self.get_hessian()
+
+        matprint(hess)
+
+        eigenvalue = scipy.linalg.eigvals(hess)
+
+        eigenvalue = np.around(eigenvalue,7)
+
+        eigenvalue = [ev for ev in eigenvalue if ev < 0]
+
+        index = len(eigenvalue)
+
+        return index
 
     def kernel(self):
         ''' This method runs the iterative Newton-Raphson loop '''
         return kernel(self)
+
+    def grid_search(self):
+        return grid_search(self)
 
 
 ##### Main #####
@@ -1059,15 +1157,18 @@ if __name__ == '__main__':
         # print("The MOs haven't been initialized",mycas.mo_coeff)
         mycas.initMO
         print("InitMO")
-        matprint(mycas.initMO)
+        #matprint(mycas.initMO)
         print("")
         # print("The MOs are now equal to their init value")
         # matprint(mycas.mo_coeff)
         mycas.initCI
         print("InitCI")
-        matprint(mycas.initCI)
+        #matprint(mycas._initCI)
         print("")
         # print("The CI matrix is now equal to its init value",mycas.mat_CI)
+
+        mycas.initializeMO()
+        mycas.initializeCI()
 
         mycas.check_sanity()
 
@@ -1152,11 +1253,11 @@ if __name__ == '__main__':
         print("Is the numerical gradient equal to the algebraic one?", np.allclose(AlgGrad,NumGrad,atol=1e-06))
         print("")
 
-        g_orbGen = mycas.get_gradOrbOK(dm1_cas, dm2_cas)
-        GenGrad = mycas.form_grad(g_orbGen,g_ci)
-        print("All elements taken into account gradient")
-        matprint(GenGrad)
-        print("Is the numerical gradient equal to the general one?", np.allclose(GenGrad,NumGrad,atol=1e-06))
+        # g_orbGen = mycas.get_gradOrbOK(dm1_cas, dm2_cas)
+        # GenGrad = mycas.form_grad(g_orbGen,g_ci)
+        # print("All elements taken into account gradient")
+        # matprint(GenGrad)
+        # print("Is the numerical gradient equal to the general one?", np.allclose(GenGrad,NumGrad,atol=1e-06))
 
         # print("Own hamiltonian")
         # matprint(mycas.get_hamiltonian())
@@ -1212,38 +1313,40 @@ if __name__ == '__main__':
         # print("This is the Hessian")
         # matprint(mycas.get_hessian())
 
-        mycas.kernel()
+        # mycas.kernel()
+
+        grid_search(mycas)
 
         return
 
-    # mol = pyscf.M(
-    #     atom = 'H 0 0 0; H 0 0 1.05',
-    #     basis = 'sto-3g')
-    # myhf = mol.RHF().run()
-    # mycas = NR_CASSCF(myhf,2,2)
-    #
-    # test_run(mycas)
-    #
-    # mol = pyscf.M(
-    #     atom = 'H 0 0 0; H 0 0 1.05',
-    #     basis = 'sto-3g')
-    # myhf = mol.RHF().run()
-    # mat = np.asarray([[1/np.sqrt(2),1/np.sqrt(2),0,0],[1/np.sqrt(2),-1/np.sqrt(2),0,0],[0,0,1,0],[0,0,0,1]])
-    # mycas = NR_CASSCF(myhf,2,2,initCI=mat)
-    #
-    # test_run(mycas)
-
     mol = pyscf.M(
-        atom = 'H 0 0 0; H 0 0 1.05',
+        atom = 'H 0 0 0; H 0 0 10',
         basis = 'sto-3g')
     myhf = mol.RHF().run()
-    mat = np.asarray([[0,0,0,1],[0,1,0,0],[0,0,1,0],[1,0,0,0]])
-    mycas = NR_CASSCF(myhf,2,2,initCI=mat)
+    mycas = NR_CASSCF(myhf,2,2)
 
     test_run(mycas)
 
     # mol = pyscf.M(
-    #     atom = 'H 0 0 0; H 0 0 1.2',
+    #     atom = 'H 0 0 0; H 0 0 1.05',
+    #     basis = 'sto-3g')
+    # myhf = mol.RHF().run()
+    # mat = np.asarray([[1/np.sqrt(2),1/np.sqrt(2),0,0],[1/np.sqrt(2),-1/np.sqrt(2),0,0],[0,0,1,0],[0,0,0,1]])
+    # mycas = NR_CASSCF(myhf,2,2,initCI=mat)
+    #
+    # test_run(mycas)
+
+    # mol = pyscf.M(
+    #     atom = 'H 0 0 0; H 0 0 1.05',
+    #     basis = 'sto-3g')
+    # myhf = mol.RHF().run()
+    # mat = np.asarray([[0,0,0,1],[0,1,0,0],[0,0,1,0],[1,0,0,0]])
+    # mycas = NR_CASSCF(myhf,2,2,initCI=mat)
+    #
+    # test_run(mycas)
+
+    # mol = pyscf.M(
+    #     atom = 'H 0 0 0; H 0 0 1.05836',
     #     basis = '6-31g')
     # myhf = mol.RHF().run()
     # mycas = NR_CASSCF(myhf,2,2)
@@ -1260,11 +1363,11 @@ if __name__ == '__main__':
     # test_run(mycas)
 
     # mol = pyscf.M(
-    #     atom = 'Be 0 0 0',
-    #     basis = 'sto-3g')
+    #     atom = 'Li 0 0 0',
+    #     basis = 'sto-3g',
+    #     charge = -1)
     # myhf = mol.RHF().run()
-    # mycas = NR_CASSCF(myhf,4,2,ncore=1)
-    # print(mycas.norb,mycas.nelec)
+    # mycas = NR_CASSCF(myhf,2,2,ncore=1)
     #
     # test_run(mycas)
 
