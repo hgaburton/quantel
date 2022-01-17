@@ -6,6 +6,7 @@ from functools import reduce
 import numpy as np
 import scipy.linalg
 import re
+import datetime
 import pyscf
 from pyscf import gto
 from pyscf import scf
@@ -18,6 +19,8 @@ from pyscf import fci
 from pyscf.fci import spin_op
 
 def kernel(self):
+    kernel_start_time = datetime.datetime.now() # Save initial time
+
     print("Initialization of the Newton-Raphson loop")
     self.initMO # We initialize the quantities that need it
     self.initCI
@@ -105,6 +108,10 @@ def kernel(self):
     else:
         print("The Newton-Raphson has converged in ", step, " steps.\n")
 
+    kernel_end_time = datetime.datetime.now() # Save end time
+    computation_time = kernel_end_time - kernel_start_time
+    print("This NR loop took ", computation_time.total_seconds(), " seconds")
+
     if self.ncore==0:
         nrj = self.get_energy_cas(self.h1eff, self.h2eff, dm1_cas, dm2_cas)
         print("The energy at convergence is ", nrj + enuc, "\n")
@@ -144,6 +151,8 @@ def grid_point(nb_point, n, length):
 
 def grid_search(self):
     ''' This function runs the Newton-Raphson algorithm for a grid of starting point '''
+    grid_start_time = datetime.datetime.now() # Save initial time
+
     self.initMO # We initialize the quantities that need it
     self.initCI
     self.initializeMO()
@@ -175,25 +184,31 @@ def grid_search(self):
         index_orb = grid_point(nb_point, orb_gridpoint, int(0.5*self.norb*(self.norb-1)))
         K = np.zeros((self.norb, self.norb))
         K[np.triu_indices(self.norb, 1)] = index_orb
-        K = np.asarray(K - K.T)*0.5*np.pi # Create the rotation associated to index_orb
+        K = np.asarray(K - K.T)*(1/8)*np.pi # Create the rotation associated to index_orb
         K = self.rotateOrb(K) # Rotate the mo coeff
 
         for ci_gridpoint in range(Nb_CI_point):
             index_ci = grid_point(nb_point, ci_gridpoint, (self.nDet - 1))
             S = np.zeros((self.nDet, self.nDet))
             S[0,1:] = index_ci
-            S = np.asarray(S - S.T)*(1/nb_point)*np.pi #Create the rotation associated to index_ci
+            S = np.asarray(S - S.T)*(1/nb_point)*(1/8)*np.pi #Create the rotation associated to index_ci
             S = self.rotateCI(S) # Rotate the ci coeff
             iterator += 1
 
             # Run the calculations
-            print("Start the Newton-Raphson calcualtion number", iterator, ".\n")
+            print("Start the Newton-Raphson calculation number", iterator, ".\n")
             print("The mo coefficients are rotated by ", index_orb, " and the CI coefficients are rotated by ", index_ci, ".\n")
             tmp_cas = NR_CASSCF(self._scf,self.ncas,self.nelecas,ncore=self.ncore,initMO=K,initCI=S,frozen=self.frozen)
             tmp_cas.kernel()
 
             index_neg, index_pos, nb_zero = tmp_cas.get_index()
             print("The hessian of this solution has ", index_neg," negative eigenvalues, ", index_pos, " positive eigenvalues and ", nb_zero," zero eigenvalues.\n")
+
+    grid_end_time = datetime.datetime.now() # Save end time
+    computation_time = grid_end_time - grid_start_time
+    print("This grid calculation took ", computation_time.total_seconds(), " seconds")
+
+
     return
 
 ##### Definition of the class #####
@@ -1183,4 +1198,3 @@ if __name__ == '__main__':
     myhf = mol.RHF().run()
     mycas = NR_CASSCF(myhf,cas[0],cas[1])
     grid_search(mycas)
-
