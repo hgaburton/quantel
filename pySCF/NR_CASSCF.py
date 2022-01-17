@@ -2,10 +2,10 @@
 # Author: Antoine Marie
 
 import sys
-
 from functools import reduce
 import numpy as np
 import scipy.linalg
+import re
 import pyscf
 from pyscf import gto
 from pyscf import scf
@@ -16,8 +16,6 @@ from pyscf import mcscf
 from pyscf.mcscf import casci
 from pyscf import fci
 from pyscf.fci import spin_op
-
-sys.stdout = open('/home/antoinem/PLR1/pyscf/results.txt', "w")
 
 def kernel(self):
     print("Initialization of the Newton-Raphson loop")
@@ -109,11 +107,11 @@ def kernel(self):
 
     if self.ncore==0:
         nrj = self.get_energy_cas(self.h1eff, self.h2eff, dm1_cas, dm2_cas)
-        print("The energy at convergence is", nrj + enuc)
+        print("The energy at convergence is ", nrj + enuc, "\n")
         self.e_tot = nrj + enuc
     else:
         nrj = self.get_energy_cas(self.h1eff, self.h2eff, dm1_cas, dm2_cas)
-        print("This is the nrj", nrj + enuc + self.energy_core)
+        print("This energy at convergence is ", nrj + enuc + self.energy_core, "\n")
         self.e_tot = nrj + enuc + self.energy_core
 
     print("This is the MO coefficients at convergence\n")
@@ -122,7 +120,7 @@ def kernel(self):
     print("This is the CI coefficients at convergence\n")
     matprint(self.mat_CI)
     print("")
-    print("\This is the CAS DM1 at convergence\n")
+    print("This is the CAS DM1 at convergence\n")
     matprint(dm1_cas)
     print("")
     # print("This is the trace of the 1 cas dm", np.trace(dm1_cas))
@@ -146,6 +144,13 @@ def grid_point(nb_point, n, length):
 
 def grid_search(self):
     ''' This function runs the Newton-Raphson algorithm for a grid of starting point '''
+    self.initMO # We initialize the quantities that need it
+    self.initCI
+    self.initializeMO()
+    self.initializeCI()
+    self.initHeff
+
+    mycas.check_sanity() # Check that the definition of the CAS by the user is sane
 
     print("Start of the grid calculation\n")
 
@@ -182,12 +187,13 @@ def grid_search(self):
             iterator += 1
 
             # Run the calculations
-            print("Start the Newton-Raphson calcualtion number ", iterator, ".\n")
+            print("Start the Newton-Raphson calcualtion number", iterator, ".\n")
             print("The mo coefficients are rotated by ", index_orb, " and the CI coefficients are rotated by ", index_ci, ".\n")
             tmp_cas = NR_CASSCF(self._scf,self.ncas,self.nelecas,ncore=self.ncore,initMO=K,initCI=S,frozen=self.frozen)
             tmp_cas.kernel()
 
-            print("This solution has an index equal to ",tmp_cas.get_index(), ".\n")
+            index_neg, index_pos, nb_zero = tmp_cas.get_index()
+            print("The hessian of this solution has ", index_neg," negative eigenvalues, ", index_pos, " positive eigenvalues and ", nb_zero," zero eigenvalues.\n")
     return
 
 ##### Definition of the class #####
@@ -1113,17 +1119,18 @@ class NR_CASSCF(lib.StreamObject):
     def get_index(self):
         hess = self.get_hessian()
 
-        matprint(hess)
-
         eigenvalue = scipy.linalg.eigvals(hess)
 
-        eigenvalue = np.around(eigenvalue,7)
+        eigenvalue = np.around(eigenvalue.real,7)
 
-        eigenvalue = [ev for ev in eigenvalue if ev < 0]
+        eigenvalue_neg = [ev for ev in eigenvalue if ev < 0]
+        eigenvalue_pos = [ev for ev in eigenvalue if ev > 0]
 
-        index = len(eigenvalue)
+        index_neg = len(eigenvalue_neg)
+        index_pos = len(eigenvalue_pos)
+        nb_zero = len(eigenvalue) - index_neg - index_pos
 
-        return index
+        return index_neg, index_pos, nb_zero
 
     def kernel(self):
         ''' This method runs the iterative Newton-Raphson loop '''
@@ -1152,260 +1159,28 @@ if __name__ == '__main__':
         else:
             return 0
 
-    def test_run(mycas):
+    def read_config(file):
+        f = open(file,"r")
+        lines = f.read().splitlines()
+        basis, charge, spin, cas = 'sto-3g', 0, 0, (0,0)
+        for line in lines:
+            if re.match('basis', line) is not None:
+                basis = re.split(r'\s', line)[-1]
+            elif re.match('charge', line) is not None:
+                charge = int(re.split(r'\s', line)[-1])
+            elif re.match('spin', line) is not None:
+                spin = int(re.split(r'\s', line)[-1])
+            elif re.match('cas', line) is not None:
+                tmp = list(re.split(r'\s', line)[-1])
+                cas = (int(tmp[1]), int(tmp[3]))
+        return basis, charge, spin, cas
 
-        # print("The MOs haven't been initialized",mycas.mo_coeff)
-        mycas.initMO
-        print("InitMO")
-        #matprint(mycas.initMO)
-        print("")
-        # print("The MOs are now equal to their init value")
-        # matprint(mycas.mo_coeff)
-        mycas.initCI
-        print("InitCI")
-        #matprint(mycas._initCI)
-        print("")
-        # print("The CI matrix is now equal to its init value",mycas.mat_CI)
-
-        mycas.initializeMO()
-        mycas.initializeCI()
-
-        mycas.check_sanity()
-
-        # print("We compute the 4 init 1CASRDM corresponding to the four CI vectors in mycas.mat_CI")
-        # print(mycas.get_CASRDM_1(mycas.mat_CI[:,0]))
-        # print(mycas.get_CASRDM_1(mycas.mat_CI[:,1]))
-        # print(mycas.get_CASRDM_1(mycas.mat_CI[:,2]))
-        # print(mycas.get_CASRDM_1(mycas.mat_CI[:,3]))
-
-        print("SYMMETRY OF ERI")
-        mycas.check_symmetry(mycas.eri)
-
-        dm1_cas, dm2_cas = mycas.get_CASRDM_12(mycas.mat_CI[:,0])
-
-        print("SYMMETRY OF DM2 CAS")
-        mycas.check_symmetry(dm2_cas)
-
-        dm1 = mycas.CASRDM1_to_RDM1(dm1_cas)
-
-        dm2 = mycas.CASRDM2_to_RDM2(dm1_cas,dm2_cas)
-        print("SYMMETRY OF DM2")
-        mycas.check_symmetry(dm2)
-
-        # print(dm2_cas)
-
-        # print("One init 2CASRDM",dm2_cas)
-        # print("Transform the 1CASRDM to 1RDM", mycas.CASRDM1_to_RDM1(mycas.get_CASRDM_1(mycas.mat_CI[:,0])))
-        # print("2CASRDM transformed into 2RDM",mycas.CASRDM2_to_RDM2(dm1_cas, dm2_cas))
-
-        # t_dm1 = mycas.get_tCASRDM1(mycas.mat_CI[:,0],mycas.mat_CI[:,0])
-        # print("Two 1el transition density matrices",t_dm1)
-        # t_dm1 = mycas.get_tCASRDM1(mycas.mat_CI[:,0],mycas.mat_CI[:,1])
-        # print(t_dm1)
-        # t_dm1, t_dm2 = mycas.get_tCASRDM12(mycas.mat_CI[:,0],mycas.mat_CI[:,1])
-        # print("A 2TDM",t_dm2)
-
-        # print("SYMMETRY OF TDM2")
-        # mycas.check_symmetry(t_dm2)
-
-        # Initialize the active 1el and 2el matrix elements
-        mycas.initHeff
-
-        # h1eff, energy_core = mycas.h1e_for_cas()
-        # h2eff = mycas.get_h2eff()
-        # H_fci = mycas.fcisolver.pspace(h1eff, h2eff, mycas.ncas, mycas.nelecas, np=16)[1]
-        # print("This is the active space Hamiltonian matrix")
-        # matprint(H_fci)
-
-        F_core = mycas.get_F_core()
-        F_cas = mycas.get_F_cas(dm1_cas)
-        print("This is F core")
-        matprint(F_core)
-        print("This is F cas")
-        matprint(F_cas)
-
-        F = np.einsum('xq,qy->xy', dm1, mycas.h1e) + 2*np.einsum('xqrs,yqrs', dm2, mycas.eri)
-        print("This is F")
-        matprint(F)
-
-        g_orb = mycas.get_gradOrb(dm1_cas, dm2_cas)
-        print("Orbital gradient")
-        matprint(g_orb)
-        print("")
-
-        g_ci = mycas.get_gradCI()
-        # print("CI gradient")
-        # matprint(g_ci)
-        # print("")
-
-        print("Only pertinent rotation taken into account gradient")
-        AlgGrad = mycas.form_grad(g_orb,g_ci)
-        matprint(AlgGrad)
-        print("")
-
-        nindeporb = len(AlgGrad) - len(g_ci)
-
-        print('This is the numerical gradient')
-        NumGrad = mycas.numericalGrad()
-        matprint(NumGrad)
-        print("")
-
-        print("Is the numerical gradient equal to the algebraic one?", np.allclose(AlgGrad,NumGrad,atol=1e-06))
-        print("")
-
-        # g_orbGen = mycas.get_gradOrbOK(dm1_cas, dm2_cas)
-        # GenGrad = mycas.form_grad(g_orbGen,g_ci)
-        # print("All elements taken into account gradient")
-        # matprint(GenGrad)
-        # print("Is the numerical gradient equal to the general one?", np.allclose(GenGrad,NumGrad,atol=1e-06))
-
-        # print("Own hamiltonian")
-        # matprint(mycas.get_hamiltonian())
-        # print("True hamiltonian")
-        # matprint(mycas.fcisolver.pspace(mycas.h1eff, mycas.h2eff, mycas.ncas, mycas.nelecas, np=1000000)[1])
-
-        # print("This is the CICI hessian")
-        # # matprint(mycas.get_hessianCICI())
-        # print("")
-        #
-        # H_OO = mycas.get_hessianOrbOrb(dm1_cas,dm2_cas)
-        # print("This is the OrbOrb hessian", H_OO)
-        idx = mycas.uniq_var_indices(mycas.norb,mycas.frozen)
-        # print("This is the mask of uniq orbitals",idx)
-        # tmp = H_OO[:,:,idx]
-        # tmp = tmp[idx,:]
-        # print("This is the hessian of independant rotations",tmp)
-        #
-        # # print('This are the Hamiltonian commutators', mycas.get_hamiltonianComm())
-        # # print("This is the OrbCI hessian", mycas.get_hessianOrbCI())
-        # # print('This is the OrbCI hessian with unique orbital rotations', mycas.get_hessianOrbCI()[idx,:])
-        #
-        # print('This is the hessian')
-        # # matprint(mycas.get_hessian())
-        # print("")
-
-
-        # numOO, numCICI, numOCI = mycas.numericalHessian()
-        #
-        # print('This is the CICI numerical Hessian')
-        # matprint(numCICI)
-        # print("")
-        # print("This is the CICI hessian")
-        # CICI = mycas.get_hessianCICI()
-        # matprint(CICI)
-        # print("")
-        # print("Is the numerical CICI hessian equal to the general one?", np.allclose(numCICI,CICI,atol=1e-06))
-        #
-        # print('This is the orborb numerical Hessian')
-        # matprint(numOO)
-        # print('This is the orborb hessian')
-        # OO = mycas.get_hessian()[:nindeporb,:nindeporb]
-        # matprint(OO)
-        # print("Is the numerical OrbOrb hessian equal to the general one?", np.allclose(numOO,OO,atol=1e-06))
-        #
-        # print('This is the OrbCI numerical Hessian')
-        # matprint(numOCI)
-        # print('This is the OrbCI hessian with unique orbital rotations')
-        # OCI = mycas.get_hessianOrbCI()[idx,:]
-        # matprint(OCI)
-        # print("Is the numerical OrbCI hessian equal to the general one?", np.allclose(numOCI,OCI,atol=1e-06))
-        #
-        # print("This is the Hessian")
-        # matprint(mycas.get_hessian())
-
-        # mycas.kernel()
-
-        grid_search(mycas)
-
-        return
-
-    mol = pyscf.M(
-        atom = 'H 0 0 0; H 0 0 10',
-        basis = 'sto-3g')
+    mol = gto.M(atom=sys.argv[1])
+    basis, charge, spin, cas = read_config(sys.argv[2])
+    mol.basis = basis
+    mol.charge = charge
+    mol.spin = spin
     myhf = mol.RHF().run()
-    mycas = NR_CASSCF(myhf,2,2)
-
-    test_run(mycas)
-
-    # mol = pyscf.M(
-    #     atom = 'H 0 0 0; H 0 0 1.05',
-    #     basis = 'sto-3g')
-    # myhf = mol.RHF().run()
-    # mat = np.asarray([[1/np.sqrt(2),1/np.sqrt(2),0,0],[1/np.sqrt(2),-1/np.sqrt(2),0,0],[0,0,1,0],[0,0,0,1]])
-    # mycas = NR_CASSCF(myhf,2,2,initCI=mat)
-    #
-    # test_run(mycas)
-
-    # mol = pyscf.M(
-    #     atom = 'H 0 0 0; H 0 0 1.05',
-    #     basis = 'sto-3g')
-    # myhf = mol.RHF().run()
-    # mat = np.asarray([[0,0,0,1],[0,1,0,0],[0,0,1,0],[1,0,0,0]])
-    # mycas = NR_CASSCF(myhf,2,2,initCI=mat)
-    #
-    # test_run(mycas)
-
-    # mol = pyscf.M(
-    #     atom = 'H 0 0 0; H 0 0 1.05836',
-    #     basis = '6-31g')
-    # myhf = mol.RHF().run()
-    # mycas = NR_CASSCF(myhf,2,2)
-    #
-    # test_run(mycas)
-
-    # mol = pyscf.M(
-    #     atom = 'H 0 0 0; H 0 0 1.2',
-    #     basis = '6-31g')
-    # myhf = mol.RHF().run()
-    # mat = np.asarray([[1/np.sqrt(2),1/np.sqrt(2),0,0],[1/np.sqrt(2),-1/np.sqrt(2),0,0],[0,0,1,0],[0,0,0,1]])
-    # mycas = NR_CASSCF(myhf,2,2,initCI=mat)
-    #
-    # test_run(mycas)
-
-    # mol = pyscf.M(
-    #     atom = 'Li 0 0 0',
-    #     basis = 'sto-3g',
-    #     charge = -1)
-    # myhf = mol.RHF().run()
-    # mycas = NR_CASSCF(myhf,2,2,ncore=1)
-    #
-    # test_run(mycas)
-
-    # mol = pyscf.M(
-    #     atom = 'H 0 0 0; He 0 0 1.05',
-    #     basis = '6-31g',
-    #     charge = -1
-    #     )
-    # myhf = mol.RHF().run()
-    # mycas = NR_CASSCF(myhf,3,2,ncore=1)
-    #
-    # test_run(mycas)
-
-    # mol = pyscf.M(
-    #     atom = 'H 0 0 0; He 0 0 1.05',
-    #     basis = '6-31g',
-    #     charge = -1
-    #     )
-    # myhf = mol.RHF().run()
-    # mycas = NR_CASSCF(myhf,3,2,ncore=1)
-    # mat = np.identity(mycas.nDet)
-    # mat[:2,:2] = [[1/np.sqrt(2),1/np.sqrt(2)],[1/np.sqrt(2),-1/np.sqrt(2)]]
-    # mycas = NR_CASSCF(myhf,3,2,ncore=1,initCI=mat)
-    #
-    # test_run(mycas)
-
-
-
-    # In the two sto-3g cases, the orbital gradient is equal to zero. This is expected because the orbitals are determined by the symmetry of the system.
-    # In the first 6-31g case, the orbital gradient is equal to zero because the wave function is the ground state determinant. In the second case, the orbital gradient is non-zero.
-    # If we run several times this script we may obtain different results, i.e. the molecular orbitals of H2 are determined up to a sign.
-    # + -  is equivalent to - +
-    # + +                   + +
-    # It changes the sign of some terms of the orbital gradient.
-
-    # The CICI and OrbCI hessians are in agreement with their numerical counterpart. Still need to work on the OrbOrb part ...
-
-    # When OrbOrb will be fixed, I need to test the code with ncore>0.
-
-
+    mycas = NR_CASSCF(myhf,cas[0],cas[1])
+    grid_search(mycas)
 

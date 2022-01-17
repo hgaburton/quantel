@@ -11,7 +11,7 @@ def get_energy(file):
     nrj = []
     for line in lines:
         if re.match('The energy', line) is not None:
-            nrj.append(float((re.split(r'\s', line))[-1]))
+            nrj.append(float((re.split(r'\s', line))[-2]))
     return nrj
 
 def get_index(file):
@@ -19,8 +19,9 @@ def get_index(file):
     lines = f.read().splitlines()
     index = []
     for line in lines:
-        if re.match('This solution has an index', line) is not None:
-            index.append(float((re.split(r'\s', line))[-3]))
+        if re.match('The hessian of this', line) is not None:
+            tmp = (re.split(r'\s', line))
+            index.append((float(tmp[7]), float(tmp[12]), float(tmp[18])))
     return index
 
 def get_spin(file):
@@ -28,9 +29,9 @@ def get_spin(file):
     lines = f.read().splitlines()
     spin = []
     for line in lines:
-        if re.match(' The squared spin', line) is not None:
-            print((re.split(r'\s', line)))
-            spin.append(float((re.split(r'\s', line))[-1]))
+        if re.match('The squared spin', line) is not None:
+            tmp = (re.split(r'\s', line))
+            spin.append((np.around(float(tmp[10]),7), np.around(float(tmp[18]),7)))
     return spin
 
 def select_unique(list,tol=7):
@@ -53,7 +54,8 @@ if __name__ == '__main__':
     float_formatter = "{:.6f}".format
     np.set_printoptions(formatter={'float_kind':float_formatter})
 
-    tmp = np.concatenate((np.reshape(nrj,(len(nrj),1)),np.reshape(index,(len(index),1))),axis=1)
-    print(select_unique(tmp))
+    spin = get_spin(file)
 
-    print(get_spin(file))
+    tmp = np.concatenate((np.reshape(nrj,(len(nrj),1)),np.reshape(index,(len(index),3)),np.reshape(spin,(len(spin),2))),axis=1)
+    print(['NRJ','Nb pos','Nb neg','Nb zero','Spin','Mul'])
+    print(select_unique(tmp))
