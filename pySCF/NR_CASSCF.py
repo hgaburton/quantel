@@ -130,7 +130,19 @@ def kernel(self):
     print("This is the CAS DM1 at convergence\n")
     matprint(dm1_cas)
     print("")
-    # print("This is the trace of the 1 cas dm", np.trace(dm1_cas))
+
+    # Transformation to natural orbitals
+    if np.count_nonzero(np.around(dm1_cas - np.diag(np.diagonal(dm1_cas)),7)) > 0:
+        print("The density matrix is non-diagonal, transformation of the MO to natural orbitals")
+        eigenvalues, eigenvectors = scipy.linalg.eig(dm1)
+        print("This is the diagonalized CAS DM1 \n")
+        matprint(np.diag(eigenvalues))
+        print("")
+        nat_orb = np.dot(self.mo_coeff,eigenvectors)
+        nat_orb = np.dot(scipy.linalg.pinv(eigenvectors),nat_orb)
+        print("This is the natural orbitals \n")
+        matprint(nat_orb)
+        print("")
 
     spin, mul = self.spin_square(self.mat_CI[:,0])
     print("The squared spin value of the wave function is ", spin, " and its associated multiplicity is ", mul, ".\n")
@@ -170,9 +182,15 @@ def grid_search(self):
     matprint(self.mat_CI)
     print("")
 
+    ncore = self.ncore
+    ncas = self.ncas
+    nvir = self.norb - ncore - ncas
+
     nb_point = 3
     Nb_CI_point = nb_point**(self.nDet - 1) # Number of CI points on the grid
-    Nb_orb_point = int(nb_point**(0.5*self.norb*(self.norb-1))) # Number of orbitals points on the grid
+    Nb_indep_rot = ncore*ncas + ncore*nvir + ncas*nvir
+    Nb_rot = Nb_indep_rot + int(0.5*ncas*(ncas-1)) # We also consider the rotation within the active space for the grid
+    Nb_orb_point = int(nb_point**Nb_rot) # Number of orbitals points on the grid
 
     print("There are ", nb_point, " points per rotation elements")
     print("This gives ", Nb_CI_point, " CI points and ",Nb_orb_point, " orbital points.\n")
@@ -181,10 +199,15 @@ def grid_search(self):
 
     # Grid loop
     for orb_gridpoint in range(Nb_orb_point):
-        index_orb = grid_point(nb_point, orb_gridpoint, int(0.5*self.norb*(self.norb-1)))
-        K = np.zeros((self.norb, self.norb))
-        K[np.triu_indices(self.norb, 1)] = index_orb
-        K = np.asarray(K - K.T)*(1/8)*np.pi # Create the rotation associated to index_orb
+        index_orb = grid_point(nb_point, orb_gridpoint, Nb_rot)
+        K = self.unpack_uniq_var(index_orb[:Nb_indep_rot]) # Create the rotation associated to index_orb
+
+        Kcas = np.zeros((ncas,ncas))
+        Kcas[np.triu_indices(self.ncas, 1)] = index_orb[Nb_indep_rot:]
+        Kcas = Kcas - Kcas.T
+        K[ncore:ncore+ncas,ncore:ncore+ncas] = Kcas # Add the act-act part of the rotation
+
+        K = K*(1/8)*np.pi
         K = self.rotateOrb(K) # Rotate the mo coeff
 
         for ci_gridpoint in range(Nb_CI_point):
@@ -1180,7 +1203,7 @@ if __name__ == '__main__':
         basis, charge, spin, cas = 'sto-3g', 0, 0, (0,0)
         for line in lines:
             if re.match('basis', line) is not None:
-                basis = re.split(r'\s', line)[-1]
+                basis = str(re.split(r'\s', line)[-1])
             elif re.match('charge', line) is not None:
                 charge = int(re.split(r'\s', line)[-1])
             elif re.match('spin', line) is not None:
@@ -1195,6 +1218,7 @@ if __name__ == '__main__':
     mol.basis = basis
     mol.charge = charge
     mol.spin = spin
+    mol.build()
     myhf = mol.RHF().run()
     mycas = NR_CASSCF(myhf,cas[0],cas[1])
     grid_search(mycas)
