@@ -7,6 +7,7 @@ import numpy as np
 import scipy.linalg
 import re
 import datetime
+import random
 import pyscf
 from pyscf import gto
 from pyscf import scf
@@ -121,31 +122,44 @@ def kernel(self):
         print("This energy at convergence is ", nrj + enuc + self.energy_core, "\n")
         self.e_tot = nrj + enuc + self.energy_core
 
-    print("This is the MO coefficients at convergence\n")
-    matprint(self.mo_coeff)
-    print("")
     print("This is the CI coefficients at convergence\n")
     matprint(self.mat_CI)
-    print("")
-    print("This is the CAS DM1 at convergence\n")
-    matprint(dm1_cas)
     print("")
 
     # Transformation to natural orbitals
     if np.count_nonzero(np.around(dm1_cas - np.diag(np.diagonal(dm1_cas)),7)) > 0:
-        print("The density matrix is non-diagonal, transformation of the MO to natural orbitals")
+        print("The density matrix is non-diagonal, transformation of the MO to natural orbitals \n")
+
+        print("This is the undiagonalized CAS DM1 at convergence\n")
+        matprint(dm1_cas)
+        print("")
+        print("This is the MO coefficients at convergence\n")
+        matprint(self.mo_coeff)
+        print("")
+
         eigenvalues, eigenvectors = scipy.linalg.eig(dm1)
         print("This is the diagonalized CAS DM1 \n")
-        matprint(np.diag(eigenvalues))
+        matprint(np.diag(eigenvalues).real)
         print("")
         nat_orb = np.dot(self.mo_coeff,eigenvectors)
         nat_orb = np.dot(scipy.linalg.pinv(eigenvectors),nat_orb)
         print("This is the natural orbitals \n")
-        matprint(nat_orb)
+        matprint(nat_orb.real)
+        print("")
+    else:
+        print("The density matrix is already diagonal \n")
+        print("This is the diagonal CAS DM1 \n")
+        matprint(dm1_cas)
+        print("")
+        print("This is the natural orbitals \n")
+        matprint(self.mo_coeff)
         print("")
 
     spin, mul = self.spin_square(self.mat_CI[:,0])
     print("The squared spin value of the wave function is ", spin, " and its associated multiplicity is ", mul, ".\n")
+
+    index_neg, index_pos, nb_zero = self.get_index()
+    print("The hessian of this solution has ", index_neg," negative eigenvalues, ", index_pos, " positive eigenvalues and ", nb_zero," zero eigenvalues.\n")
     return
 
 def grid_point(nb_point, n, length):
@@ -161,7 +175,7 @@ def grid_point(nb_point, n, length):
     nums.reverse()
     return nums
 
-def grid_search(self):
+def grid_search(self, grid_option):
     ''' This function runs the Newton-Raphson algorithm for a grid of starting point '''
     grid_start_time = datetime.datetime.now() # Save initial time
 
@@ -173,7 +187,12 @@ def grid_search(self):
 
     mycas.check_sanity() # Check that the definition of the CAS by the user is sane
 
+    print("")
     print("Start of the grid calculation\n")
+
+    print("The molecule has ", self.nelec[0]+self.nelec[1], " electrons and the basis set is constituted of ", self.norb, " basis functions.")
+    print("The active space is a ", self.ncas, " orbitals and ", self.nelecas[0]+self.nelecas[1], " electrons active space.")
+    print("Therefore there is ", self.nDet, " determinants.")
 
     print("The initial MOs are\n")
     matprint(self.mo_coeff)
@@ -185,8 +204,10 @@ def grid_search(self):
     ncore = self.ncore
     ncas = self.ncas
     nvir = self.norb - ncore - ncas
-
     nb_point = 3
+
+    iterator = 0
+
     Nb_CI_point = nb_point**(self.nDet - 1) # Number of CI points on the grid
     Nb_indep_rot = ncore*ncas + ncore*nvir + ncas*nvir
     Nb_rot = Nb_indep_rot + int(0.5*ncas*(ncas-1)) # We also consider the rotation within the active space for the grid
@@ -195,28 +216,55 @@ def grid_search(self):
     print("There are ", nb_point, " points per rotation elements")
     print("This gives ", Nb_CI_point, " CI points and ",Nb_orb_point, " orbital points.\n")
 
-    iterator = 0
+    if grid_option == 'full':
+        print("Performing the whole grid search")
 
-    # Grid loop
-    for orb_gridpoint in range(Nb_orb_point):
-        index_orb = grid_point(nb_point, orb_gridpoint, Nb_rot)
-        K = self.unpack_uniq_var(index_orb[:Nb_indep_rot]) # Create the rotation associated to index_orb
+        # Grid loop
+        for orb_gridpoint in range(Nb_orb_point):
+            index_orb = grid_point(nb_point, orb_gridpoint, Nb_rot)
+            K = self.unpack_uniq_var(index_orb[:Nb_indep_rot]) # Create the rotation associated to index_orb
 
-        Kcas = np.zeros((ncas,ncas))
-        Kcas[np.triu_indices(self.ncas, 1)] = index_orb[Nb_indep_rot:]
-        Kcas = Kcas - Kcas.T
-        K[ncore:ncore+ncas,ncore:ncore+ncas] = Kcas # Add the act-act part of the rotation
+            Kcas = np.zeros((ncas,ncas))
+            Kcas[np.triu_indices(self.ncas, 1)] = index_orb[Nb_indep_rot:]
+            Kcas = Kcas - Kcas.T
+            K[ncore:ncore+ncas,ncore:ncore+ncas] = Kcas # Add the act-act part of the rotation
 
-        K = K*(1/8)*np.pi
-        K = self.rotateOrb(K) # Rotate the mo coeff
+            K = K*(1/8)*np.pi
+            K = self.rotateOrb(K) # Rotate the mo coeff
 
-        for ci_gridpoint in range(Nb_CI_point):
-            index_ci = grid_point(nb_point, ci_gridpoint, (self.nDet - 1))
+            for ci_gridpoint in range(Nb_CI_point):
+                index_ci = grid_point(nb_point, ci_gridpoint, (self.nDet - 1))
+                S = np.zeros((self.nDet, self.nDet))
+                S[0,1:] = index_ci
+                S = np.asarray(S - S.T)*(1/nb_point)*(1/8)*np.pi #Create the rotation associated to index_ci
+                S = self.rotateCI(S) # Rotate the ci coeff
+
+                # Run the calculations
+                print("Start the Newton-Raphson calculation number", iterator, ".\n")
+                print("The mo coefficients are rotated by ", index_orb, " and the CI coefficients are rotated by ", index_ci, ".\n")
+                tmp_cas = NR_CASSCF(self._scf,self.ncas,self.nelecas,ncore=self.ncore,initMO=K,initCI=S,frozen=self.frozen)
+                tmp_cas.kernel()
+
+    else:
+        print("Performing ", grid_option, " Newton-Raphson calculations starting from random points on the grid")
+
+        while iterator < grid_option:
+            index_orb = grid_point(nb_point, random.randint(0,Nb_orb_point-1), Nb_rot)
+            K = self.unpack_uniq_var(index_orb[:Nb_indep_rot]) # Create the rotation associated to index_orb
+
+            Kcas = np.zeros((ncas,ncas))
+            Kcas[np.triu_indices(self.ncas, 1)] = index_orb[Nb_indep_rot:]
+            Kcas = Kcas - Kcas.T
+            K[ncore:ncore+ncas,ncore:ncore+ncas] = Kcas # Add the act-act part of the rotation
+
+            K = K*(1/8)*np.pi
+            K = self.rotateOrb(K) # Rotate the mo coeff
+
+            index_ci = grid_point(nb_point, random.randint(0,Nb_CI_point-1), (self.nDet - 1))
             S = np.zeros((self.nDet, self.nDet))
             S[0,1:] = index_ci
             S = np.asarray(S - S.T)*(1/nb_point)*(1/8)*np.pi #Create the rotation associated to index_ci
             S = self.rotateCI(S) # Rotate the ci coeff
-            iterator += 1
 
             # Run the calculations
             print("Start the Newton-Raphson calculation number", iterator, ".\n")
@@ -224,8 +272,8 @@ def grid_search(self):
             tmp_cas = NR_CASSCF(self._scf,self.ncas,self.nelecas,ncore=self.ncore,initMO=K,initCI=S,frozen=self.frozen)
             tmp_cas.kernel()
 
-            index_neg, index_pos, nb_zero = tmp_cas.get_index()
-            print("The hessian of this solution has ", index_neg," negative eigenvalues, ", index_pos, " positive eigenvalues and ", nb_zero," zero eigenvalues.\n")
+            iterator += 1
+
 
     grid_end_time = datetime.datetime.now() # Save end time
     computation_time = grid_end_time - grid_start_time
@@ -1174,9 +1222,6 @@ class NR_CASSCF(lib.StreamObject):
         ''' This method runs the iterative Newton-Raphson loop '''
         return kernel(self)
 
-    def grid_search(self):
-        return grid_search(self)
-
 
 ##### Main #####
 if __name__ == '__main__':
@@ -1200,7 +1245,7 @@ if __name__ == '__main__':
     def read_config(file):
         f = open(file,"r")
         lines = f.read().splitlines()
-        basis, charge, spin, cas = 'sto-3g', 0, 0, (0,0)
+        basis, charge, spin, cas, grid_option = 'sto-3g', 0, 0, (0,0), 1000
         for line in lines:
             if re.match('basis', line) is not None:
                 basis = str(re.split(r'\s', line)[-1])
@@ -1211,14 +1256,20 @@ if __name__ == '__main__':
             elif re.match('cas', line) is not None:
                 tmp = list(re.split(r'\s', line)[-1])
                 cas = (int(tmp[1]), int(tmp[3]))
-        return basis, charge, spin, cas
+            elif re.match('grid', line) is not None:
+                if re.split(r'\s', line)[-1] == 'full':
+                    grid_option = re.split(r'\s', line)[-1]
+                else:
+                    grid_option = int(re.split(r'\s', line)[-1])
+        return basis, charge, spin, cas, grid_option
 
-    mol = gto.M(atom=sys.argv[1])
-    basis, charge, spin, cas = read_config(sys.argv[2])
+    mol = gto.Mole()
+    mol.atom = sys.argv[1]
+    basis, charge, spin, cas, grid_option = read_config(sys.argv[2])
     mol.basis = basis
     mol.charge = charge
     mol.spin = spin
     mol.build()
     myhf = mol.RHF().run()
     mycas = NR_CASSCF(myhf,cas[0],cas[1])
-    grid_search(mycas)
+    grid_search(mycas, grid_option)
