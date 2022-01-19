@@ -30,7 +30,7 @@ def kernel(self):
 
     self.initHeff
 
-    mycas.check_sanity() # Check that the definition of the CAS by the user is sane
+    self.check_sanity() # Check that the definition of the CAS by the user is sane
 
     enuc = self._scf.energy_nuc()
 
@@ -76,7 +76,7 @@ def kernel(self):
 
         # Update integrals and density matrices
         self.h1e = np.einsum('ip,ij,jq->pq', self.mo_coeff, self.h1e_AO, self.mo_coeff)
-        self.eri = np.asarray(mol.ao2mo(self.mo_coeff))
+        self.eri = np.asarray(self.mol.ao2mo(self.mo_coeff))
         self.eri = ao2mo.restore(1, self.eri, self.norb)
         self.h1eff, self.energy_core = self.h1e_for_cas(self.mo_coeff)
         self.h2eff = self.get_h2eff(self.mo_coeff)
@@ -122,13 +122,13 @@ def kernel(self):
         self.e_tot = nrj + enuc + self.energy_core
 
     print("This is the MO coefficients at convergence\n")
-    matprint(self.mo_coeff)
+    self.matprint(self.mo_coeff)
     print("")
     print("This is the CI coefficients at convergence\n")
-    matprint(self.mat_CI)
+    self.matprint(self.mat_CI)
     print("")
     print("This is the CAS DM1 at convergence\n")
-    matprint(dm1_cas)
+    self.matprint(dm1_cas)
     print("")
 
     # Transformation to natural orbitals
@@ -136,12 +136,12 @@ def kernel(self):
         print("The density matrix is non-diagonal, transformation of the MO to natural orbitals")
         eigenvalues, eigenvectors = scipy.linalg.eig(dm1)
         print("This is the diagonalized CAS DM1 \n")
-        matprint(np.diag(eigenvalues))
+        self.matprint(np.diag(eigenvalues))
         print("")
         nat_orb = np.dot(self.mo_coeff,eigenvectors)
         nat_orb = np.dot(scipy.linalg.pinv(eigenvectors),nat_orb)
         print("This is the natural orbitals \n")
-        matprint(nat_orb)
+        self.matprint(nat_orb)
         print("")
 
     spin, mul = self.spin_square(self.mat_CI[:,0])
@@ -171,15 +171,15 @@ def grid_search(self):
     self.initializeCI()
     self.initHeff
 
-    mycas.check_sanity() # Check that the definition of the CAS by the user is sane
+    self.check_sanity() # Check that the definition of the CAS by the user is sane
 
     print("Start of the grid calculation\n")
 
     print("The initial MOs are\n")
-    matprint(self.mo_coeff)
+    self.matprint(self.mo_coeff)
     print("")
     print("The initial CI coefficients are\n")
-    matprint(self.mat_CI)
+    self.matprint(self.mat_CI)
     print("")
 
     ncore = self.ncore
@@ -258,7 +258,7 @@ class NR_CASSCF(lib.StreamObject):
 
     ''' #TODO Write the documentation
 
-    def __init__(self,myhf_or_mol,ncas,nelecas,ncore=None,initMO = None, initCI = None,frozen=None):
+    def __init__(self,myhf_or_mol,ncas,nelecas,ncore=None,initMO = None, initCI = None,frozen=None,thresh=1e-8):
         ''' The init method is ran when an instance of the class is created to initialize all the args, kwargs and attributes
         '''
         if isinstance(myhf_or_mol, gto.Mole):   # Check if the arg is an HF object or a molecule object
@@ -302,7 +302,7 @@ class NR_CASSCF(lib.StreamObject):
 
         self.fcisolver = fci.direct_spin1.FCISolver(mol)
 
-        self.conv_threshold = 1e-08
+        self.conv_threshold = thresh
         self.max_iterations = 512
 
         self.e_tot = None
@@ -361,7 +361,7 @@ class NR_CASSCF(lib.StreamObject):
     def initializeMO(self):
         self.mo_coeff = self._initMO
         self.h1e = np.einsum('ip,ij,jq->pq', self._initMO, self.h1e_AO, self._initMO) # We transform the 1-electron integrals to the MO basis
-        self.eri = np.asarray(mol.ao2mo(self._initMO)) # eri in the MO basis as super index matrix (ij|kl) with i>j and k>l VERIFY THIS LAST POINT
+        self.eri = np.asarray(self.mol.ao2mo(self._initMO)) # eri in the MO basis as super index matrix (ij|kl) with i>j and k>l VERIFY THIS LAST POINT
         self.eri = ao2mo.restore(1, self.eri, self.norb) # eri in the MO basis with chemist notation
 
     def initializeCI(self):
@@ -499,7 +499,7 @@ class NR_CASSCF(lib.StreamObject):
             nDetb = scipy.special.comb(ncas,nelecas[1]).astype(int)
             ci2 = ci2.reshape((nDeta,nDetb)) #TODO be careful that the reshape is the inverse of the "unfolding" of the matrix vector
 
-        t_dm1_cas = mycas.fcisolver.trans_rdm1(ci1,ci2,ncas,nelecas)
+        t_dm1_cas = self.fcisolver.trans_rdm1(ci1,ci2,ncas,nelecas)
 
         return t_dm1_cas.T
 
@@ -515,7 +515,7 @@ class NR_CASSCF(lib.StreamObject):
             nDeta = scipy.special.comb(ncas,nelecas[0]).astype(int)
             nDetb = scipy.special.comb(ncas,nelecas[1]).astype(int)
             ci2 = ci2.reshape((nDeta,nDetb)) #TODO be careful that the reshape is the inverse of the "unfolding" of the matrix vector
-        t_dm1_cas, t_dm2_cas = mycas.fcisolver.trans_rdm12(ci1,ci2,ncas,nelecas)
+        t_dm1_cas, t_dm2_cas = self.fcisolver.trans_rdm12(ci1,ci2,ncas,nelecas)
 
         #t_dm2_cas = t_dm2_cas + np.einsum('pqrs->qpsr',t_dm2_cas) #TODO check this
 
@@ -541,34 +541,34 @@ class NR_CASSCF(lib.StreamObject):
         nocc = ncore + ncas
         dm2 = np.zeros((norb,norb,norb,norb))
         if transition is False:
-            dm1 = mycas.CASRDM1_to_RDM1(dm1_cas)
+            dm1 = self.CASRDM1_to_RDM1(dm1_cas)
             for i in range(ncore):
                 for j in range(ncore):
                     for p in range(ncore,ncore+ncas):
                         for q in range(ncore,ncore+ncas):
-                            dm2[i,j,p,q] = delta_kron(i,j)*dm1[p,q] - delta_kron(i,q)*delta_kron(j,p)
+                            dm2[i,j,p,q] = self.delta_kron(i,j)*dm1[p,q] - self.delta_kron(i,q)*self.delta_kron(j,p)
                             dm2[p,q,i,j] = dm2[i,j,p,q]
 
-                            dm2[p,i,j,q] = 2*delta_kron(i,p)*delta_kron(j,q) - 0.5*delta_kron(i,j)*dm1[p,q]
+                            dm2[p,i,j,q] = 2*self.delta_kron(i,p)*self.delta_kron(j,q) - 0.5*self.delta_kron(i,j)*dm1[p,q]
                             dm2[j,q,p,i] = dm2[p,i,j,q]
 
             for i in range(ncore):
                 for j in range(ncore):
                     for k in range(ncore):
                         for l in range(ncore):
-                            dm2[i,j,k,l] = 2*delta_kron(i,j)*delta_kron(k,l) - delta_kron(i,l)*delta_kron(j,k)
+                            dm2[i,j,k,l] = 2*self.delta_kron(i,j)*self.delta_kron(k,l) - self.delta_kron(i,l)*self.delta_kron(j,k)
 
         if transition is True:
-            dm1 = mycas.CASRDM1_to_RDM1(dm1_cas,True)
+            dm1 = self.CASRDM1_to_RDM1(dm1_cas,True)
             for i in range(ncore):
                 for j in range(ncore):
                     for p in range(ncore,ncore+ncas):
                         for q in range(ncore,ncore+ncas):
-                            dm2[i,j,p,q] = delta_kron(i,j)*dm1[p,q]
-                            dm2[p,q,i,j] = delta_kron(i,j)*dm1[q,p]
+                            dm2[i,j,p,q] = self.delta_kron(i,j)*dm1[p,q]
+                            dm2[p,q,i,j] = self.delta_kron(i,j)*dm1[q,p]
 
-                            dm2[p,i,j,q] = -0.5*delta_kron(i,j)*dm1[p,q]
-                            dm2[j,q,p,i] = -0.5*delta_kron(i,j)*dm1[q,p]
+                            dm2[p,i,j,q] = -0.5*self.delta_kron(i,j)*dm1[p,q]
+                            dm2[j,q,p,i] = -0.5*self.delta_kron(i,j)*dm1[q,p]
 
         # dm2 = 0.5*(dm2 + np.einsum("pqrs->qprs",dm2)) #According to QC and dynamics of excited states not sure about this
 
@@ -832,7 +832,7 @@ class NR_CASSCF(lib.StreamObject):
                 cleft = mat_CI[:,k]
                 for l in range(1,len(mat_CI)):
                     cright = mat_CI[:,l]
-                    hessian_CICI[k-1,l-1] = 2*np.einsum('i,ij,j',cleft, H_fci, cright) - 2*delta_kron(k,l)*e0
+                    hessian_CICI[k-1,l-1] = 2*np.einsum('i,ij,j',cleft, H_fci, cright) - 2*self.delta_kron(k,l)*e0
         return hessian_CICI
 
     def get_hamiltonianComm(self):
@@ -1050,7 +1050,7 @@ class NR_CASSCF(lib.StreamObject):
         # print(H_OrbOrb[idxidx])
         H_OrbOrb = H_OrbOrb[:,:,idx]
         H_OrbOrb = H_OrbOrb[idx,:]
-        matprint(H_OrbOrb)
+        self.matprint(H_OrbOrb)
 
         #CICIHessian
         H_CICI = np.zeros((self.nDet - 1,self.nDet - 1))
@@ -1177,11 +1177,13 @@ class NR_CASSCF(lib.StreamObject):
     def grid_search(self):
         return grid_search(self)
 
+    def delta_kron(self,i,j):
+        if i==j:
+            return 1
+        else:
+            return 0
 
-##### Main #####
-if __name__ == '__main__':
-
-    def matprint(mat, fmt="g"):
+    def matprint(self,mat, fmt="g"):
         if len(np.shape(np.asarray(mat)))==1:
             mat = mat.reshape(1,len(mat))
 
@@ -1191,11 +1193,12 @@ if __name__ == '__main__':
                 print(("{:"+str(col_maxes[i])+fmt+"}").format(y), end="  ")
             print("")
 
-    def delta_kron(i,j):
-        if i==j:
-            return 1
-        else:
-            return 0
+
+
+
+##### Main #####
+if __name__ == '__main__':
+
 
     def read_config(file):
         f = open(file,"r")
