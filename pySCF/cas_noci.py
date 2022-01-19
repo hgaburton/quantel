@@ -109,5 +109,8 @@ if __name__=='__main__':
                                np.eye(cas2.nDet))
     cas2.kernel()
 
-    print("Projecting CAS_2 into active space for CAS_1:\n")
-    print(cas_proj(cas1,cas2,metric))
+    print("Projecting CAS_2 into active space for CAS_1:")
+    projvec = cas_proj(cas1,cas2,metric)
+    print(projvec)
+
+    print("Total overlap = {:20.10f}".format(cas1.mat_CI[:,0].dot(projvec)))
