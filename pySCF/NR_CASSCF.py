@@ -18,6 +18,7 @@ from pyscf import mcscf
 from pyscf.mcscf import casci
 from pyscf import fci
 from pyscf.fci import spin_op
+from pyscf.lo import orth
 
 def kernel(self):
     kernel_start_time = datetime.datetime.now() # Save initial time
@@ -113,17 +114,24 @@ def kernel(self):
     computation_time = kernel_end_time - kernel_start_time
     print("This NR loop took ", computation_time.total_seconds(), " seconds")
 
-    if self.ncore==0:
-        nrj = self.get_energy_cas(self.h1eff, self.h2eff, dm1_cas, dm2_cas)
-        print("The energy at convergence is ", nrj + enuc, "\n")
-        self.e_tot = nrj + enuc
-    else:
-        nrj = self.get_energy_cas(self.h1eff, self.h2eff, dm1_cas, dm2_cas)
-        print("This energy at convergence is ", nrj + enuc + self.energy_core, "\n")
-        self.e_tot = nrj + enuc + self.energy_core
+    metric = mol.intor('int1e_ovlp')
+    orth_coeff = orth.orth_ao(self.mol, 'meta_lowdin', s=metric)
+    nonorthMO = np.dot(scipy.linalg.inv(np.dot(orth_coeff.conj().T, metric)),self.mo_coeff)
+    self.h1e = np.einsum('ip,ij,jq->pq', nonorthMO, self.h1e_AO, nonorthMO)
+    self.eri = np.asarray(self.mol.ao2mo(nonorthMO))
+    self.eri = ao2mo.restore(1, self.eri, self.norb)
+
+    self.mo_coeff = nonorthMO
+
+    nrj = self.get_energy(self.h1e, self.eri, dm1_cas, dm2_cas)
+    self.e_tot = nrj + enuc
+    print("The energy at convergence is ", self.e_tot, "\n")
 
     print("This is the CI coefficients at convergence\n")
     self.matprint(self.mat_CI)
+    print("")
+    print("This is the MO coefficients at convergence\n")
+    self.matprint(self.mo_coeff)
     print("")
 
     # Transformation to natural orbitals
@@ -206,7 +214,7 @@ def grid_search(self, grid_option):
     nvir = self.norb - ncore - ncas
     nb_point = 3
 
-    iterator = 0
+    iterator = 1
 
     Nb_CI_point = nb_point**(self.nDet - 1) # Number of CI points on the grid
     Nb_indep_rot = ncore*ncas + ncore*nvir + ncas*nvir
@@ -244,6 +252,7 @@ def grid_search(self, grid_option):
                 print("The mo coefficients are rotated by ", index_orb, " and the CI coefficients are rotated by ", index_ci, ".\n")
                 tmp_cas = NR_CASSCF(self._scf,self.ncas,self.nelecas,ncore=self.ncore,initMO=K,initCI=S,frozen=self.frozen)
                 tmp_cas.kernel()
+                iterator += 1
 
     else:
         print("Performing ", grid_option, " Newton-Raphson calculations starting from random points on the grid")
@@ -371,7 +380,10 @@ class NR_CASSCF(lib.StreamObject):
     @property
     def initMO(self):
         if self._initMO is None:
-            self._initMO = self._scf.mo_coeff
+            metric = mol.intor('int1e_ovlp')
+            orth_coeff = orth.orth_ao(self.mol, 'meta_lowdin', s=metric)
+            c = reduce(np.dot, (orth_coeff.conj().T, metric, self._scf.mo_coeff))
+            self._initMO = c
             return
         else :
             return self._initMO
