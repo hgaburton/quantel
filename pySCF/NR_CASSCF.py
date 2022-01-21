@@ -114,15 +114,6 @@ def kernel(self):
     computation_time = kernel_end_time - kernel_start_time
     print("This NR loop took ", computation_time.total_seconds(), " seconds")
 
-    metric = mol.intor('int1e_ovlp')
-    orth_coeff = orth.orth_ao(self.mol, 'meta_lowdin', s=metric)
-    nonorthMO = np.dot(scipy.linalg.inv(np.dot(orth_coeff.conj().T, metric)),self.mo_coeff)
-    self.h1e = np.einsum('ip,ij,jq->pq', nonorthMO, self.h1e_AO, nonorthMO)
-    self.eri = np.asarray(self.mol.ao2mo(nonorthMO))
-    self.eri = ao2mo.restore(1, self.eri, self.norb)
-
-    self.mo_coeff = nonorthMO
-
     nrj = self.get_energy(self.h1e, self.eri, dm1_cas, dm2_cas)
     self.e_tot = nrj + enuc
     print("The energy at convergence is ", self.e_tot, "\n")
@@ -146,7 +137,7 @@ def kernel(self):
         print("")
 
         eigenvalues, eigenvectors = scipy.linalg.eig(dm1)
-        print("This is the diagonalized CAS DM1 \n")
+        print("This is the diagonalized DM1 \n")
         self.matprint(np.diag(eigenvalues).real)
         print("")
         nat_orb = np.dot(self.mo_coeff,eigenvectors)
@@ -380,10 +371,7 @@ class NR_CASSCF(lib.StreamObject):
     @property
     def initMO(self):
         if self._initMO is None:
-            metric = mol.intor('int1e_ovlp')
-            orth_coeff = orth.orth_ao(self.mol, 'meta_lowdin', s=metric)
-            c = reduce(np.dot, (orth_coeff.conj().T, metric, self._scf.mo_coeff))
-            self._initMO = c
+            self._initMO = self._scf.mo_coeff
             return
         else :
             return self._initMO
