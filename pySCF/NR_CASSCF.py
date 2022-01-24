@@ -217,7 +217,9 @@ def grid_search(self, grid_option):
 
     Nb_CI_point = nb_point**(self.nDet - 1) # Number of CI points on the grid
     Nb_indep_rot = (ncore-self.frozen)*ncas + (ncore-self.frozen)*nvir + ncas*nvir
-    Nb_rot = Nb_indep_rot + int(0.5*ncas*(ncas-1)) # We also consider the rotation within the active space for the grid
+    Nb_frozen_rot = self.frozen*(ncas + nvir)
+    Nb_actact_rot = int(0.5*ncas*(ncas-1))
+    Nb_rot = Nb_indep_rot + Nb_actact_rot + Nb_frozen_rot # We also consider the rotation within the active space for the grid
     Nb_orb_point = int(nb_point**Nb_rot) # Number of orbitals points on the grid
 
     print("There are ", nb_point, " points per rotation elements")
@@ -232,9 +234,12 @@ def grid_search(self, grid_option):
             K = self.unpack_uniq_var(index_orb[:Nb_indep_rot]) # Create the rotation associated to index_orb
 
             Kcas = np.zeros((ncas,ncas))
-            Kcas[np.triu_indices(self.ncas, 1)] = index_orb[Nb_indep_rot:]
+            Kcas[np.triu_indices(self.ncas, 1)] = index_orb[Nb_indep_rot: Nb_indep_rot + Nb_actact_rot]
             Kcas = Kcas - Kcas.T
             K[ncore:ncore+ncas,ncore:ncore+ncas] = Kcas # Add the act-act part of the rotation
+
+            K[:self.frozen,ncore:] = np.reshape(index_orb[Nb_indep_rot + Nb_actact_rot:],(self.frozen,self.norb-ncore))
+            K[ncore:,:self.frozen] = K[:self.frozen,ncore:].T
 
             K = K*(1/8)*np.pi
             K = self.rotateOrb(K) # Rotate the mo coeff
@@ -261,9 +266,12 @@ def grid_search(self, grid_option):
             K = self.unpack_uniq_var(index_orb[:Nb_indep_rot]) # Create the rotation associated to index_orb
 
             Kcas = np.zeros((ncas,ncas))
-            Kcas[np.triu_indices(self.ncas, 1)] = index_orb[Nb_indep_rot:]
+            Kcas[np.triu_indices(self.ncas, 1)] = index_orb[Nb_indep_rot: Nb_indep_rot + Nb_actact_rot]
             Kcas = Kcas - Kcas.T
             K[ncore:ncore+ncas,ncore:ncore+ncas] = Kcas # Add the act-act part of the rotation
+
+            K[:self.frozen,ncore:] = np.reshape(index_orb[Nb_indep_rot + Nb_actact_rot:],(self.frozen,self.norb-ncore))
+            K[ncore:,:self.frozen] = K[:self.frozen,ncore:].T
 
             K = K*(1/8)*np.pi
             K = self.rotateOrb(K) # Rotate the mo coeff
