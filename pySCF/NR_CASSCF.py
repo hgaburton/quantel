@@ -21,6 +21,7 @@ from pyscf.fci import spin_op
 from pyscf.lo import orth
 
 def kernel(self):
+    '''  ''' #TODO
     kernel_start_time = datetime.datetime.now() # Save initial time
 
     print("Initialization of the Newton-Raphson loop")
@@ -46,16 +47,18 @@ def kernel(self):
     dm1 = self.CASRDM1_to_RDM1(dm1_cas)
     dm2 = self.CASRDM2_to_RDM2(dm1_cas,dm2_cas)
 
+    H_fci = self.fcisolver.pspace(self.h1eff, self.h2eff, self.ncas, self.nelecas, np=1000000)[1]
+
     while conv > self.conv_threshold and step < self.max_iterations:
 
         # Compute gradient and Hessian
         g_orb = self.get_gradOrb(dm1_cas, dm2_cas)
-        g_ci = self.get_gradCI()
+        g_ci = self.get_gradCI(H_fci)
         g = self.form_grad(g_orb,g_ci)
 
         nIndepRot = len(g) - len(g_ci)
 
-        H = self.get_hessian()
+        H = self.get_hessian(H_fci)
 
         # Update rotation parameters
         NR = -1*np.dot(scipy.linalg.pinv(H),g)
@@ -86,6 +89,7 @@ def kernel(self):
         dm1_cas, dm2_cas = self.get_CASRDM_12(self.mat_CI[:,0])
         dm1 = self.CASRDM1_to_RDM1(dm1_cas)
         dm2 = self.CASRDM2_to_RDM2(dm1_cas,dm2_cas)
+        H_fci = self.fcisolver.pspace(self.h1eff, self.h2eff, self.ncas, self.nelecas, np=1000000)[1]
 
         # print("This is the updated dm1_cas", dm1_cas)
         # print("This is the updated dm2_cas", dm2_cas)
@@ -132,10 +136,6 @@ def kernel(self):
         print("This is the undiagonalized CAS DM1 at convergence\n")
         self.matprint(dm1_cas)
         print("")
-        print("This is the MO coefficients at convergence\n")
-        self.matprint(self.mo_coeff)
-        print("")
-
         eigenvalues, eigenvectors = scipy.linalg.eig(dm1)
         print("This is the diagonalized DM1 \n")
         self.matprint(np.diag(eigenvalues).real)
@@ -157,7 +157,7 @@ def kernel(self):
     spin, mul = self.spin_square(self.mat_CI[:,0])
     print("The squared spin value of the wave function is ", spin, " and its associated multiplicity is ", mul, ".\n")
 
-    index_neg, index_pos, nb_zero = self.get_index()
+    index_neg, index_pos, nb_zero = self.get_index(H_fci)
     print("The hessian of this solution has ", index_neg," negative eigenvalues, ", index_pos, " positive eigenvalues and ", nb_zero," zero eigenvalues.\n")
     return
 
@@ -208,7 +208,7 @@ def grid_search(self, grid_option):
     iterator = 1
 
     Nb_CI_point = nb_point**(self.nDet - 1) # Number of CI points on the grid
-    Nb_indep_rot = ncore*ncas + ncore*nvir + ncas*nvir
+    Nb_indep_rot = (ncore-self.frozen)*ncas + (ncore-self.frozen)*nvir + ncas*nvir
     Nb_rot = Nb_indep_rot + int(0.5*ncas*(ncas-1)) # We also consider the rotation within the active space for the grid
     Nb_orb_point = int(nb_point**Nb_rot) # Number of orbitals points on the grid
 
@@ -370,6 +370,7 @@ class NR_CASSCF(lib.StreamObject):
 
     @property
     def initMO(self):
+        '''  ''' #TODO
         if self._initMO is None:
             self._initMO = self._scf.mo_coeff
             return
@@ -378,6 +379,7 @@ class NR_CASSCF(lib.StreamObject):
 
     @property
     def initCI(self):
+        '''  ''' #TODO
         if self._initCI is None:
             self._initCI = np.identity(self.nDet, dtype="float")
             return
@@ -407,17 +409,20 @@ class NR_CASSCF(lib.StreamObject):
     #         self.mat_CI = np.identity(self.nDet, dtype="float")
 
     def initializeMO(self):
+        '''  ''' #TODO
         self.mo_coeff = self._initMO
         self.h1e = np.einsum('ip,ij,jq->pq', self._initMO, self.h1e_AO, self._initMO) # We transform the 1-electron integrals to the MO basis
         self.eri = np.asarray(self.mol.ao2mo(self._initMO)) # eri in the MO basis as super index matrix (ij|kl) with i>j and k>l VERIFY THIS LAST POINT
         self.eri = ao2mo.restore(1, self.eri, self.norb) # eri in the MO basis with chemist notation
 
     def initializeCI(self):
+        '''  ''' #TODO
         self.mat_CI = self._initCI
 
 
     @property
     def initHeff(self):
+        '''  ''' #TODO
         self.h1eff, self.energy_core = self.h1e_for_cas()
         self.h2eff = self.get_h2eff()
         self.h2eff = ao2mo.restore(1,self.h2eff,self.ncas)
@@ -429,6 +434,7 @@ class NR_CASSCF(lib.StreamObject):
         pass
 
     def check_sanity(self):
+        '''  ''' #TODO
         assert self.ncas > 0
         ncore = self.ncore
         nvir = self.mo_coeff.shape[1] - ncore - self.ncas
@@ -688,10 +694,12 @@ class NR_CASSCF(lib.StreamObject):
         return mat - mat.T
 
     def get_F_core(self):
+        '''  ''' #TODO
         ncore = self.ncore
         return(self.h1e + 2*np.einsum('pqii->pq', self.eri[:, :, :ncore, :ncore]) - np.einsum('piiq->pq', self.eri[:, :ncore, :ncore, :]))
 
     def get_F_cas(self,dm1_cas):
+        '''  ''' #TODO
         ncore = self.ncore
         nocc = ncore + self.ncas
         return(np.einsum('tu,pqtu->pq', dm1_cas, self.eri[:, :, ncore:nocc, ncore:nocc]) - 0.5*np.einsum('tu,puqt->pq', dm1_cas, self.eri[:, ncore:nocc, :, ncore:nocc]))
@@ -729,13 +737,11 @@ class NR_CASSCF(lib.StreamObject):
     #     F = np.einsum('xq,qy->xy', dm1, self.h1e) + 2*np.einsum('xqrs,yqrs->xy', dm2, self.eri)
     #     return -2*(F - F.T)
 
-    def get_gradCI(self):
+    def get_gradCI(self,H_fci):
         ''' This method build the CI part of the gradient '''
         mat_CI = self.mat_CI
         g_CI = np.zeros(len(mat_CI)-1)
         ciO = mat_CI[:,0]
-
-        H_fci = self.fcisolver.pspace(self.h1eff, self.h2eff, self.ncas, self.nelecas, np=1000000)[1]
 
         for k in range(len(mat_CI)-1):
 
@@ -866,12 +872,10 @@ class NR_CASSCF(lib.StreamObject):
 
         return(H)
 
-    def get_hessianCICI(self):
+    def get_hessianCICI(self, H_fci):
         ''' This method build the CI-CI part of the hessian '''
         mat_CI = self.mat_CI
         hessian_CICI = np.zeros((len(mat_CI)-1,len(mat_CI)-1))
-
-        H_fci = self.fcisolver.pspace(self.h1eff, self.h2eff, self.ncas, self.nelecas, np=1000000)[1]
 
         c0 = mat_CI[:,0]
         e0 = np.einsum('i,ij,j',c0, H_fci, c0)
@@ -953,7 +957,7 @@ class NR_CASSCF(lib.StreamObject):
 
         return H_OCI
 
-    def get_hessian(self): #TODO
+    def get_hessian(self, H_fci):
         ''' This method concatenate the orb-orb, orb-CI and CI-CI part of the Hessian '''
         norb = self.norb
         nDet = self.nDet
@@ -963,7 +967,7 @@ class NR_CASSCF(lib.StreamObject):
         dm1_cas, dm2_cas = self.get_CASRDM_12(self.mat_CI[:,0])
 
         H_OrbOrb = self.get_hessianOrbOrb(dm1_cas,dm2_cas)
-        H_CICI = self.get_hessianCICI()
+        H_CICI = self.get_hessianCICI(H_fci)
         H_OrbCI = self.get_hessianOrbCI()
 
         H_OrbCI = H_OrbCI[idx,:]
@@ -981,14 +985,17 @@ class NR_CASSCF(lib.StreamObject):
         return H
 
     def rotateOrb(self,K):
+        '''  ''' #TODO
         mo = np.dot(self.mo_coeff, scipy.linalg.expm(K))
         return mo
 
     def rotateCI(self,S):
+        '''  ''' #TODO
         ci = np.dot(scipy.linalg.expm(S),self.mat_CI)
         return ci
 
     def numericalGrad(self):
+        '''  ''' #TODO
         epsilon = 0.0000001
         dm1_cas, dm2_cas = self.get_CASRDM_12(self.mat_CI[:,0])
         e0 = self.get_energy(self.h1e, self.eri, dm1_cas, dm2_cas)
@@ -1029,6 +1036,7 @@ class NR_CASSCF(lib.StreamObject):
         return g
 
     def numericalHessian(self):
+        '''  ''' #TODO
         epsilon = 0.0001
         dm1_cas, dm2_cas = self.get_CASRDM_12(self.mat_CI[:,0])
         e0 = self.get_energy(self.h1e, self.eri, dm1_cas, dm2_cas)
@@ -1190,20 +1198,24 @@ class NR_CASSCF(lib.StreamObject):
         return H_OrbOrb, H_CICI, H_OrbCI[idx,:]
 
     def get_energy(self, h1e, eri, dm1_cas, dm2_cas):
+        '''  ''' #TODO
         dm1 = self.CASRDM1_to_RDM1(dm1_cas)
         dm2 = self.CASRDM2_to_RDM2(dm1_cas,dm2_cas)
         E = np.einsum('pq,pq', h1e, dm1) + np.einsum('pqrs,pqrs', eri, dm2)
         return E
 
     def get_energy_cas(self, h1eff, h2eff, dm1_cas, dm2_cas):
+        '''  ''' #TODO
         E = np.einsum('pq,pq', h1eff, dm1_cas) + np.einsum('pqrs,pqrs', h2eff, dm2_cas)
         return E
 
     def spin_square(self,fcivec):
+        '''  ''' #TODO
         return self.fcisolver.spin_square(fcivec,self.ncas,self.nelecas)
 
-    def get_index(self):
-        hess = self.get_hessian()
+    def get_index(self,H_fci):
+        '''  ''' #TODO
+        hess = self.get_hessian(H_fci)
 
         eigenvalue = scipy.linalg.eigvals(hess)
 
@@ -1248,7 +1260,7 @@ if __name__ == '__main__':
     def read_config(file):
         f = open(file,"r")
         lines = f.read().splitlines()
-        basis, charge, spin, cas, grid_option = 'sto-3g', 0, 0, (0,0), 1000
+        basis, charge, spin, frozen, cas, grid_option = 'sto-3g', 0, 0, 0, (0,0), 1000
         for line in lines:
             if re.match('basis', line) is not None:
                 basis = str(re.split(r'\s', line)[-1])
@@ -1256,6 +1268,8 @@ if __name__ == '__main__':
                 charge = int(re.split(r'\s', line)[-1])
             elif re.match('spin', line) is not None:
                 spin = int(re.split(r'\s', line)[-1])
+            elif re.match('frozen', line) is not None:
+                frozen = int(re.split(r'\s', line)[-1])
             elif re.match('cas', line) is not None:
                 tmp = list(re.split(r'\s', line)[-1])
                 cas = (int(tmp[1]), int(tmp[3]))
@@ -1264,16 +1278,17 @@ if __name__ == '__main__':
                     grid_option = re.split(r'\s', line)[-1]
                 else:
                     grid_option = int(re.split(r'\s', line)[-1])
-        return basis, charge, spin, cas, grid_option
+        return basis, charge, spin, frozen, cas, grid_option
 
     mol = gto.Mole()
     mol.atom = sys.argv[1]
-    basis, charge, spin, cas, grid_option = read_config(sys.argv[2])
+    mol.unit = 'B'
+    basis, charge, spin, frozen, cas, grid_option = read_config(sys.argv[2])
     mol.basis = basis
     mol.charge = charge
     mol.spin = spin
     mol.build()
     myhf = mol.RHF().run()
-    mycas = NR_CASSCF(myhf,cas[0],cas[1])
+    mycas = NR_CASSCF(myhf,cas[0],cas[1],frozen=frozen)
     grid_search(mycas, grid_option)
 
