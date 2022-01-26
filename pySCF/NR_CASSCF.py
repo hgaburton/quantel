@@ -201,13 +201,6 @@ def grid_search(self, grid_option):
     print("The active space is a ", self.ncas, " orbitals and ", self.nelecas[0]+self.nelecas[1], " electrons active space.")
     print("Therefore there is ", self.nDet, " determinants.")
 
-    print("The initial MOs are\n")
-    self.matprint(self.mo_coeff)
-    print("")
-    print("The initial CI coefficients are\n")
-    self.matprint(self.mat_CI)
-    print("")
-
     ncore = self.ncore
     ncas = self.ncas
     nvir = self.norb - ncore - ncas
@@ -216,10 +209,11 @@ def grid_search(self, grid_option):
     iterator = 1
 
     Nb_CI_point = nb_point**(self.nDet - 1) # Number of CI points on the grid
-    Nb_indep_rot = (ncore-self.frozen)*ncas + (ncore-self.frozen)*nvir + ncas*nvir
-    Nb_frozen_rot = self.frozen*(ncas + nvir)
+    # Nb_indep_rot = (ncore-self.frozen)*ncas + (ncore-self.frozen)*nvir + ncas*nvir
+    Nb_indep_rot = ncore*ncas + ncore*nvir + ncas*nvir
+    # Nb_frozen_rot = self.frozen*(ncas + nvir)
     Nb_actact_rot = int(0.5*ncas*(ncas-1))
-    Nb_rot = Nb_indep_rot + Nb_actact_rot + Nb_frozen_rot # We also consider the rotation within the active space for the grid
+    Nb_rot = Nb_indep_rot + Nb_actact_rot #+ Nb_frozen_rot # We also consider the rotation within the active space for the grid
     Nb_orb_point = int(nb_point**Nb_rot) # Number of orbitals points on the grid
 
     print("There are ", nb_point, " points per rotation elements")
@@ -238,8 +232,8 @@ def grid_search(self, grid_option):
             Kcas = Kcas - Kcas.T
             K[ncore:ncore+ncas,ncore:ncore+ncas] = Kcas # Add the act-act part of the rotation
 
-            K[:self.frozen,ncore:] = np.reshape(index_orb[Nb_indep_rot + Nb_actact_rot:],(self.frozen,self.norb-ncore))
-            K[ncore:,:self.frozen] = K[:self.frozen,ncore:].T
+            # K[:self.frozen,ncore:] = np.reshape(index_orb[Nb_indep_rot + Nb_actact_rot:],(self.frozen,self.norb-ncore))
+            # K[ncore:,:self.frozen] = K[:self.frozen,ncore:].T
 
             K = K*(1/8)*np.pi
             K = self.rotateOrb(K) # Rotate the mo coeff
@@ -250,6 +244,13 @@ def grid_search(self, grid_option):
                 S[0,1:] = index_ci
                 S = np.asarray(S - S.T)*(1/nb_point)*(1/8)*np.pi #Create the rotation associated to index_ci
                 S = self.rotateCI(S) # Rotate the ci coeff
+
+                print("This is the initial CI coefficients at convergence\n")
+                self.matprint(S)
+                print("")
+                print("This is the initial MO coefficients at convergence\n")
+                self.matprint(K)
+                print("")
 
                 # Run the calculations
                 print("Start the Newton-Raphson calculation number", iterator, ".\n")
@@ -1007,7 +1008,7 @@ class NR_CASSCF(lib.StreamObject):
 
     def rotateCI(self,S):
         '''  ''' #TODO
-        ci = np.dot(scipy.linalg.expm(S),self.mat_CI)
+        ci = np.dot(scipy.linalg.expm(S), self.mat_CI)
         return ci
 
     def numericalGrad(self):
@@ -1024,7 +1025,7 @@ class NR_CASSCF(lib.StreamObject):
                 K[q,p] = -epsilon
                 mo_coeff = self.rotateOrb(K)
                 h1eUpdate = np.einsum('ip,ij,jq->pq', mo_coeff, self.h1e_AO, mo_coeff)
-                eriUpdate = np.asarray(mol.ao2mo(mo_coeff))
+                eriUpdate = np.asarray(self.mol.ao2mo(mo_coeff))
                 eriUpdate = ao2mo.restore(1, eriUpdate, self.norb) # eri in the MO basis with chemist notation
                 eUpdate = self.get_energy(h1eUpdate, eriUpdate, dm1_cas, dm2_cas)
                 g_orb[p,q] = (eUpdate - e0)/epsilon
@@ -1100,13 +1101,13 @@ class NR_CASSCF(lib.StreamObject):
                         h1eUpdatemp = np.einsum('ip,ij,jq->pq', mo_coeffmp, self.h1e_AO, mo_coeffmp)
                         h1eUpdatemm = np.einsum('ip,ij,jq->pq', mo_coeffmm, self.h1e_AO, mo_coeffmm)
 
-                        eriUpdatepp = np.asarray(mol.ao2mo(mo_coeffpp))
+                        eriUpdatepp = np.asarray(self.mol.ao2mo(mo_coeffpp))
                         eriUpdatepp = ao2mo.restore(1, eriUpdatepp, norb)
-                        eriUpdatepm = np.asarray(mol.ao2mo(mo_coeffpm))
+                        eriUpdatepm = np.asarray(self.mol.ao2mo(mo_coeffpm))
                         eriUpdatepm = ao2mo.restore(1, eriUpdatepm, norb)
-                        eriUpdatemp = np.asarray(mol.ao2mo(mo_coeffmp))
+                        eriUpdatemp = np.asarray(self.mol.ao2mo(mo_coeffmp))
                         eriUpdatemp = ao2mo.restore(1, eriUpdatemp, norb)
-                        eriUpdatemm = np.asarray(mol.ao2mo(mo_coeffmm))
+                        eriUpdatemm = np.asarray(self.mol.ao2mo(mo_coeffmm))
                         eriUpdatemm = ao2mo.restore(1, eriUpdatemm, norb)
 
                         eUpdatepp = self.get_energy(h1eUpdatepp, eriUpdatepp, dm1_cas, dm2_cas)
@@ -1182,9 +1183,9 @@ class NR_CASSCF(lib.StreamObject):
                 h2effm = self.get_h2eff(mo_coeff = mo_coeffm)
                 h2effm = ao2mo.restore(1,h2effm,self.ncas)
 
-                eriUpdatep = np.asarray(mol.ao2mo(mo_coeffp))
+                eriUpdatep = np.asarray(self.mol.ao2mo(mo_coeffp))
                 eriUpdatep = ao2mo.restore(1, eriUpdatep, norb)
-                eriUpdatem = np.asarray(mol.ao2mo(mo_coeffm))
+                eriUpdatem = np.asarray(self.mol.ao2mo(mo_coeffm))
                 eriUpdatem = ao2mo.restore(1, eriUpdatem, norb)
                 for k in range(1,self.nDet):
                     Sp = np.zeros((self.nDet,self.nDet))
