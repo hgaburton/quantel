@@ -27,6 +27,8 @@ from pyscf.mcscf import casci
 from pyscf import fci
 from pyscf.fci import spin_op
 from pyscf.lo import orth
+from cas_noci import *
+from pyscf.fci.cistring import make_strings, parity
 
 def kernel(self):
     '''  ''' #TODO
@@ -57,6 +59,8 @@ def kernel(self):
 
     H_fci = self.fcisolver.pspace(self.h1eff, self.h2eff, self.ncas, self.nelecas, np=1000000)[1]
 
+    damp = 0.2
+
     while conv > self.conv_threshold and step < self.max_iterations:
 
         # Compute gradient and Hessian
@@ -69,7 +73,7 @@ def kernel(self):
         H = self.get_hessian(H_fci)
 
         # Update rotation parameters
-        NR = -1*np.dot(scipy.linalg.pinv(H),g)
+        NR = -damp*np.dot(scipy.linalg.pinv(H),g)
 
         NR_Orb = NR[:nIndepRot]
         NR_Orb = self.unpack_uniq_var(NR_Orb)
@@ -107,6 +111,11 @@ def kernel(self):
         # nrj = self.get_energy_cas(self.h1eff, self.h2eff, dm1_cas, dm2_cas)
         # # print("This is the updated nrj", nrj + enuc + self.energy_core)
 
+        if np.max(np.abs(g))<conv and damp<2:
+            damp = damp*1.1
+        elif np.max(np.abs(g))>conv and damp>0.01:
+            damp = damp*0.8
+
         conv = np.max(np.abs(g))
         # print("At this iteration the convergence is ", conv)
 
@@ -137,30 +146,55 @@ def kernel(self):
     self.matprint(self.mo_coeff)
     print("")
 
-    # Transformation to natural orbitals
     if np.count_nonzero(np.around(dm1_cas - np.diag(np.diagonal(dm1_cas)),7)) > 0:
-        print("The density matrix is non-diagonal, transformation of the MO to natural orbitals \n")
-
-        print("This is the undiagonalized CAS DM1 at convergence\n")
-        self.matprint(dm1_cas)
-        print("")
-        eigenvalues, eigenvectors = scipy.linalg.eig(dm1)
-        print("This is the diagonalized DM1 \n")
-        self.matprint(np.diag(eigenvalues).real)
-        print("")
-        nat_orb = np.dot(self.mo_coeff,eigenvectors)
-        nat_orb = np.dot(scipy.linalg.pinv(eigenvectors),nat_orb)
-        print("This is the natural orbitals \n")
-        self.matprint(nat_orb.real)
-        print("")
+        print("The density matrix is non-diagonal, transformation of the MO to natural orbitals\n")
     else:
-        print("The density matrix is already diagonal \n")
-        print("This is the diagonal CAS DM1 \n")
-        self.matprint(dm1_cas)
-        print("")
-        print("This is the natural orbitals \n")
-        self.matprint(self.mo_coeff)
-        print("")
+        print("The density matrix is already diagonal\n")
+
+    no_coeff, ci, mo_energy, mo_occ = casci.canonicalize(self, mo_coeff=self.mo_coeff, ci=self.mat_CI[:,0], eris=self.eri, sort=True,
+                 cas_natorb=True, casdm1=dm1_cas)
+
+    print("This is the natural orbitals\n")
+    self.matprint(no_coeff)
+    print("")
+
+    print("The occupations in the natural orbital basis are\n")
+    self.matprint(mo_occ)
+    print("")
+
+    print("The energies of the natural orbitals are\n")
+    self.matprint(mo_energy)
+    print("")
+
+    print("This is the CI vector in the natural orbital basis\n")
+    self.matprint(ci.reshape((1,-1)))
+    print("")
+
+
+    # # Transformation to natural orbitals
+    # if np.count_nonzero(np.around(dm1_cas - np.diag(np.diagonal(dm1_cas)),7)) > 0:
+    #     print("The density matrix is non-diagonal, transformation of the MO to natural orbitals \n")
+    #
+    #     print("This is the undiagonalized CAS DM1 at convergence\n")
+    #     self.matprint(dm1_cas)
+    #     print("")
+    #     eigenvalues, eigenvectors = scipy.linalg.eig(dm1)
+    #     print("This is the diagonalized DM1 \n")
+    #     self.matprint(np.diag(eigenvalues).real)
+    #     print("")
+    #     nat_orb = np.dot(self.mo_coeff,eigenvectors)
+    #     nat_orb = np.dot(scipy.linalg.pinv(eigenvectors),nat_orb)
+    #     print("This is the natural orbitals \n")
+    #     self.matprint(nat_orb.real)
+    #     print("")
+    # else:
+    #     print("The density matrix is already diagonal \n")
+    #     print("This is the diagonal CAS DM1 \n")
+    #     self.matprint(dm1_cas)
+    #     print("")
+    #     print("This is the natural orbitals \n")
+    #     self.matprint(self.mo_coeff)
+    #     print("")
 
     spin, mul = self.spin_square(self.mat_CI[:,0])
     print("The squared spin value of the wave function is ", spin, " and its associated multiplicity is ", mul, ".\n")
@@ -182,6 +216,40 @@ def grid_point(nb_point, n, length):
     nums.reverse()
     return nums
 
+def form_rotMO(self,nb_point,index_orb):
+    ncore = self.ncore
+    ncas = self.ncas
+    nvir = self.norb - ncore - ncas
+    print(ncore,ncas,nvir,self.frozen)
+
+    Nb_CI_point = nb_point**(self.nDet - 1) # Number of CI points on the grid
+    Nb_indep_rot = (ncore-self.frozen)*ncas + (ncore-self.frozen)*nvir + ncas*nvir
+    # Nb_frozen_rot = self.frozen*(ncas + nvir)
+    Nb_actact_rot = int(0.5*ncas*(ncas-1))
+    Nb_rot = Nb_indep_rot + Nb_actact_rot #+ Nb_frozen_rot # We also consider the rotation within the active space for the grid
+    Nb_orb_point = int(nb_point**Nb_rot) # Number of orbitals points on the grid
+
+    K = self.unpack_uniq_var(index_orb[:Nb_indep_rot]) # Create the rotation associated to index_orb
+
+    Kcas = np.zeros((ncas,ncas))
+    Kcas[np.triu_indices(self.ncas, 1)] = index_orb[Nb_indep_rot: Nb_indep_rot + Nb_actact_rot]
+    Kcas = Kcas - Kcas.T
+    K[ncore:ncore+ncas,ncore:ncore+ncas] = Kcas # Add the act-act part of the rotation
+
+    # K[:self.frozen,ncore:] = np.reshape(index_orb[Nb_indep_rot + Nb_actact_rot:],(self.frozen,self.norb-ncore))
+    # K[ncore:,:self.frozen] = K[:self.frozen,ncore:].T
+
+    K = K*(1/8)*np.pi
+    K = self.rotateOrb(K) # Rotate the mo coeff
+    return K
+
+def form_rotCI(self,nb_point,index_ci):
+    S = np.zeros((self.nDet, self.nDet))
+    S[0,1:] = index_ci
+    S = np.asarray(S - S.T)*(1/8)*np.pi #Create the rotation associated to index_ci
+    S = self.rotateCI(S) # Rotate the ci coeff
+    return S
+
 def grid_search(self, grid_option):
     ''' This function runs the Newton-Raphson algorithm for a grid of starting point '''
     grid_start_time = datetime.datetime.now() # Save initial time
@@ -191,6 +259,8 @@ def grid_search(self, grid_option):
     self.initializeMO()
     self.initializeCI()
     self.initHeff
+
+    # self.mo_coeff[:,[1,0]] = self.mo_coeff[:,[0,1]]
 
     self.check_sanity() # Check that the definition of the CAS by the user is sane
 
@@ -209,8 +279,7 @@ def grid_search(self, grid_option):
     iterator = 1
 
     Nb_CI_point = nb_point**(self.nDet - 1) # Number of CI points on the grid
-    # Nb_indep_rot = (ncore-self.frozen)*ncas + (ncore-self.frozen)*nvir + ncas*nvir
-    Nb_indep_rot = ncore*ncas + ncore*nvir + ncas*nvir
+    Nb_indep_rot = (ncore-self.frozen)*ncas + (ncore-self.frozen)*nvir + ncas*nvir
     # Nb_frozen_rot = self.frozen*(ncas + nvir)
     Nb_actact_rot = int(0.5*ncas*(ncas-1))
     Nb_rot = Nb_indep_rot + Nb_actact_rot #+ Nb_frozen_rot # We also consider the rotation within the active space for the grid
@@ -225,25 +294,11 @@ def grid_search(self, grid_option):
         # Grid loop
         for orb_gridpoint in range(Nb_orb_point):
             index_orb = grid_point(nb_point, orb_gridpoint, Nb_rot)
-            K = self.unpack_uniq_var(index_orb[:Nb_indep_rot]) # Create the rotation associated to index_orb
-
-            Kcas = np.zeros((ncas,ncas))
-            Kcas[np.triu_indices(self.ncas, 1)] = index_orb[Nb_indep_rot: Nb_indep_rot + Nb_actact_rot]
-            Kcas = Kcas - Kcas.T
-            K[ncore:ncore+ncas,ncore:ncore+ncas] = Kcas # Add the act-act part of the rotation
-
-            # K[:self.frozen,ncore:] = np.reshape(index_orb[Nb_indep_rot + Nb_actact_rot:],(self.frozen,self.norb-ncore))
-            # K[ncore:,:self.frozen] = K[:self.frozen,ncore:].T
-
-            K = K*(1/8)*np.pi
-            K = self.rotateOrb(K) # Rotate the mo coeff
+            K = form_rotMO(self,nb_point,index_orb)
 
             for ci_gridpoint in range(Nb_CI_point):
                 index_ci = grid_point(nb_point, ci_gridpoint, (self.nDet - 1))
-                S = np.zeros((self.nDet, self.nDet))
-                S[0,1:] = index_ci
-                S = np.asarray(S - S.T)*(1/nb_point)*(1/8)*np.pi #Create the rotation associated to index_ci
-                S = self.rotateCI(S) # Rotate the ci coeff
+                S = form_rotCI(self,nb_point,index_ci)
 
                 print("This is the initial CI coefficients at convergence\n")
                 self.matprint(S)
@@ -264,24 +319,10 @@ def grid_search(self, grid_option):
 
         while iterator < grid_option:
             index_orb = grid_point(nb_point, random.randint(0,Nb_orb_point-1), Nb_rot)
-            K = self.unpack_uniq_var(index_orb[:Nb_indep_rot]) # Create the rotation associated to index_orb
-
-            Kcas = np.zeros((ncas,ncas))
-            Kcas[np.triu_indices(self.ncas, 1)] = index_orb[Nb_indep_rot: Nb_indep_rot + Nb_actact_rot]
-            Kcas = Kcas - Kcas.T
-            K[ncore:ncore+ncas,ncore:ncore+ncas] = Kcas # Add the act-act part of the rotation
-
-            K[:self.frozen,ncore:] = np.reshape(index_orb[Nb_indep_rot + Nb_actact_rot:],(self.frozen,self.norb-ncore))
-            K[ncore:,:self.frozen] = K[:self.frozen,ncore:].T
-
-            K = K*(1/8)*np.pi
-            K = self.rotateOrb(K) # Rotate the mo coeff
+            K = form_rotMO(self,nb_point,index_orb)
 
             index_ci = grid_point(nb_point, random.randint(0,Nb_CI_point-1), (self.nDet - 1))
-            S = np.zeros((self.nDet, self.nDet))
-            S[0,1:] = index_ci
-            S = np.asarray(S - S.T)*(1/nb_point)*(1/8)*np.pi #Create the rotation associated to index_ci
-            S = self.rotateCI(S) # Rotate the ci coeff
+            S = form_rotCI(self,nb_point,index_ci)
 
             # Run the calculations
             print("Start the Newton-Raphson calculation number", iterator, ".\n")
@@ -296,8 +337,219 @@ def grid_search(self, grid_option):
     computation_time = grid_end_time - grid_start_time
     print("This grid calculation took ", computation_time.total_seconds(), " seconds")
 
-
     return
+
+def transform_casvec(self,mo_coeffx,mo_coeffw,ci_coeffw,metric):
+
+    nelecas = self.nelecas[0] + self.nelecas[1]
+    string = make_strings(range(self.ncas), int(nelecas/2))
+    list_det = [[[i,j] for i in string] for j in string]
+    list_det = np.reshape(list_det, (-1,2))
+
+    ci_coeff_new = np.zeros(len(ci_coeffw))
+
+    Sxw = np.einsum('ji,jk,kl->il',mo_coeffx, metric, mo_coeffw)
+
+    det_ovlp = np.zeros((len(list_det),len(list_det)))
+
+    for i in range(len(list_det)):
+        for j in range(len(list_det)):
+            left_det = list_det[i]
+            right_det = list_det[j]
+
+            left_det = [grid_point(2, left_det[0], len(string)), grid_point(2, left_det[1], len(string))]
+            right_det = [grid_point(2, right_det[0], len(string)), grid_point(2, right_det[1], len(string))]
+
+            left_det = np.array(left_det).astype(dtype=bool)
+            right_det = np.array(right_det).astype(dtype=bool)
+
+            Sxw_occ_a = Sxw[left_det[0],right_det[0]]
+            Sxw_occ_b = Sxw[left_det[1],right_det[1]]
+
+            if len(np.shape(Sxw_occ_a))==1:
+                det_ovlp[i,j] = Sxw_occ_a[0]*Sxw_occ_b[0]
+
+            else:
+                det_ovlp[i,j] = np.linalg.det(Sxw_occ_a)*np.linalg.det(Sxw_occ_b)
+
+    for i in range(len(ci_coeff_new)):
+        ci_coeff_new[i] = np.einsum('i,i',ci_coeffw,det_ovlp[:,i])
+
+    return ci_coeff_new
+
+# def PES(self,list_geom,basis,charge,spin,MO,CI):
+#     it = 0
+#
+#     nrj = []
+#
+#     for geom in list_geom:
+#         mol = gto.Mole()
+#         mol.atom = geom
+#         mol.unit = 'B'
+#         mol.basis = basis
+#         mol.charge = charge
+#         mol.spin = spin
+#         mol.build()
+#         myhf = mol.RHF().run()
+#         nb_point = 3
+#
+#         # if it==0:
+#         #     prev_ovlp_ao = myhf.get_ovlp()
+#         #
+#         #     print(rotMO,rotCI)
+#         #     K = form_rotMO(self,nb_point,rotMO)
+#         #     S = form_rotCI(self,nb_point,rotCI)
+#         #     print(K)
+#         #     print(S)
+#         #     # Run the initial calculation
+#         #     tmp_cas = NR_CASSCF(myhf,self.ncas,self.nelecas,ncore=self.ncore,initMO=K,initCI=S,frozen=self.frozen)
+#         #     tmp_cas.kernel()
+#         #
+#         #     prev_orth_transf = orth.orth_ao(myhf.mol, 'meta_lowdin', s=prev_ovlp_ao)
+#         #     mo_coeff_ortho = reduce(np.dot, (prev_orth_transf.conj().T, prev_ovlp_ao, tmp_cas.mo_coeff))
+#         #
+#         #     tmp_inv = scipy.linalg.inv(np.dot(prev_orth_transf.conj().T, prev_ovlp_ao))
+#         #     init_mo_coeff = np.dot(tmp_inv, mo_coeff_ortho)
+#         if it==0:
+#             prev_ovlp_ao = myhf.get_ovlp()
+#
+#             # Run the initial calculation
+#             tmp_cas = NR_CASSCF(myhf,self.ncas,self.nelecas,ncore=self.ncore,initMO=MO,initCI=CI,frozen=self.frozen)
+#             tmp_cas.kernel()
+#
+#             prev_orth_transf = orth.orth_ao(myhf.mol, 'meta_lowdin', s=prev_ovlp_ao)
+#             mo_coeff_ortho = reduce(np.dot, (prev_orth_transf.conj().T, prev_ovlp_ao, tmp_cas.mo_coeff))
+#
+#             tmp_inv = scipy.linalg.inv(np.dot(prev_orth_transf.conj().T, prev_ovlp_ao))
+#             init_mo_coeff = np.dot(tmp_inv, mo_coeff_ortho)
+#         else:
+#             new_ovlp_ao = myhf.get_ovlp()
+#             new_orth_transf = orth.orth_ao(myhf.mol, 'meta_lowdin', s=new_ovlp_ao)
+#             tmp_inv = scipy.linalg.inv(np.dot(new_orth_transf.conj().T, new_ovlp_ao))
+#             init_mo_coeff = np.dot(tmp_inv, mo_coeff_ortho)
+#
+#             # init_CI = np.zeros((tmp_cas.nDet,tmp_cas.nDet))
+#             # for i in range(tmp_cas.nDet):
+#             #     newCIvec = transform_casvec(self,init_mo_coeff, tmp_cas.mo_coeff,tmp_cas.mat_CI[:,i], new_ovlp_ao)
+#             #     init_CI[:,i] = newCIvec/np.sqrt(np.dot(newCIvec,newCIvec.T))
+#             tmp_cas = NR_CASSCF(myhf,self.ncas,self.nelecas,ncore=self.ncore,initMO=init_mo_coeff,initCI=tmp_cas.mat_CI,frozen=self.frozen)
+#             tmp_cas.kernel()
+#             print(tmp_cas.e_tot)
+#
+#
+#             # All the new geom quantities become the previous ones
+#             prev_ovlp_ao = new_ovlp_ao
+#             prev_orth_transf = new_orth_transf
+#             mo_coeff_ortho = reduce(np.dot, (prev_orth_transf.conj().T, prev_ovlp_ao, tmp_cas.mo_coeff))
+#
+#         nrj.append(tmp_cas.e_tot)
+#         it+=1
+#         print(it)
+#     print(nrj)
+#     return
+
+def get_size(file):
+    f = open(file,"r")
+    lines = f.read().splitlines()
+
+    for i in range(10):
+        line = lines[i]
+        if re.match('The molecule has', line) is not None:
+            tmp_mol = re.split(r'\s', line)
+        if re.match('The active space', line) is not None:
+            tmp_cas = re.split(r'\s', line)
+        if re.match('Therefore there i', line) is not None:
+            tmp_det = re.split(r'\s', line)
+
+    nelec = int(tmp_mol[4])
+    norb = int(tmp_mol[-4])
+    ncas = int(tmp_cas[6])
+    nelecas = int(tmp_cas[-5])
+    nDet = int(tmp_det[-3])
+
+    return norb, nelec, ncas, nelecas, nDet
+
+def PES(self,list_geom,basis,charge,spin,file,nb):
+    it = 0
+
+    nrj = []
+
+    f = open(file,"r")
+    lines = f.read().splitlines()
+
+    norb, nelec, ncas, nelecas, nDet = get_size(file)
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if re.match('Start the Newton-Raphson calculation number '+str(nb)+' ', line) is not None:
+            CI, MO = [], []
+            for j in range(nDet):
+                list_str = np.array(re.split(r'\s+', lines[i+14+j]))
+                empty_str = np.array([''])
+                list_str = np.setdiff1d(list_str,empty_str,True)
+                CI.append([float(k) for k in list_str])
+            for j in range(norb):
+                list_str = np.array(re.split(r'\s+', lines[i+17+nDet+j]))
+                empty_str = np.array([''])
+                list_str = np.setdiff1d(list_str,empty_str,True)
+                MO.append([float(k) for k in list_str])
+        i += 1
+    CI = np.array(CI)
+    MO = np.array(MO)
+    print(CI)
+    print(MO)
+
+    for geom in list_geom:
+        mol = gto.Mole()
+        mol.atom = geom
+        mol.unit = 'B'
+        mol.basis = basis
+        mol.charge = charge
+        mol.spin = spin
+        mol.build()
+        myhf = mol.RHF().run()
+        nb_point = 3
+
+        #     init_mo_coeff = np.dot(tmp_inv, mo_coeff_ortho)
+        if it==0:
+            prev_ovlp_ao = myhf.get_ovlp()
+
+            # Run the initial calculation
+            tmp_cas = NR_CASSCF(myhf,self.ncas,self.nelecas,ncore=self.ncore,initMO=MO,initCI=CI,frozen=self.frozen)
+            tmp_cas.kernel()
+
+            prev_orth_transf = orth.orth_ao(myhf.mol, 'meta_lowdin', s=prev_ovlp_ao)
+            mo_coeff_ortho = reduce(np.dot, (prev_orth_transf.conj().T, prev_ovlp_ao, tmp_cas.mo_coeff))
+
+            tmp_inv = scipy.linalg.inv(np.dot(prev_orth_transf.conj().T, prev_ovlp_ao))
+            init_mo_coeff = np.dot(tmp_inv, mo_coeff_ortho)
+        else:
+            new_ovlp_ao = myhf.get_ovlp()
+            new_orth_transf = orth.orth_ao(myhf.mol, 'meta_lowdin', s=new_ovlp_ao)
+            tmp_inv = scipy.linalg.inv(np.dot(new_orth_transf.conj().T, new_ovlp_ao))
+            init_mo_coeff = np.dot(tmp_inv, mo_coeff_ortho)
+
+            # init_CI = np.zeros((tmp_cas.nDet,tmp_cas.nDet))
+            # for i in range(tmp_cas.nDet):
+            #     newCIvec = transform_casvec(self,init_mo_coeff, tmp_cas.mo_coeff,tmp_cas.mat_CI[:,i], new_ovlp_ao)
+            #     init_CI[:,i] = newCIvec/np.sqrt(np.dot(newCIvec,newCIvec.T))
+            tmp_cas = NR_CASSCF(myhf,self.ncas,self.nelecas,ncore=self.ncore,initMO=init_mo_coeff,initCI=tmp_cas.mat_CI,frozen=self.frozen)
+            tmp_cas.kernel()
+            print(tmp_cas.e_tot)
+
+
+            # All the new geom quantities become the previous ones
+            prev_ovlp_ao = new_ovlp_ao
+            prev_orth_transf = new_orth_transf
+            mo_coeff_ortho = reduce(np.dot, (prev_orth_transf.conj().T, prev_ovlp_ao, tmp_cas.mo_coeff))
+
+        nrj.append(tmp_cas.e_tot)
+        print("distance",0.1+it*0.1)
+        it+=1
+    print(nrj)
+    return
+
 
 ##### Definition of the class #####
 
@@ -1010,6 +1262,25 @@ class NR_CASSCF(lib.StreamObject):
         '''  ''' #TODO
         ci = np.dot(scipy.linalg.expm(S), self.mat_CI)
         return ci
+
+    def _eig(self, h, *args):
+        return scf.hf.eig(h, None)
+
+    def get_fock(self, mo_coeff=None, ci=None, eris=None, casdm1=None,
+                 verbose=None):
+        return casci.get_fock(self, mo_coeff, ci, eris, casdm1, verbose)
+
+    def cas_natorb(self, mo_coeff=None, ci=None, eris=None, sort=False,
+                   casdm1=None, verbose=None, with_meta_lowdin=True):
+        return casci.cas_natorb(self, mo_coeff, ci, eris, sort, casdm1, verbose,
+                          True)
+
+    def canonicalize_(self, mo_coeff=None, ci=None, eris=None, sort=False,
+                      cas_natorb=False, casdm1=None, verbose=None):
+        self.mo_coeff, ci, self.mo_energy, mo_occ = \
+                casci.canonicalize(self, mo_coeff, ci, eris,
+                             sort, cas_natorb, casdm1, verbose)
+        return self.mo_coeff, ci, self.mo_energy, mo_occ
 
     def numericalGrad(self):
         '''  ''' #TODO
