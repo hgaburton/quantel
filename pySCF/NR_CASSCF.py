@@ -151,8 +151,7 @@ def kernel(self):
     else:
         print("The density matrix is already diagonal\n")
 
-    no_coeff, ci, mo_energy, mo_occ = casci.canonicalize(self, mo_coeff=self.mo_coeff, ci=self.mat_CI[:,0], eris=self.eri, sort=True,
-                 cas_natorb=True, casdm1=dm1_cas)
+    no_coeff, ci, mo_energy, mo_occ = self.canonicalize_( mo_coeff=self.mo_coeff, ci=self.mat_CI[:,0], eris=self.eri, sort=True, cas_natorb=True, casdm1=dm1_cas)
 
     print("This is the natural orbitals\n")
     self.matprint(no_coeff)
@@ -545,7 +544,7 @@ def PES(self,list_geom,basis,charge,spin,file,nb):
             mo_coeff_ortho = reduce(np.dot, (prev_orth_transf.conj().T, prev_ovlp_ao, tmp_cas.mo_coeff))
 
         nrj.append(tmp_cas.e_tot)
-        print("distance",0.1+it*0.1)
+        print("distance",10-it*0.1)
         it+=1
     print(nrj)
     return
@@ -1277,9 +1276,11 @@ class NR_CASSCF(lib.StreamObject):
 
     def canonicalize_(self, mo_coeff=None, ci=None, eris=None, sort=False,
                       cas_natorb=False, casdm1=None, verbose=None):
-        self.mo_coeff, ci, self.mo_energy, mo_occ = \
-                casci.canonicalize(self, mo_coeff, ci, eris,
-                             sort, cas_natorb, casdm1, verbose)
+        self.mo_coeff, ci, self.mo_energy = \
+                casci.canonicalize(self, mo_coeff, ci, eris, sort, cas_natorb, casdm1, verbose)
+
+        tmp, tmp2, mo_occ = casci.cas_natorb(self,mo_coeff, ci, eris, sort, casdm1, verbose)
+
         return self.mo_coeff, ci, self.mo_energy, mo_occ
 
     def numericalGrad(self):
