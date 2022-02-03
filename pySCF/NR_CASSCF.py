@@ -1509,6 +1509,9 @@ class NR_CASSCF(lib.StreamObject):
         eigenvalue = scipy.linalg.eigvals(hess)
 
         eigenvalue = np.around(eigenvalue.real,7)
+        print("This is the eigenvalues of the Hessian")
+        print(np.sort(eigenvalue))
+        print("")
 
         eigenvalue_neg = [ev for ev in eigenvalue if ev < 0]
         eigenvalue_pos = [ev for ev in eigenvalue if ev > 0]
