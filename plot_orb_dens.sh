@@ -73,7 +73,7 @@ scale by [lindex \$argv 2]
 render POV3 [lindex \$argv 0].pov 
 #render Tachyon [lindex \$argv 0].pov 
 
-" > plot.tcl 
+exit" > plot.tcl 
 
 vmd -e plot.tcl -args $1 $2 $3
 rm $1.png &> /dev/null
