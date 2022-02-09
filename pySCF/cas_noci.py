@@ -5,6 +5,7 @@ from pyscf.fci.cistring import make_strings, parity
 from gnme.wick import gnme_pair
 
 def cas_proj(cas_x, cas_w, metric):
+    '''Project the first CI vector from cas_w into the active space of cas_x'''
 
     # Get number of basis funcs, cas orbitals, electrons, and cas electrons
     nbsf   = cas_x.mo_coeff.shape[0]
