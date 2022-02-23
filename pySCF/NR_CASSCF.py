@@ -29,9 +29,10 @@ from pyscf.fci import spin_op
 from pyscf.lo import orth
 from cas_noci import *
 from pyscf.fci.cistring import make_strings, parity
+from gnme import utils
 
 def kernel(self):
-    '''  ''' #TODO
+    ''' This function is the one that we will run the Newton-Raphson calculation for a given NR_CASSCF object '''
     kernel_start_time = datetime.datetime.now() # Save initial time
 
     print("Initialization of the Newton-Raphson loop")
@@ -59,7 +60,7 @@ def kernel(self):
 
     H_fci = self.fcisolver.pspace(self.h1eff, self.h2eff, self.ncas, self.nelecas, np=1000000)[1]
 
-    damp = 0.2
+    damp = 0.1
 
     while conv > self.conv_threshold and step < self.max_iterations:
 
@@ -74,7 +75,6 @@ def kernel(self):
 
         # Update rotation parameters
         NR = -damp*np.dot(scipy.linalg.pinv(H),g)
-
         NR_Orb = NR[:nIndepRot]
         NR_Orb = self.unpack_uniq_var(NR_Orb)
 
@@ -88,9 +88,6 @@ def kernel(self):
         self.mo_coeff = self.rotateOrb(NR_Orb)
         self.mat_CI = self.rotateCI(S)
 
-        # print("This is the updated mo_coeff", self.mo_coeff)
-        # print("This is the updated mat_CI", self.mat_CI)
-
         # Update integrals and density matrices
         self.h1e = np.einsum('ip,ij,jq->pq', self.mo_coeff, self.h1e_AO, self.mo_coeff)
         self.eri = np.asarray(self.mol.ao2mo(self.mo_coeff))
@@ -103,15 +100,7 @@ def kernel(self):
         dm2 = self.CASRDM2_to_RDM2(dm1_cas,dm2_cas)
         H_fci = self.fcisolver.pspace(self.h1eff, self.h2eff, self.ncas, self.nelecas, np=1000000)[1]
 
-        # print("This is the updated dm1_cas", dm1_cas)
-        # print("This is the updated dm2_cas", dm2_cas)
-
-        # nrj = self.get_energy(self.h1e, self.eri, dm1_cas, dm2_cas)
-        # print("This is the updated nrj", nrj + enuc)
-        # nrj = self.get_energy_cas(self.h1eff, self.h2eff, dm1_cas, dm2_cas)
-        # # print("This is the updated nrj", nrj + enuc + self.energy_core)
-
-        if np.max(np.abs(g))<conv and damp<2:
+        if np.max(np.abs(g))<conv and damp<4:
             damp = damp*1.1
         elif np.max(np.abs(g))>conv and damp>0.01:
             damp = damp*0.8
@@ -144,6 +133,7 @@ def kernel(self):
     print("")
     print("This is the MO coefficients at convergence\n")
     self.matprint(self.mo_coeff)
+    tmp = self.mo_coeff
     print("")
 
     if np.count_nonzero(np.around(dm1_cas - np.diag(np.diagonal(dm1_cas)),7)) > 0:
@@ -152,9 +142,11 @@ def kernel(self):
         print("The density matrix is already diagonal\n")
 
     no_coeff, ci, mo_energy, mo_occ = self.canonicalize_( mo_coeff=self.mo_coeff, ci=self.mat_CI[:,0], eris=self.eri, sort=True, cas_natorb=True, casdm1=dm1_cas)
+    self.mo_coeff = tmp
 
     print("This is the natural orbitals\n")
     self.matprint(no_coeff)
+    print(no_coeff.tolist())
     print("")
 
     print("The occupations in the natural orbital basis are\n")
@@ -216,6 +208,7 @@ def grid_point(nb_point, n, length):
     return nums
 
 def form_rotMO(self,nb_point,index_orb):
+    """ This function compute the orbital rotation matrix associated to a given number decomposition index_orb in the nb_point basis obtained with the grid_point function."""
     ncore = self.ncore
     ncas = self.ncas
     nvir = self.norb - ncore - ncas
@@ -223,7 +216,6 @@ def form_rotMO(self,nb_point,index_orb):
 
     Nb_CI_point = nb_point**(self.nDet - 1) # Number of CI points on the grid
     Nb_indep_rot = (ncore-self.frozen)*ncas + (ncore-self.frozen)*nvir + ncas*nvir
-    # Nb_frozen_rot = self.frozen*(ncas + nvir)
     Nb_actact_rot = int(0.5*ncas*(ncas-1))
     Nb_rot = Nb_indep_rot + Nb_actact_rot #+ Nb_frozen_rot # We also consider the rotation within the active space for the grid
     Nb_orb_point = int(nb_point**Nb_rot) # Number of orbitals points on the grid
@@ -235,14 +227,12 @@ def form_rotMO(self,nb_point,index_orb):
     Kcas = Kcas - Kcas.T
     K[ncore:ncore+ncas,ncore:ncore+ncas] = Kcas # Add the act-act part of the rotation
 
-    # K[:self.frozen,ncore:] = np.reshape(index_orb[Nb_indep_rot + Nb_actact_rot:],(self.frozen,self.norb-ncore))
-    # K[ncore:,:self.frozen] = K[:self.frozen,ncore:].T
-
     K = K*(1/8)*np.pi
     K = self.rotateOrb(K) # Rotate the mo coeff
     return K
 
 def form_rotCI(self,nb_point,index_ci):
+    """ This function compute the CI rotation matrix associated to a given number decomposition index_orb in the nb_point basis obtained with the grid_point function."""
     S = np.zeros((self.nDet, self.nDet))
     S[0,1:] = index_ci
     S = np.asarray(S - S.T)*(1/8)*np.pi #Create the rotation associated to index_ci
@@ -250,7 +240,8 @@ def form_rotCI(self,nb_point,index_ci):
     return S
 
 def grid_search(self, grid_option):
-    ''' This function runs the Newton-Raphson algorithm for a grid of starting point '''
+    ''' This function runs the Newton-Raphson algorithm for a grid of starting point.
+    If grid option = full, it performs the full grid search. Else grid_option should be a number, and it will perform grid_option Newton-Raphson calculations starting from random point on the grid. '''
     grid_start_time = datetime.datetime.now() # Save initial time
 
     self.initMO # We initialize the quantities that need it
@@ -279,7 +270,6 @@ def grid_search(self, grid_option):
 
     Nb_CI_point = nb_point**(self.nDet - 1) # Number of CI points on the grid
     Nb_indep_rot = (ncore-self.frozen)*ncas + (ncore-self.frozen)*nvir + ncas*nvir
-    # Nb_frozen_rot = self.frozen*(ncas + nvir)
     Nb_actact_rot = int(0.5*ncas*(ncas-1))
     Nb_rot = Nb_indep_rot + Nb_actact_rot #+ Nb_frozen_rot # We also consider the rotation within the active space for the grid
     Nb_orb_point = int(nb_point**Nb_rot) # Number of orbitals points on the grid
@@ -336,217 +326,6 @@ def grid_search(self, grid_option):
     computation_time = grid_end_time - grid_start_time
     print("This grid calculation took ", computation_time.total_seconds(), " seconds")
 
-    return
-
-def transform_casvec(self,mo_coeffx,mo_coeffw,ci_coeffw,metric):
-
-    nelecas = self.nelecas[0] + self.nelecas[1]
-    string = make_strings(range(self.ncas), int(nelecas/2))
-    list_det = [[[i,j] for i in string] for j in string]
-    list_det = np.reshape(list_det, (-1,2))
-
-    ci_coeff_new = np.zeros(len(ci_coeffw))
-
-    Sxw = np.einsum('ji,jk,kl->il',mo_coeffx, metric, mo_coeffw)
-
-    det_ovlp = np.zeros((len(list_det),len(list_det)))
-
-    for i in range(len(list_det)):
-        for j in range(len(list_det)):
-            left_det = list_det[i]
-            right_det = list_det[j]
-
-            left_det = [grid_point(2, left_det[0], len(string)), grid_point(2, left_det[1], len(string))]
-            right_det = [grid_point(2, right_det[0], len(string)), grid_point(2, right_det[1], len(string))]
-
-            left_det = np.array(left_det).astype(dtype=bool)
-            right_det = np.array(right_det).astype(dtype=bool)
-
-            Sxw_occ_a = Sxw[left_det[0],right_det[0]]
-            Sxw_occ_b = Sxw[left_det[1],right_det[1]]
-
-            if len(np.shape(Sxw_occ_a))==1:
-                det_ovlp[i,j] = Sxw_occ_a[0]*Sxw_occ_b[0]
-
-            else:
-                det_ovlp[i,j] = np.linalg.det(Sxw_occ_a)*np.linalg.det(Sxw_occ_b)
-
-    for i in range(len(ci_coeff_new)):
-        ci_coeff_new[i] = np.einsum('i,i',ci_coeffw,det_ovlp[:,i])
-
-    return ci_coeff_new
-
-# def PES(self,list_geom,basis,charge,spin,MO,CI):
-#     it = 0
-#
-#     nrj = []
-#
-#     for geom in list_geom:
-#         mol = gto.Mole()
-#         mol.atom = geom
-#         mol.unit = 'B'
-#         mol.basis = basis
-#         mol.charge = charge
-#         mol.spin = spin
-#         mol.build()
-#         myhf = mol.RHF().run()
-#         nb_point = 3
-#
-#         # if it==0:
-#         #     prev_ovlp_ao = myhf.get_ovlp()
-#         #
-#         #     print(rotMO,rotCI)
-#         #     K = form_rotMO(self,nb_point,rotMO)
-#         #     S = form_rotCI(self,nb_point,rotCI)
-#         #     print(K)
-#         #     print(S)
-#         #     # Run the initial calculation
-#         #     tmp_cas = NR_CASSCF(myhf,self.ncas,self.nelecas,ncore=self.ncore,initMO=K,initCI=S,frozen=self.frozen)
-#         #     tmp_cas.kernel()
-#         #
-#         #     prev_orth_transf = orth.orth_ao(myhf.mol, 'meta_lowdin', s=prev_ovlp_ao)
-#         #     mo_coeff_ortho = reduce(np.dot, (prev_orth_transf.conj().T, prev_ovlp_ao, tmp_cas.mo_coeff))
-#         #
-#         #     tmp_inv = scipy.linalg.inv(np.dot(prev_orth_transf.conj().T, prev_ovlp_ao))
-#         #     init_mo_coeff = np.dot(tmp_inv, mo_coeff_ortho)
-#         if it==0:
-#             prev_ovlp_ao = myhf.get_ovlp()
-#
-#             # Run the initial calculation
-#             tmp_cas = NR_CASSCF(myhf,self.ncas,self.nelecas,ncore=self.ncore,initMO=MO,initCI=CI,frozen=self.frozen)
-#             tmp_cas.kernel()
-#
-#             prev_orth_transf = orth.orth_ao(myhf.mol, 'meta_lowdin', s=prev_ovlp_ao)
-#             mo_coeff_ortho = reduce(np.dot, (prev_orth_transf.conj().T, prev_ovlp_ao, tmp_cas.mo_coeff))
-#
-#             tmp_inv = scipy.linalg.inv(np.dot(prev_orth_transf.conj().T, prev_ovlp_ao))
-#             init_mo_coeff = np.dot(tmp_inv, mo_coeff_ortho)
-#         else:
-#             new_ovlp_ao = myhf.get_ovlp()
-#             new_orth_transf = orth.orth_ao(myhf.mol, 'meta_lowdin', s=new_ovlp_ao)
-#             tmp_inv = scipy.linalg.inv(np.dot(new_orth_transf.conj().T, new_ovlp_ao))
-#             init_mo_coeff = np.dot(tmp_inv, mo_coeff_ortho)
-#
-#             # init_CI = np.zeros((tmp_cas.nDet,tmp_cas.nDet))
-#             # for i in range(tmp_cas.nDet):
-#             #     newCIvec = transform_casvec(self,init_mo_coeff, tmp_cas.mo_coeff,tmp_cas.mat_CI[:,i], new_ovlp_ao)
-#             #     init_CI[:,i] = newCIvec/np.sqrt(np.dot(newCIvec,newCIvec.T))
-#             tmp_cas = NR_CASSCF(myhf,self.ncas,self.nelecas,ncore=self.ncore,initMO=init_mo_coeff,initCI=tmp_cas.mat_CI,frozen=self.frozen)
-#             tmp_cas.kernel()
-#             print(tmp_cas.e_tot)
-#
-#
-#             # All the new geom quantities become the previous ones
-#             prev_ovlp_ao = new_ovlp_ao
-#             prev_orth_transf = new_orth_transf
-#             mo_coeff_ortho = reduce(np.dot, (prev_orth_transf.conj().T, prev_ovlp_ao, tmp_cas.mo_coeff))
-#
-#         nrj.append(tmp_cas.e_tot)
-#         it+=1
-#         print(it)
-#     print(nrj)
-#     return
-
-def get_size(file):
-    f = open(file,"r")
-    lines = f.read().splitlines()
-
-    for i in range(10):
-        line = lines[i]
-        if re.match('The molecule has', line) is not None:
-            tmp_mol = re.split(r'\s', line)
-        if re.match('The active space', line) is not None:
-            tmp_cas = re.split(r'\s', line)
-        if re.match('Therefore there i', line) is not None:
-            tmp_det = re.split(r'\s', line)
-
-    nelec = int(tmp_mol[4])
-    norb = int(tmp_mol[-4])
-    ncas = int(tmp_cas[6])
-    nelecas = int(tmp_cas[-5])
-    nDet = int(tmp_det[-3])
-
-    return norb, nelec, ncas, nelecas, nDet
-
-def PES(self,list_geom,basis,charge,spin,file,nb):
-    it = 0
-
-    nrj = []
-
-    f = open(file,"r")
-    lines = f.read().splitlines()
-
-    norb, nelec, ncas, nelecas, nDet = get_size(file)
-
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        if re.match('Start the Newton-Raphson calculation number '+str(nb)+' ', line) is not None:
-            CI, MO = [], []
-            for j in range(nDet):
-                list_str = np.array(re.split(r'\s+', lines[i+14+j]))
-                empty_str = np.array([''])
-                list_str = np.setdiff1d(list_str,empty_str,True)
-                CI.append([float(k) for k in list_str])
-            for j in range(norb):
-                list_str = np.array(re.split(r'\s+', lines[i+17+nDet+j]))
-                empty_str = np.array([''])
-                list_str = np.setdiff1d(list_str,empty_str,True)
-                MO.append([float(k) for k in list_str])
-        i += 1
-    CI = np.array(CI)
-    MO = np.array(MO)
-    print(CI)
-    print(MO)
-
-    for geom in list_geom:
-        mol = gto.Mole()
-        mol.atom = geom
-        mol.unit = 'B'
-        mol.basis = basis
-        mol.charge = charge
-        mol.spin = spin
-        mol.build()
-        myhf = mol.RHF().run()
-        nb_point = 3
-
-        #     init_mo_coeff = np.dot(tmp_inv, mo_coeff_ortho)
-        if it==0:
-            prev_ovlp_ao = myhf.get_ovlp()
-
-            # Run the initial calculation
-            tmp_cas = NR_CASSCF(myhf,self.ncas,self.nelecas,ncore=self.ncore,initMO=MO,initCI=CI,frozen=self.frozen)
-            tmp_cas.kernel()
-
-            prev_orth_transf = orth.orth_ao(myhf.mol, 'meta_lowdin', s=prev_ovlp_ao)
-            mo_coeff_ortho = reduce(np.dot, (prev_orth_transf.conj().T, prev_ovlp_ao, tmp_cas.mo_coeff))
-
-            tmp_inv = scipy.linalg.inv(np.dot(prev_orth_transf.conj().T, prev_ovlp_ao))
-            init_mo_coeff = np.dot(tmp_inv, mo_coeff_ortho)
-        else:
-            new_ovlp_ao = myhf.get_ovlp()
-            new_orth_transf = orth.orth_ao(myhf.mol, 'meta_lowdin', s=new_ovlp_ao)
-            tmp_inv = scipy.linalg.inv(np.dot(new_orth_transf.conj().T, new_ovlp_ao))
-            init_mo_coeff = np.dot(tmp_inv, mo_coeff_ortho)
-
-            # init_CI = np.zeros((tmp_cas.nDet,tmp_cas.nDet))
-            # for i in range(tmp_cas.nDet):
-            #     newCIvec = transform_casvec(self,init_mo_coeff, tmp_cas.mo_coeff,tmp_cas.mat_CI[:,i], new_ovlp_ao)
-            #     init_CI[:,i] = newCIvec/np.sqrt(np.dot(newCIvec,newCIvec.T))
-            tmp_cas = NR_CASSCF(myhf,self.ncas,self.nelecas,ncore=self.ncore,initMO=init_mo_coeff,initCI=tmp_cas.mat_CI,frozen=self.frozen)
-            tmp_cas.kernel()
-            print(tmp_cas.e_tot)
-
-
-            # All the new geom quantities become the previous ones
-            prev_ovlp_ao = new_ovlp_ao
-            prev_orth_transf = new_orth_transf
-            mo_coeff_ortho = reduce(np.dot, (prev_orth_transf.conj().T, prev_ovlp_ao, tmp_cas.mo_coeff))
-
-        nrj.append(tmp_cas.e_tot)
-        print("distance",10-it*0.1)
-        it+=1
-    print(nrj)
     return
 
 
@@ -638,7 +417,7 @@ class NR_CASSCF(lib.StreamObject):
 
     @property
     def initMO(self):
-        '''  ''' #TODO
+        ''' Need to be run at the start of the kernel to initialize the MO '''
         if self._initMO is None:
             self._initMO = self._scf.mo_coeff
             return
@@ -647,50 +426,28 @@ class NR_CASSCF(lib.StreamObject):
 
     @property
     def initCI(self):
-        '''  ''' #TODO
+        ''' Need to be run at the start of the kernel to initialize the CI coeff '''
         if self._initCI is None:
             self._initCI = np.identity(self.nDet, dtype="float")
             return
         else:
             return self._initCI
 
-    # @property
-    # def mo_coeff(self):
-    #     return self.mo_coeff
-    #
-    # @mo_coeff.setter
-    # def mo_coeff(self,value):
-    #     self.mo_coeff = value
-
-
-    # @mo_coeff.setter
-    # def mo_coeff(self):
-    #     if self.mo_coeff is None:
-    #         self.mo_coeff = self._scf.mo_coeff
-    #         self.h1e = np.einsum('ip,ij,jq->pq', self._scf.mo_coeff, self.h1e_AO, self._scf.mo_coeff) # We transform the 1-electron integrals to the MO basis
-    #         self.eri = np.asarray(mol.ao2mo(self._scf.mo_coeff)) # eri in the MO basis as super index matrix (ij|kl) with i>j and k>l VERIFY THIS LAST POINT
-    #         self.eri = ao2mo.restore(1, self.eri, self.norb) # eri in the MO basis with chemist notation
-
-    # @property
-    # def mat_CI(self, value):
-    #     if self.mat_CI is None:
-    #         self.mat_CI = np.identity(self.nDet, dtype="float")
-
     def initializeMO(self):
-        '''  ''' #TODO
+        ''' Need to be run at the start of the kernel to initialize the MO '''
         self.mo_coeff = self._initMO
         self.h1e = np.einsum('ip,ij,jq->pq', self._initMO, self.h1e_AO, self._initMO) # We transform the 1-electron integrals to the MO basis
         self.eri = np.asarray(self.mol.ao2mo(self._initMO)) # eri in the MO basis as super index matrix (ij|kl) with i>j and k>l VERIFY THIS LAST POINT
         self.eri = ao2mo.restore(1, self.eri, self.norb) # eri in the MO basis with chemist notation
 
     def initializeCI(self):
-        '''  ''' #TODO
+        ''' Need to be run at the start of the kernel to initialize the CI coeff '''
         self.mat_CI = self._initCI
 
 
     @property
     def initHeff(self):
-        '''  ''' #TODO
+        ''' Need to be run at the start of the kernel to initialize the CAS 1 and 2 electron integrals '''
         self.h1eff, self.energy_core = self.h1e_for_cas()
         self.h2eff = self.get_h2eff()
         self.h2eff = ao2mo.restore(1,self.h2eff,self.ncas)
@@ -702,7 +459,7 @@ class NR_CASSCF(lib.StreamObject):
         pass
 
     def check_sanity(self):
-        '''  ''' #TODO
+        ''' Need to be run at the start of the kernel to verify that the number of orbitals and electrons in the CAS are consistent with the system '''
         assert self.ncas > 0
         ncore = self.ncore
         nvir = self.mo_coeff.shape[1] - ncore - self.ncas
@@ -782,7 +539,6 @@ class NR_CASSCF(lib.StreamObject):
                              max_memory=self.max_memory)
         return eri
 
-
     def get_CASRDM_1(self,ci):
         ''' This method compute the 1-RDM in the CAS space of a given ci wave function '''
         ncas = self.ncas
@@ -790,7 +546,7 @@ class NR_CASSCF(lib.StreamObject):
         if len(ci.shape)==1:
             nDeta = scipy.special.comb(ncas,nelecas[0]).astype(int)
             nDetb = scipy.special.comb(ncas,nelecas[1]).astype(int)
-            ci = ci.reshape((nDeta,nDetb)) #TODO be careful that the reshape is the inverse of the "unfolding" of the matrix vector
+            ci = ci.reshape((nDeta,nDetb))
         dm1_cas = self.fcisolver.make_rdm1(ci,ncas,nelecas) # the make_rdm1 method takes a ci vector as a matrix na x nb
         return dm1_cas.T # We transpose the 1-RDM because their convention is <|a_q^\dagger a_p|>
 
@@ -802,7 +558,7 @@ class NR_CASSCF(lib.StreamObject):
         if len(ci.shape)==1:
             nDeta = scipy.special.comb(ncas,nelecas[0]).astype(int)
             nDetb = scipy.special.comb(ncas,nelecas[1]).astype(int)
-            ci = ci.reshape((nDeta,nDetb)) #TODO be careful that the reshape is the inverse of the "unfolding" of the matrix vector
+            ci = ci.reshape((nDeta,nDetb))
 
         dm1_cas, dm2_cas = self.fcisolver.make_rdm12(ci,ncas,nelecas) # The make_rdm12 method takes a ci vector as a matrix na x nb
 
@@ -815,11 +571,11 @@ class NR_CASSCF(lib.StreamObject):
         if len(ci1.shape)==1:
             nDeta = scipy.special.comb(ncas,nelecas[0]).astype(int)
             nDetb = scipy.special.comb(ncas,nelecas[1]).astype(int)
-            ci1 = ci1.reshape((nDeta,nDetb)) #TODO be careful that the reshape is the inverse of the "unfolding" of the matrix vector
+            ci1 = ci1.reshape((nDeta,nDetb))
         if len(ci2.shape)==1:
             nDeta = scipy.special.comb(ncas,nelecas[0]).astype(int)
             nDetb = scipy.special.comb(ncas,nelecas[1]).astype(int)
-            ci2 = ci2.reshape((nDeta,nDetb)) #TODO be careful that the reshape is the inverse of the "unfolding" of the matrix vector
+            ci2 = ci2.reshape((nDeta,nDetb))
 
         t_dm1_cas = self.fcisolver.trans_rdm1(ci1,ci2,ncas,nelecas)
 
@@ -832,11 +588,12 @@ class NR_CASSCF(lib.StreamObject):
         if len(ci1.shape)==1:
             nDeta = scipy.special.comb(ncas,nelecas[0]).astype(int)
             nDetb = scipy.special.comb(ncas,nelecas[1]).astype(int)
-            ci1 = ci1.reshape((nDeta,nDetb)) #TODO be careful that the reshape is the inverse of the "unfolding" of the matrix vector
+            ci1 = ci1.reshape((nDeta,nDetb))
         if len(ci2.shape)==1:
             nDeta = scipy.special.comb(ncas,nelecas[0]).astype(int)
             nDetb = scipy.special.comb(ncas,nelecas[1]).astype(int)
-            ci2 = ci2.reshape((nDeta,nDetb)) #TODO be careful that the reshape is the inverse of the "unfolding" of the matrix vector
+            ci2 = ci2.reshape((nDeta,nDetb))
+
         t_dm1_cas, t_dm2_cas = self.fcisolver.trans_rdm12(ci1,ci2,ncas,nelecas)
 
         #t_dm2_cas = t_dm2_cas + np.einsum('pqrs->qpsr',t_dm2_cas) #TODO check this
@@ -892,20 +649,8 @@ class NR_CASSCF(lib.StreamObject):
                             dm2[p,i,j,q] = -0.5*self.delta_kron(i,j)*dm1[p,q]
                             dm2[j,q,p,i] = -0.5*self.delta_kron(i,j)*dm1[q,p]
 
-        # dm2 = 0.5*(dm2 + np.einsum("pqrs->qprs",dm2)) #According to QC and dynamics of excited states not sure about this
-
         dm2[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc] = dm2_cas # Finally we add the uvxy sector
         return dm2
-
-    @staticmethod
-    def check_symmetry(tensor):
-        if np.allclose(tensor,np.einsum('pqrs->rspq',tensor),atol=1e-06):
-            print("The tensor have the PQRS/RSPQ symmetry")
-        if np.allclose(tensor,np.einsum('pqrs->qpsr',tensor),atol=1e-06):
-            print("The tensor have the PQRS/QPSR symmetry")
-        if np.allclose(tensor,np.einsum('pqrs->qprs',tensor),atol=1e-06):
-            print("The tensor have the PQRS/QPRS symmetry")
-        return
 
     def get_hamiltonian(self):
         ''' This method build the Hamiltonian matrix '''
@@ -962,12 +707,12 @@ class NR_CASSCF(lib.StreamObject):
         return mat - mat.T
 
     def get_F_core(self):
-        '''  ''' #TODO
+        ''' Compute the core part of the generalized Fock matrix '''
         ncore = self.ncore
         return(self.h1e + 2*np.einsum('pqii->pq', self.eri[:, :, :ncore, :ncore]) - np.einsum('piiq->pq', self.eri[:, :ncore, :ncore, :]))
 
     def get_F_cas(self,dm1_cas):
-        '''  ''' #TODO
+        ''' Compute the active part of the generalized Fock matrix '''
         ncore = self.ncore
         nocc = ncore + self.ncas
         return(np.einsum('tu,pqtu->pq', dm1_cas, self.eri[:, :, ncore:nocc, ncore:nocc]) - 0.5*np.einsum('tu,puqt->pq', dm1_cas, self.eri[:, ncore:nocc, :, ncore:nocc]))
@@ -993,17 +738,6 @@ class NR_CASSCF(lib.StreamObject):
             g_orb[nocc:,ncore:nocc] = 2*np.einsum('tv,av->at', dm1_cas, F_core[nocc:,ncore:nocc]) + 4*np.einsum('tvxy,avxy->at',dm2_cas, self.eri[nocc:,ncore:nocc,ncore:nocc,ncore:nocc])
 
         return g_orb - g_orb.T # this gradient is a matrix, be careful we need to pack it before joining it with the CI part
-
-    # def get_gradOrbOK(self,dm1_cas,dm2_cas):
-    #     g_orb = np.zeros((self.norb,self.norb))
-    #     ncore = self.ncore
-    #     ncas = self.ncas
-    #     nocc = ncore + ncas
-    #     nvir = self.norb - nocc
-    #     dm1 = self.CASRDM1_to_RDM1(dm1_cas)
-    #     dm2 = self.CASRDM2_to_RDM2(dm1_cas,dm2_cas)
-    #     F = np.einsum('xq,qy->xy', dm1, self.h1e) + 2*np.einsum('xqrs,yqrs->xy', dm2, self.eri)
-    #     return -2*(F - F.T)
 
     def get_gradCI(self,H_fci):
         ''' This method build the CI part of the gradient '''
@@ -1196,7 +930,7 @@ class NR_CASSCF(lib.StreamObject):
 
         return H_ai, H_at, H_ti
 
-    def get_hessianOrbCI(self): #TODO
+    def get_hessianOrbCI(self):
         ''' This method build the orb-CI part of the hessian '''
         ncore = self.ncore
         ncas = self.ncas
@@ -1253,15 +987,16 @@ class NR_CASSCF(lib.StreamObject):
         return H
 
     def rotateOrb(self,K):
-        '''  ''' #TODO
+        ''' Rotate the orbital by the anti-hermitian matrix K '''
         mo = np.dot(self.mo_coeff, scipy.linalg.expm(K))
         return mo
 
     def rotateCI(self,S):
-        '''  ''' #TODO
+        ''' Rotate the CI coeff by the anti-hermitian matrix S '''
         ci = np.dot(scipy.linalg.expm(S), self.mat_CI)
         return ci
 
+    # The 4 following functions are taken from pyscf and are use to canonicalize the orbital
     def _eig(self, h, *args):
         return scf.hf.eig(h, None)
 
@@ -1472,10 +1207,6 @@ class NR_CASSCF(lib.StreamObject):
                     dm1_casUpdatep, dm2_casUpdatep = self.get_CASRDM_12(ciUpdatep[:,0])
                     dm1_casUpdatem, dm2_casUpdatem = self.get_CASRDM_12(ciUpdatem[:,0])
 
-                    # eUpdatepp = self.get_energy(h1eUpdatep, eriUpdatep, dm1_casUpdatep, dm2_casUpdatep)
-                    # eUpdatepm = self.get_energy(h1eUpdatep, eriUpdatep, dm1_casUpdatem, dm2_casUpdatem)
-                    # eUpdatemp = self.get_energy(h1eUpdatem, eriUpdatem, dm1_casUpdatep, dm2_casUpdatep)
-                    # eUpdatemm = self.get_energy(h1eUpdatem, eriUpdatem, dm1_casUpdatem, dm2_casUpdatem)
                     eUpdatepp = self.get_energy_cas(h1effp, h2effp, dm1_casUpdatep, dm2_casUpdatep)
                     eUpdatepm = self.get_energy_cas(h1effp, h2effp, dm1_casUpdatem, dm2_casUpdatem)
                     eUpdatemp = self.get_energy_cas(h1effm, h2effm, dm1_casUpdatep, dm2_casUpdatep)
@@ -1487,19 +1218,19 @@ class NR_CASSCF(lib.StreamObject):
         return H_OrbOrb, H_CICI, H_OrbCI[idx,:]
 
     def get_energy(self, h1e, eri, dm1_cas, dm2_cas):
-        '''  ''' #TODO
+        ''' Compute the energy corresponding to a given set of one-el integrals, two-el integrals, 1- and 2-RDM '''
         dm1 = self.CASRDM1_to_RDM1(dm1_cas)
         dm2 = self.CASRDM2_to_RDM2(dm1_cas,dm2_cas)
         E = np.einsum('pq,pq', h1e, dm1) + np.einsum('pqrs,pqrs', eri, dm2)
         return E
 
     def get_energy_cas(self, h1eff, h2eff, dm1_cas, dm2_cas):
-        '''  ''' #TODO
+        ''' Compute the CAS energy corresponding to a given set of one-el integrals, two-el integrals, 1- and 2-RDM '''
         E = np.einsum('pq,pq', h1eff, dm1_cas) + np.einsum('pqrs,pqrs', h2eff, dm2_cas)
         return E
 
     def spin_square(self,fcivec):
-        '''  ''' #TODO
+        ''' Compute the spin of a given FCI vector '''
         return self.fcisolver.spin_square(fcivec,self.ncas,self.nelecas)
 
     def get_index(self,H_fci):
@@ -1583,4 +1314,3 @@ if __name__ == '__main__':
     myhf = mol.RHF().run()
     mycas = NR_CASSCF(myhf,cas[0],cas[1],frozen=frozen)
     grid_search(mycas, grid_option)
-
