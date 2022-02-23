@@ -1,0 +1,6 @@
+basis sto-3g
+charge 0
+spin 0
+frozen 3
+cas (2,2)
+grid 20
