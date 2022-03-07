@@ -136,7 +136,8 @@ For a truncated CI expansion one needs to optimize the CI coefficients as for th
 \end{equation}
 constituting the determinants. The $\chi_{\mu}(\bm{x})$ are the atomic orbitals which depend on the spin-spatial coordinate $\bm{x} = (\bm{r},\sigma)$ of an electron.
 Optimizing the CI coefficients $C_I$ and the orbital coefficients $c_i^\mu$ for a given truncation of Eq.~(\ref{eq:fci_wf}) defines the MCSCF ans\"atz.
-\todo{Define the active space truncation}
+The CASSCF ans\"atz is a special case of the MCSCF one in which the truncation is done according to an active space defined by the user.
+More precisely, the determinants included in the sum of a $(n,m)$ CASSCF wave function are the one with every core orbital doubly occupied, every virtual orbital empty and the remaining $m$ electrons distributed in the $n$ active orbitals.
 
 These two sets of coefficients are constrained by the following relations
 \begin{align}
@@ -295,9 +296,9 @@ In particular, in the following we will be interested in the description of exci
 Then, we turn to a slightly larger basis set, namely the 6-31G one, \cite{Ditchfield_1971} and consider a (2,2) CASSCF wave function.
 Using SA-CASSCF one can obtain three singlet and one triplet state as shown in Table~\ref{tab:tab_1}.
 On the other hand, using the same active space but in a SS formalism one can obtain an approximation of the sixteen FCI states of this system.
-Table~\ref{tab:tab_1} shows that the agreement between the SS-CASSCF energies and their FCI counterparts is consistent for all states and is not worse outside of the CAS.
-\todo{Compute mean deviation and largest dev}
-In addition, as expected the SS (2,2) energies are in closer agreement than the SA (2,2) ones, because the orbitals are fully optimized for each states.
+Table~\ref{tab:tab_1} shows that the agreement between the SS-CASSCF energies and their FCI counterparts is consistent for all states and is still quantitative outside of the CAS.
+The mean absolute deviation is $0.00250~E_h$ for the four states within the CAS and $0.01106~E_h$ for the twelve remaining states.
+In addition, as expected the SS (2,2) energies are in closer agreement than the SA (2,2) ones (which have a mean absolute deviation of $0.01782~E_h$), because the orbitals are fully optimized for each states.
 Even with the only non-exact larger active space available, namely (3,2), the SA formalism cannot obtain as much states as the SS one with a (2,2) active space.
 
 Because there is no free lunch, there is a counterpart to these advantages. Indeed, we can see that four singlet states exhibit close-lying spurious solutions (see Table~\ref{tab:tab_1}).
@@ -356,7 +357,6 @@ On the left plot of Fig.~\ref{fig:fig_3}, we can see the index of the solutions 
 We can see that close-lying spurious solutions may have different indexes.
 For example, the three lowest solutions have indexes equal to 0, 1 and 2 in ascending order of energy.
 At this stage, one can argue that in terms of energy spurious solutions are not that much worrying as each of them is fairly close to an FCI energy (vertical lines in  Fig.~\ref{fig:fig_3}).
-\todo{Add largest dev of spurious solution}
 \todo{Shall we add a sentence on variational upper bound?}
 
 The right plot is the analog of the left one but in the strong correlation regime ($R=5~a_0$).
@@ -541,16 +541,16 @@ The SS-CASSCF ground-state solution at equilibrium (red curve) correspond to a d
 By delocalizing a small fraction of electron in the $\pi_y^*$ orbital the SS-CASSCF solution achieve some resonance stabilization between the HF ground state and the singlet charge-transfer excited state.
 However, this solution is going to the wrong dissociation limit as we can see on the plot.
 
-We have found another minimum solution at dissociation limit (cyan curve).
+We have found another minimum solution at dissociation limit (green curve).
 This solution correspond to the two open-shell atom, the active space has one electron in the $2s$ of the lithium atom and one electron in the $\pi_z$ localized on the fluorine.
 When $R$ decrease the electron in the $2s$ is transfered to the $\pi_z$ and at equilibrium this solution is equivalent to the closed-shell HF ground state.
-The $2s$ orbital localized on the Lithium atom does have the correct symmetry to dynamically correlate the HF determinant as the $1\Sigma^+$.
+The $2s$ orbital localized on the Lithium atom does have the correct symmetry to dynamically correlate the HF determinant as the $1 {}^1\Sigma^+_{\text{eq}}$.
 
 Now turning to the SS-CASSCF description of the avoided crossing.
 Figure~\ref{fig:fig_7} shows that the CASSCF singlet states are behaving in a ``quasi-diabatic'' manner. The two singlet excited states (yellow and purple curves) are dissociating to the lowest dissociation limit while one of them should interact with the ground-state to form an avoided crossing.
 It would be interesting to make these three solutions interact through the Hamiltonian in analogy with NOCI.
 By scrutinizing the symmetry of the natural orbitals of the two singlet excited states, we expect that only one of them can interact with the ground state (see \SupInf).
-It would also be interesting to see if one can describe the ground state at all bond lengths by interaction of the $1\Sigma^+$ and $1\Sigma^+_{\text{diss}}$ solutions correct at small and large $R$, respectively.
+It would also be interesting to see if one can describe the ground state at all bond lengths by interaction of the $1 {}^1\Sigma^+_{\text{eq}}$ and $1 {}^1\Sigma^+_{\text{diss}}$ solutions correct at small and large $R$, respectively.
 We keep this for a future work.
 
 %%%  FIG 7  %%%
@@ -566,7 +566,7 @@ We keep this for a future work.
 \label{sec:conclusion}
 %=================================================================%
 
-\todo{Add conclusionaaa}
+\todo{Add conclusion}
 
 %%%%%%%%%%%%%%%%%%%%%%%%
 \begin{acknowledgements}
