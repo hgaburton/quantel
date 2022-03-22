@@ -35,7 +35,7 @@
 
 \begin{document}	
 
-\title{Understanding the CASSCF solution space}
+\title{Understanding CASSCF multiple solutions}
 
 \author{Antoine \surname{Marie}}
 \affiliation{\UOX}
@@ -56,51 +56,61 @@
 % =================================================================%
 
 State-specific (SS) electronic structure methods for excited states are on the rise. \cite{Gilbert_2008,Barca_2014,Thom_2008,Ye_2017,Barca_2018a,Thompson_2018,Hait_2020,Carter-Fenk_2020,Hait_2021,Mayhall_2010,Lee_2019,Kossoski_2021}
-Because they treat excited and ground states on an equal footing these methods provide a natural way to compute relative energies such as excitation energies.
+Their treatment of excited states on an equal footing to the ground state provides a natural way to compute relative energies such as excitation energies.
 On the other hand, linear-response and equation-of-motion based methods are known to introduce a bias towards the ground state. \cite{McLachlan_1964,Runge_1984,Dreuw_2005,Burke_2005,Bartlett_2012,Helmich-Paris_2019}
 However, this attractive property comes with a cost, namely one should be able to converge toward excited-state solutions in various formalism.
-It has been shown that most often excited state solutions correspond to non-zero index stationary points, \ie saddle points and maxima. \todo{add ref}
-Energy landscapes in electronic structure theory are most often considered only during minimization processes to target ground-state energies and their associated wave functions.
-However, other stationary points exist on these landscapes and they might correspond to an approximation of an excited state or they can be spurious unphysical solutions.
+These solutions has been shown to exist most often as non-zero index stationary points, \ie saddle points and maxima. \cite{Burton_2021}
+Energy landscapes in electronic structure theory are mainly considered during minimization processes to target ground-state energies and their associated wave functions.
+However, other higher stationary points exist on these landscapes and they might correspond to approximations of excited states or they can also be spurious unphysical solutions.
 While converging toward a minimum is somewhat straightforward, converging towards saddle points is much more subtle.
-Therefore, an accurate understanding of the underlying landscape of a given method helps to design algorithms targeting such stationary points, which we will refer to as state-specific algorithms. \cite{Burton_2022}
+Therefore, an accurate understanding of the underlying landscape of a given method helps to design algorithms targeting any stationary points, which we will refer to as state-specific algorithms. \cite{Burton_2022}
 
 The Hartree-Fock (HF) \cite{Szabo_1996} energy landscape is now fairly well understood.\cite{Thompson_2018,Dong_2020,Burton_2021}
 On this landscape one can find single-determinant approximations of excited states \cite{Gilbert_2008,Barca_2014} and quasi-diabatic states. \cite{Thom_2009}
 In addition, when correlation is getting strong, additional symmetry-broken solutions may appear.\cite{Coulson_1949}
 As a consequence the number of solution can vary with the geometry of the system.
 One can find similar single-determinant approximations of excited states in the context of density functional theory (DFT). \cite{Hait_2020,Hait_2021}
-Hait \etal have shown that minimizing the variance instead of the energy can provide an easier way of converging mean-field excited states, \cite{Hait_2020} see Ref.~\onlinecite{Burton_2022} for an extensive discussion on the advantages and flaws of variance-based minimization.
+Hait \etal have shown that minimizing the variance instead of the energy can provide an easier way of converging mean-field excited states, \cite{Hait_2020} see Ref.~\onlinecite{Burton_2022} for an extensive discussion on the advantages and flaws of variance-based minimization from an energy landscape perspective.
 In addition, $\Delta$-DFT can access double excitations which are inherently out of range of time-dependent (TD) DFT \cite{Hait_2021} and provide a fairly good description of charge transfer excitations for which TDDFT is known to seriously fail. \cite{Hait_2021} \todo{Need ref on the flaws of TDDFT}
 
 State-specific algorithms can also be developped for correlated methods such as coupled-cluster (CC). \cite{Shavitt_2009}
 The CC energy landscape also exhibits higher-lying solutions corresponding to physical excited states. \cite{Jankowski_1994,Jankowski_1994a,Piecuch_2000,Mayhall_2010,Lee_2019,Kossoski_2021}
-However, there are also non-physical spurious solutions which need to be avoided in practice. \cite{Jankowski_1994,Jankowski_1994a,Piecuch_2000,Mayhall_2010,Kossoski_2021,Marie_2021a}
-Here again, insights on the energy landscape have been useful to converge toward CC excited states solutions, notably understanding the influence of the reference wave function on the basins of attraction. \cite{Jankowski_1995,Lee_2019,Marie_2021a}
+However, there are also stationary points associated with non-physical spurious solutions which need to be avoided in practice. \cite{Jankowski_1994,Jankowski_1994a,Piecuch_2000,Mayhall_2010,Kossoski_2021,Marie_2021a}
+Here again, insights on the energy landscape have been useful to improve convergence toward CC excited states solutions, notably understanding the influence of the reference wave function on the basins of attraction. \cite{Jankowski_1995,Lee_2019,Marie_2021a}
 $\Delta$-CC has been proved to give accurate energies for doubly excited states and double core excitations. \cite{Lee_2019}
 It has also been shown that one can obtain excitation energies in agreement with equation-of-motion CCSDT (CC with single, double and triple excitations) using only $\Delta$-pCCD (CC restricted to closed-shell double excitations). \cite{Kossoski_2021}
 
-The methods mentioned above are known to fail dramatically in the presence of strong correlation. \cite{Jensen_2017}
+The methods mentioned previously are known to fail dramatically in the presence of strong correlation. \cite{Jensen_2017}
 The state-of-the-art method to treat static correlation in electronic structure is the multi-configuration self-consistent field (MCSCF) method in its complete active space (CAS) variant. \cite{Roos_2016}
 The CASSCF method aims at optimizing the configuration interaction (CI) coefficients as well as the molecular orbitals of a trial wave function written as a linear combination of Slater determinants. \cite{Helgaker_2000,Roos_2016}
 Therefore, the CASSCF ground state is a minimum with respect to these two sets of parameters and very powerful algorithm have been implemented to obtain this solution. \cite{Roos_1980,Werner_1985,Sun_2017,Kreplin_2019,Kreplin_2020}
-Moreover, higher-lying stationary points corresponding to excited states have also been found on the CASSCF energy landscape. \todo{ref}
+Moreover, higher-lying stationary points corresponding to excited states have also been found on the CASSCF energy landscape (see the following paragraph).
 However, so far converging consistently toward a given saddle point on this landscape is difficult to achieve in practice.
-This is why the state-averaged (SA) version of CASSCF is almost always used in practice to obtain approximate excited states within the CASSCF formalism.
-In SA-CASSCF the energy of an average of $n$ states is minimized and therefore one obtain an approximation for the $n$ lowest states of the system.
+This is why the state-average (SA) approach is almost always used in practice to obtain approximate excited states within the CASSCF formalism.
+In SA-CASSCF the energy of an average of $n$ states is minimized, hence an approximation for the $n$ lowest states of the system is obtained.
 As a consequence these states are not true CASSCF stationary points because the orbitals are optimized for all states at the same time.
 
-While being computationally simpler, the SA-CASSCF method is not without its own flaws. \todo{Find ref for this paragraph}
-First, SA-CASSCF potential energy surfaces often show discontinuities if the average contains two states of different character therefore requiring different orbitals (for example the ground state and a charge-transfer excited state).
+While being computationally simpler, the SA-CASSCF method is not without its own flaws. \cite{Zaitsevskii_1994,Helmich-Paris_2019} \todo{Find ref for this paragraph}
+First, SA-CASSCF potential energy surfaces often show discontinuities if the average contains two states of different character therefore requiring different orbitals (for example the ground state and a charge-transfer excited state). \cite{Zaitsevskii_1994}
 Secondly, SA-CASSCF can access excited states only within the CAS therefore it requires large active space to target high-lying states.
-On the other hand, the orbital optimization within the SS-CASSCF formalism can swap active orbitals and virtual orbitals and therefore target states which are out of reach of SA-CASSCF (see Sec.~\ref{sec:illustrative}).
+On the other hand, the orbital optimization within the SS-CASSCF formalism can swap active and virtual orbitals, therefore making it possible to target states which are out of reach of SA-CASSCF (see Sec.~\ref{sec:illustrative}).
+Moreover, because SA-CASSCF solutions are not true stationary points they cannot benefit from the Helmann-Feynman theorem.
 These drawbacks of SA-CASSCF motivates the work towards a SS-CASSCF algorithm despite the difficulties associated with its developpement to overcome SA-CASSCF in difficult cases.
-
-\textsection Mention existing work on SS CASSCF \todo{Read biblio again to write this paragraph, first Olsen et al in the 80's then recent work by Neuscamman \etal} \cite{Golab_1983,Golab_1985,Olsen_1982,Olsen_1983,Rizzo_1990,Guihery_1997,Angeli_2003,Tran_2019,Tran_2020,Hanscam_2021}
-
 The aim of this work is to shed light on the SS-CASSCF landscape and its stationary points in order to facilitate the future works on SS-CASSCF algorithms.
-In the next section, we will briefly review the CASSCF theory then we will present the computational details of this study in Sec.~\ref{sec:comp_details}. Section \ref{sec:illustrative} showcase the SS-CASSCF solutions in two simple examples, then we perform a systematic study of the solution space in Sec.~\ref{sec:origin}.
+
+In their seminal work on the MCSCF stationary points, Olsen and co-workers used the Fletcher algorithm together with a second-order Newton-Raphson algorithm to target stationary points of a given index. \cite{Olsen_1982,Olsen_1983}
+They observed that there are many of them and that convergence is very sensitive to the starting point.
+In subsequent works, several criteria that a physically meaningful solution should fulfill have been introduced. \cite{Olsen_1983,Golab_1983,Golab_1985,Rizzo_1990}
+Maybe the most troubling finding of these studies has been that sometimes for a given states two physical solutions, \ie matching all criteria, can be found. \cite{Rizzo_1990}
+Multiple SS-CASSCF solutions have been found in further studies by other groups. \cite{Guihery_1997,Angeli_2003}
+One observation shared by all these studies is that the basis set and the size of the CAS strongly influence the multiple solutions that they could find.
+More recently, the group of Neuscamman tackled the problem of SS-CASSCF solution again. They developped an algorithm based on the generalized variational principle to target excited states on the CASSCF landscape. \cite{Tran_2019,Tran_2020,Hanscam_2021}
+\todo{Improve this paragraph}
+
+In the next section, we will briefly review the CASSCF theory then we will present the computational details of this study in Sec.~\ref{sec:comp_details}.
+Section \ref{sec:illustrative} showcase the SS-CASSCF solutions in two simple examples, then we perform a systematic study of the solution space in Sec.~\ref{sec:origin}.
 Finally, we look at the behavior of SS-CASSCF solutions in the neighborhood of avoided crossings in Sec.~\ref{sec:avoided} before drawing conclusions in Sec~.\ref{sec:conclusion}.
+Atomic units will be used throughout the manuscript.
 
 %=================================================================%
 \section{Theoretical background}
@@ -112,7 +122,7 @@ The exact solution $\ket{\Psi_{\FCI}}$, in a finite Hilbert space, of the non-re
   \label{eq:schro_eq}
   \hH \ket{\Psi_{\FCI}} = E \ket{\Psi_{\FCI}},
 \end{equation}
-where $\hH$ is the electronic Hamiltonian can be written as \cite{Szabo_1996}
+where $\hH$ is the electronic Hamiltonian, can be written as \cite{Szabo_1996}
 \begin{equation}
   \label{eq:fci_wf}
   \ket{\Psi_{\FCI}} = \sum_I^{N_{det}} C_I\ket{I},
@@ -137,15 +147,15 @@ For a truncated CI expansion one needs to optimize the CI coefficients as for th
 constituting the determinants. The $\chi_{\mu}(\bm{x})$ are the atomic orbitals which depend on the spin-spatial coordinate $\bm{x} = (\bm{r},\sigma)$ of an electron.
 Optimizing the CI coefficients $C_I$ and the orbital coefficients $c_i^\mu$ for a given truncation of Eq.~(\ref{eq:fci_wf}) defines the MCSCF ans\"atz.
 The CASSCF ans\"atz is a special case of the MCSCF one in which the truncation is done according to an active space defined by the user.
-More precisely, the determinants included in the sum of a $(n,m)$ CASSCF wave function are the one with every core orbital doubly occupied, every virtual orbital empty and the remaining $m$ electrons distributed in the $n$ active orbitals.
+More precisely, the determinants included in the sum of a $(n,m)$ CASSCF wave function are the one with every core orbital doubly occupied, every virtual orbital empty and the remaining $m$ electrons distributed in the $n$ active orbitals picked by the user.
 
 These two sets of coefficients are constrained by the following relations
 \begin{align}
   \label{eq:constraint}
   \sum_I^N C^2_I &= 1, & \sum^K_\mu (c_i^\mu)^2 &= 1,
 \end{align}
-coming from the respective normalization of the MCSCF wave function and of the molecular orbitals.
-To take into account these constraints we parametrize the MCSCF wave function as follows
+coming from the normalization of the MCSCF wave function and of the molecular orbitals, respectively.
+To take into account these constraints the MCSCF wave function is parametrized as follows
 \begin{equation}
   \label{eq:mcscf_wf}
   \ket{\Psi_{\MCSCF}}=e^{\hK}e^{\hS}\ket{\Psi_0},
@@ -156,7 +166,7 @@ where $\ket{\Psi_0}$ is the initial MCSCF vector, $\hK$ and $\hS$ are the orbita
   \hS &= \sum_{L \neq 0} S_{L}\left(\ket{\Psi_L}\bra{\Psi_0}-\ket{\Psi_0}\bra{\Psi_L}\right),
 \end{align}
 where $\ket{\Psi_{L}} = \sum_I C_I^L\ket{I} $ are the orthogonal complement to $\ket{\Psi_0}$, $\cre{p}$ and $\ani{q}$ are the creation and annihilation operators, respectively.
-The operators $\hK$ and $\hS$ are anti-hermitian such that their exponential is an unitary operator, \ie rotations which will preserve the constraints of Eq.~(\ref{eq:constraint}).
+The operators $\hK$ and $\hS$ are anti-hermitian such that their exponential is an unitary operator, \ie a rotation which will preserve the constraints of Eq.~(\ref{eq:constraint}).
 The orbital rotation coefficients $\kappa_p^q$ and the CI rotation coefficients $S_{L}$ are the new sets of coefficients to be determined, \ie we search the stationary points of
 \begin{equation}
   \label{eq:mcscf_nrj}
@@ -167,13 +177,13 @@ with $\bm{\kappa}$ and $\bm{S}$ the vectors that gather the rotation coefficient
 In this work we are concerned with understanding the CASSCF solution space so we choose an algorithm which can converge on any stationary points given the right initial point.
 Of course, such an algorithm would be too computationally expensive to be used for real systems but here we focus on understanding in details small systems.
 Therefore, we choose a general second-order Newton-Raphson scheme. \cite{Olsen_1983}
-To do so, we Taylor expand the energy around the origin $\bm{\lambda}=0$ with $\bm{\lambda}$ a ``super-vector'' gathering all rotation coefficients,
+To do so,the energy is Taylor expanded around the origin $\bm{\lambda}=0$ with $\bm{\lambda}$ a ``super-vector'' gathering all rotation coefficients,
 \begin{equation}
   \label{eq:mcscf_nrj_taylor}
-  E(\bm{\lambda}) = E(0) + \boldsymbol{g}^\dagger.\bm{\lambda} + \frac{1}{2} \bm{\lambda}^\dagger.\boldsymbol{H}.\bm{\lambda} + \dots,
+  E(\bm{\lambda}) = E(0) + \bm{g}^\dagger.\bm{\lambda} + \frac{1}{2} \bm{\lambda}^\dagger.\boldsymbol{H}.\bm{\lambda} + \dots,
 \end{equation}
 where $\bm{g}$ is the gradient vector and $\bm{H}$ the hessian matrix.
-We can identify the gradient and hessian in the expression above with the following Baker-Campbell-Hausdorff expansion of the energy \eqref{eq:mcscf_nrj}
+We can identify the gradient and Hessian in the expression above with the following Baker-Campbell-Hausdorff expansion of the energy \eqref{eq:mcscf_nrj}
 \begin{equation}
   \label{eq:mcscf_nrj_bch}
   \begin{split}
@@ -183,8 +193,8 @@ We can identify the gradient and hessian in the expression above with the follow
   \end{split}
 \end{equation}
 which gives a way to compute them.
-The expression of the gradient and the hessian in terms of one- and two-electron integrals as well as one-body and two-body density matrices have already been derived elsewhere \cite{Olsen_1983} and are given in the Appendix~\ref{app:appendixA} for the sake of completeness.
-Then we update the orbital coefficient matrix $(\bm{c})_{i \mu} = c_i^\mu$ and the CI coefficient matrix $(\bm{C})_{IL} = C_I^L$ as
+The expression of the gradient and the Hessian in terms of one- and two-electron integrals, $h_{pq}$ and  $\ceri{yq}{rs}$, as well as one- and two-body density matrices, $\gamma_{pq}$ and $\Gamma_{pqrs}$, have already been derived elsewhere \cite{Olsen_1983} and are given in the Appendix~\ref{app:appendixA} for the sake of completeness.
+Then the orbital coefficient matrix $(\bm{c})_{i \mu} = c_i^\mu$ and the CI coefficient matrix $(\bm{C})_{IL} = C_I^L$ are updated as
 \begin{align}
   \bm{c} &= \bm{c}_0 e^{(-\bm{H}^{-1}\cdot \bm{g})_{\text{orb}}} & \bm{C} &= \bm{C}_0 e^{(-\bm{H}^{-1}\cdot \bm{g})_{\text{CI}}}
 \end{align}
@@ -192,7 +202,7 @@ where the subscripts denote the orbital and CI parts of the ``super-vector'' $-\
 
 Because we aim at finding multiple SS-CASSCF solutions we need a way to distinguish them.
 To do this we need a canonical way to represent the solutions as they are defined up to some redundant rotations. \cite{Helgaker_2000}
-The canonical orbitals are define as the orbitals which diagonalize the following generalized Fock matrix
+The canonical orbitals are defined as the orbitals which diagonalize the following generalized Fock matrix
 \begin{equation}
   \label{eq:general_fock}
   F_{xy} = \sum_q \gamma_{xq}h_{yq} + \sum_{qrs} \Gamma_{xqrs}\ceri{yq}{rs}.
@@ -202,7 +212,7 @@ In addition, one can compute the scalar product between two different SS-CASSCF 
   \label{eq:scalprod}
   \braket{^x\Psi}{^w\Psi} =~^{xw}S,
 \end{equation}
-with different set of orbitals. This can be computed using generalized Slater-Condon rules. \cite{Burton_2021a}
+associated with different set of orbitals. This can be computed using generalized Slater-Condon rules. \cite{Burton_2021a}
 To find as many solutions as possible, we have used a stochastic grid-based approach.
 Each rotation elements $\kappa_{pq}$ and $S_{L}$ were chosen equal to $0$, $\pi/8$ or $\pi/4$.
 As mentioned in the grid approach of Ref.~\onlinecite{Thompson_2018}, we do not really need to consider other values because $\pi/4$ swap two orbitals (or two CI vectors) while $\pi/8$ mixes them.
