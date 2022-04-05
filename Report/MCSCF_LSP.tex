@@ -15,6 +15,8 @@
 \newcommand{\ant}[1]{\textcolor{orange}{#1}}
 \newcommand{\trashant}[1]{\textcolor{orange}{\sout{#1}}}
 
+\allowdisplaybreaks
+
 \usepackage[
 	colorlinks=true,
     citecolor=blue,
@@ -91,7 +93,7 @@ This is why the state-average (SA) approach is almost always used in practice to
 In SA-CASSCF the energy of an average of $n$ states is minimized, hence an approximation for the $n$ lowest states of the system is obtained.
 As a consequence these states are not true CASSCF stationary points because the orbitals are optimized for all states at the same time.
 
-While being computationally simpler, the SA-CASSCF method is not without its own flaws. \cite{Zaitsevskii_1994,Helmich-Paris_2019} \todo{Find ref for this paragraph}
+While being computationally simpler, the SA-CASSCF method is not without its own flaws. \cite{Zaitsevskii_1994,Helmich-Paris_2019}
 First, SA-CASSCF potential energy surfaces often show discontinuities if the average contains two states of different character therefore requiring different orbitals (for example the ground state and a charge-transfer excited state). \cite{Zaitsevskii_1994}
 Secondly, SA-CASSCF can access excited states only within the CAS therefore it requires large active space to target high-lying states.
 Moreover, because SA-CASSCF solutions are not true stationary points they cannot benefit from the Helmann-Feynman theorem.
@@ -102,9 +104,8 @@ They observed that there are many of them and that convergence is very sensitive
 In subsequent works, several criteria that a physically meaningful solution should fulfill have been introduced. \cite{Olsen_1983,Golab_1983,Golab_1985,Rizzo_1990}
 Maybe the most troubling finding of these studies has been that sometimes for a given states two physical solutions, \ie matching all criteria, can be found. \cite{Rizzo_1990}
 Multiple SS-CASSCF solutions have been found in further studies by other groups. \cite{Guihery_1997,Angeli_2003}
-One observation shared by all these studies is that the basis set and the size of the CAS strongly influence the multiple solutions that they could find.
-More recently, the group of Neuscamman tackled the problem of SS-CASSCF solution again. They developped an algorithm based on the generalized variational principle to target excited states on the CASSCF landscape. \cite{Tran_2019,Tran_2020,Hanscam_2021}
-\todo{This paragraph needs improvements}
+One observation shared by all these studies is that the one-electron basis set as well as the size of the CAS strongly influence the multiple solutions that they could find.
+More recently, the group of Neuscamman tackled the problem of SS-CASSCF solutions again. They developped an algorithm based on the generalized variational principle to target excited states on the CASSCF landscape. \cite{Tran_2019,Tran_2020,Hanscam_2021}
 
 The aim of this work is to shed light on the SS-CASSCF landscape and its stationary points because we believe that a clear understanding of the multiple CASSCF solutions will facilitate future works on SS-CASSCF.
 For example, confirming the presence (or absence) of unphysical solutions on this landscape, as well as understanding under what conditions these solutions exist, is of primary importance.
@@ -322,7 +323,7 @@ Even with the only non-exact larger active space available, namely (3,2), the SA
 %%% %%% %%% %%%
 
 From a landscape perspective, the simplest characterization of SS-CASSCF solutions that can be used is the Hessian index of the corresponding stationary points, \ie the number of negative eigenvalues of the Hessian.
-It has also been argued that an approximation to the $n$-th excited state should be a $n$-index stationary point. \todo{ref}
+It has also been argued that an approximation to the $n$-th excited state should be a $n$-index stationary point. \cite{Olsen_1983,Olsen_1982}
 Figure~\ref{fig:fig_2} shows the index of the solutions of Tab.~\ref{tab:tab_1} with respect to their energy.
 First, we observe that SS-CASSCF excited states exist as saddle points on the landscape similarly to what has been observed in various other formalism. \cite{Gilbert_2008,Hait_2021,Kossoski_2021}
 Then, this figure suggests that the index criteria might not be a really useful criteria for high-lying excited states.
@@ -493,7 +494,7 @@ This might be due to the fact some choices of virtual orbitals for the active sp
 \end{figure}
 %%% %%% %%% %%%
 
-It is now well-known that the number of solution in HF, DFT and CC is not constant with respect to variation of the geometry of the system. \todo{ref}
+It is now well-known that the number of solution in HF, DFT and CC is not constant with respect to variation of the geometry of the system. \cite{Burton_2021}
 In this section, the influence of geometry, and therefore of static correlation, on the SS-CASSCF solution space and its landscape will be investigated.
 Figure~\ref{fig:fig_5} shows the number of solution (2,2) SS-CASSCF solutions for \ce{H2} in the 6-31G basis set with respect to the bond length $R$.
 One can immediately see that the same behavior as in the aforementioned theories is observed in the context of CASSCF, namely that the number of solutions is larger when the static correlation becomes dominant.
@@ -591,11 +592,11 @@ It has been shown that HF solutions behave ``quasi-diabatically'' in the vicinit
 One can recover the avoided crossing by making interact the HF solutions through the Hamiltonian, resulting in a non-orthogonal (NO) CI scheme. \cite{Burton_2019}
 Therefore, it would be interesting to see if SS-CASSCF solutions also behave ``quasi-diabatically'' or if they can reproduce the avoided crossing.
 To answer this question we investigate the LiF molecule in the STO-3G basis set.
-The ionic ground state of this molecule at equilibrium undergoes an avoided crossing with a covalent excited state when the bond is stretched. \cite{Thom_2009,Mahler_2021}
+The ionic ground state of this molecule at equilibrium undergoes an avoided crossing with a covalent excited state when the bond is stretched. \cite{Bauschlicher_1988,Thom_2009,Mahler_2021}
 
 First, the focus is on the sole ground-state which is a closed-shell ionic state at equilibrium and which dissociates into two neutral open-shell atoms.
 The single determinant HF ground-state gives a fairly good description of the equilibrium closed-shell.
-However, this HF solution cannot describe the correct dissociation limit which is inherently multi-reference. \todo{add ref}
+However, this HF solution cannot describe the correct dissociation limit which is inherently multi-reference. \cite{Thom_2009}
 Figure~\ref{fig:fig_9} shows the lowest (2,2) SS-CASSCF singlet solutions (lines) as well as the three lowest FCI singlets (dots).
 The SS-CASSCF ground-state solution at equilibrium (red curve) correspond to a dynamically correlated HF ground state, \ie the active space contains the HF highest occupied MO, a $\pi_y$ orbital mostly localized on the fluorine atom, and the associated $\pi_y^*$.
 By delocalizing a small fraction of electron in the $\pi_y^*$ orbital the SS-CASSCF solution achieve some resonance stabilization between the HF ground state and the singlet charge-transfer excited state.
@@ -661,22 +662,20 @@ Talk about how to choose the physical solution, spin symmetry breaking, neuscamm
 \label{app:appendixA}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-In this appendix we give explicit expressions to compute the gradient and Hessian used in the Newton-Raphson algorithm.
+In this appendix, we give explicit expressions to compute the gradient and Hessian needed in the Newton-Raphson algorithm.
 The gradient can be divided in two parts, namely the CI part $g^c$ and the orbital part $g^o$.
-This latter can be divided further in three parts corresponding to the non-redundants rotations for a CASSCF wave function: core-active, core-virtual and active-virtual.
-
 \begin{align}
   \label{eq:CASSCF_CI_Gradient}
   g^c_{K} &= \eval{\mleft(\pdv{E}{S_{K}}\mright)}_{\bm{\lambda}=0} = \mel**{\Psi_0}{\com{\hH}{\hS}}{\Psi_0} \\
           &= 2\mel**{\Psi_K}{\hH}{\Psi_0} \notag \\
           &= 2\sum_{IJ}C_{K,I}^*\mel{I}{\hH}{J}C_{0,J} \notag
 \end{align}
-
 \begin{equation}
   \label{eq:CASSCF_Orb_Gradient_general}
   g^o_{pq} = \eval{\mleft(\pdv{E}{\kappa_{pq}}\mright)}_{\bm{\lambda}=0} = \mel**{\Psi_0}{\com{\hH}{\hK}}{\Psi_0}
 \end{equation}
-
+The index $p$, $q$, $r$ and $s$ correspond to general spatial orbitals, $i$, $j$, $k$ and $l$ correspond to occupied orbitals, $a$, $b$, $c$ and $d$ corresond to virtual orbitals and finally, $t$, $v$, $x$ and $y$ correspond to active orbitals.
+This latter can be further divided in three parts corresponding to the non-redundants rotations for a CASSCF wave function: core-active, core-virtual and active-virtual,
 \begin{subequations}
   \label{eq:CASSCF_Orb_Gradient}
   \begin{align}
@@ -693,14 +692,12 @@ where we have introduced the core and active parts of the generalized Fock matri
 \end{align}
 
 Similarly, we can divide the Hessian in three parts: CI-CI $H^{cc}$, Orb-Orb $H^{oo}$ and Orb-CI $H^{oc}$. The CI-Orb part is equivalent to the latter up to a transposition.
-
 \begin{align}
   \label{eq:CASSCF_CICI_Hessian}
   H^{cc}_{K,L} &= \eval{\mleft(\pdv{E}{S_{K}}{S_{L}}\mright)}_{\bm{\lambda}=0} = \mel**{\Psi_0}{\com{\com{\hH}{\hS}}{\hS}}{\Psi_0} \\
   &= 2\mel**{\Psi_K}{\hH - E_0}{\Psi_L} \notag \\
   &= 2\sum_{IJ}C_{K,I}^*\mel**{I}{\hH}{J}C_{L,J} - E_0\delta_{K,L} \notag
 \end{align}
-
 \begin{align}
   \label{eq:CASSCF_OrbCI_Hessian}
   H^{oc}_{pq,K} &= \eval{\mleft(\pdv{E}{\kappa_{pq}}{S_{K}}\mright)}_{\bm{\lambda}=0} = \mel**{\Psi_0}{\com{\com{\hH}{\hK}}{\hS}}{\Psi_0} \\
@@ -712,6 +709,42 @@ where we have introduced $E_{pq}^- = \cre{p}\ani{q} - \cre{q}\ani{p}$ the anti-s
   \label{eq:MCSCF_SO_OrbOrb_Hessian}
   H^{oo}_{pq,rs} &= \eval{\mleft(\pdv{E}{\kappa_{pq}}{\kappa_{rs}}\mright)}_{\bm{\lambda}=0} = \mel**{\Psi_0}{\com{\com{\hH}{\hK}}{\hK}}{\Psi_0} \\
                    &= \frac{1}{2}(1+P_{pq,rs})\mel**{\Psi_0}{\com{\com{\hH}{E_{pq}^-}}{E_{rs}^-}}{\Psi_0} \notag
+\end{align}
+For the two last blocks of the hessian, one can once again consider only the non-redundant rotations.
+\begin{subequations}
+\begin{align}
+  H^{oo}_{ai,bj} &= 4\mleft[ 4\ceri{ai}{bj}-\ceri{ab}{ij}-\ceri{aj}{bi} \mright] \\
+  &+ 4 \delta_{ij} \mleft( \FC{ab}+\FA{ab} \mright) - 4 \delta_{ab}\mleft(\FC{ij}+\FA{ij}\mright) \notag \\
+  H^{oo}_{ai,bt} &= \sum_{v} 2\gamma_{tv}\mleft[4\ceri{ai}{bv}-\ceri{av}{bi}-\ceri{ab}{vi}\mright] \\
+  &- 2\delta_{ab}\sum_{vxy} \Gamma_{tvxy}\ceri{vi}{xy} - 2 \delta_{ab}\mleft(\FC{ti}+\FA{ti}\mright) - \delta_{ab}\sum_v\gamma_{tv}\FC{vi} \notag \\
+  H^{oo}_{ai,tj} &= 2 \sum_v (2\delta_{tv} - \gamma_{tv})\mleft[4\ceri{ai}{vj}-\ceri{av}{ji}-\ceri{aj}{vi}\mright] \\*
+               &- 2\delta_{ji}\sum_{vxy} \Gamma_{tvxy}\ceri{av}{xy} + 4\delta_{ij}\mleft(\FC{at}+\FA{at}\mright) - \delta_{ij}\sum_v\gamma_{tv}\FC{av}\notag \\ 
+  H^{oo}_{ti,uj} &= 4\sum_{vx}\mleft[\Gamma_{utvx}\ceri{vx}{ij}+(\Gamma_{uxvt}+\Gamma_{uxtv})\ceri{vi}{xj}\mright] \\
+                 &+ 2\sum_v\{(\delta_{tv}-\gamma_{tv})\mleft[4\ceri{vi}{uj}-\ceri{ui}{vj}-\ceri{uv}{ij}\mright] \notag \\
+  &+(\delta_{uv}-\gamma_{uv})\mleft[4\ceri{vj}{ti}-\ceri{tj}{vi}-\ceri{tv}{ij})\mright]\} \notag \\
+                 &+2\gamma_{tu}\FC{ij}-4\delta_{ij}\sum_{vxy}\Gamma_{tvxy}\ceri{uv}{xy}-2\delta_{ij}\sum_v\gamma_{uv}\FC{tv} \notag \\
+  &+ 4\delta_{ij}\mleft(\FC{tu}+\FA{tu}\mright)-4\delta_{tu}\mleft(\FC{ij}+\FA{ij}\mright) \notag \\
+  H^{oo}_{ti,au} &= -4 \sum_{vx}\{\Gamma_{tuvx}\ceri{ai}{vx} + (\Gamma_{tvux}+\Gamma_{tvxu})\ceri{ax}{vi}\} \\
+                 &+ \sum_v2\gamma_{uv}\mleft[4\ceri{av}{ti}-\ceri{ai}{tv}-\ceri{at}{vi}\mright] -2\gamma_{tu}\FC{ai} \notag \\
+  &+2\delta_{tu}\mleft(\FC{ai}+\FA{ai}\mright) \notag \\
+  H^{oo}_{at,bu} &= 4\sum_{vx}\{\Gamma_{tuvx}\ceri{ab}{vx} + (\Gamma_{txvu}+\Gamma_{txuv})\ceri{ax}{bv}\} \\
+                 &+ 2\gamma_{tu}\FC{ab} \notag -2\delta_{ab}\sum_{vxy}\{\Gamma_{tvxy}\ceri{uv}{xy}+\Gamma_{uvxy}\ceri{tv}{xy}\} \notag \\
+  &-\delta_{ab}\sum_v\mleft[\gamma_{tv}\FC{uv}+\gamma_{uv}\FC{tv}\mright] \notag
+\end{align}
+\end{subequations}
+
+
+\begin{align}
+  \label{eq:commHamExcOp}
+\mel{I}{\comm{\hH}{\hE_{ai}^-}}{J} &= \mel**{I}{\sum_p \mleft(h_{pa}\hE_{pi} + h_{ap}\hE_{ip}\mright)}{J} \\
+  &+ \mel**{I}{\sum_{pqr}\ceri{pa}{qr}\hE_{pi,qr} + \sum_{qrs}\ceri{aq}{pr}\hE_{iq,pr}}{J} \notag \\
+  \mel{I}{\comm{\hH}{\hE_{ti}^-}}{J}&= \mel**{I}{\sum_p \mleft(h_{pt}\hE_{pi} - h_{ip}\hE_{tp} - h_{pi}\hE_{pt} + h_{tp}\hE_{ip}\mright)}{J} \notag \\
+                                     &+ \mel**{I}{\sum_{prs}\mleft(\ceri{pt}{rs}\hE_{pi,rs} - \ceri{pi}{rs}\hE_{pt,rs} \mright)}{J} \notag \\
+  &+ \mel**{I}{\sum_{qrs}\mleft(\ceri{tq}{rs}\hE_{iq,rs} - \ceri{iq}{rs}\hE_{tq,rs} \mright)}{J}   \\
+                                     &+ \mel**{I}{\sum_{pqr}\mleft(\ceri{pq}{rt}\hE_{pq,ri} - \ceri{pq}{ri}\hE_{pq,rt} \mright)}{J} \notag \\
+  &+ \mel**{I}{\sum_{pqs}\mleft(\ceri{pq}{ts}\hE_{pq,is} - \ceri{pq}{is}\hE_{pq,ts} \mright) }{J} \notag \\
+  \mel{I}{\comm{\hH}{\hE_{at}^-}}{J} &= \mel**{I}{\sum_p \mleft(h_{pa}\hE_{pt} + h_{ap}\hE_{tp}\mright) }{J} \\
+  & \mel**{I}{\sum_{pqr}\ceri{pa}{qr}\hE_{pt,qr} + \sum_{qrs}\ceri{aq}{pr}\hE_{tq,pr}}{J} \notag
 \end{align}
 
 %%%%%%%%%%%%%%%%%%%%%%
