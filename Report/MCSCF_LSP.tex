@@ -1,4 +1,5 @@
-\documentclass[aps,prb,reprint,showkeys,superscriptaddress]{revtex4-1}
+%\documentclass[aps,prb,reprint,showkeys,superscriptaddress]{revtex4-1}
+\documentclass[aip,jcp,reprint,noshowkeys,superscriptaddress]{revtex4-1}
 \usepackage{subcaption}
 \captionsetup{justification   = raggedright,
               singlelinecheck = false}
@@ -11,6 +12,8 @@
 \usepackage{mleftright}
 
 %%% Definition of colors for personal remark %%%
+\definecolor{hughgreen}{RGB}{0, 100, 25}
+\newcommand{\hugh}[1]{\textcolor{hughgreen}{#1}}
 \newcommand{\todo}[1]{\textcolor{red}{#1}}
 \newcommand{\ant}[1]{\textcolor{orange}{#1}}
 \newcommand{\trashant}[1]{\textcolor{orange}{\sout{#1}}}
@@ -38,6 +41,7 @@
 \begin{document}	
 
 \title{An energy landscape perspective on CASSCF multiple solutions}
+\title{\hugh{Deciphering the CASSCF energy landscape: Excited states, symmetry breaking, and unphysical solutions}}
 
 \author{Antoine \surname{Marie}}
 \affiliation{\UOX}
@@ -45,7 +49,22 @@
 \affiliation{\UOX}
 
 \begin{abstract}
-\todo{Write an abstract.}
+\hugh{%
+State-specific electronic structure methods provide a route toward balanced excited electronic wave functions, 
+corresponding to higher stationary points of the electronic energy. 
+The difficulties of linear-response formalisms for charge transfer or Rydberg excitations has inspired a 
+revival of interest in state-specific approximations.
+We investigate the existence of higher-energy solutions in complete active space 
+self-consistent field theory.
+In particular, we investigate the properties of ground and excited states for the \ce{H2} and \ce{LiF} molecular examples. 
+We demonstrate that state-specific approximations can provide accurate higher-energy excited states with more compact
+active spaces than would be required in a state-averaged formalism.
+We also characterise unphysical solutions corresponding to an incorrect set of active orbitals, 
+and symmetry-broken solutions that arise when the active space is not large enough to sufficiently capture 
+relevant static correlation.
+Furthermore, we show that excited state CASSCF solutions behave diabatically at the avoided crossing in \ce{LiF}.
+Finally, we discuss the implications of our findings for practical excited state-specific calculations.
+}
 \end{abstract}
 
 \keywords{\todo{Add keywords.}}
@@ -56,6 +75,8 @@
 \section{Introduction}
 \label{sec:intro}
 % =================================================================%
+
+\hugh{\bf HB: The content here is good, but we need to think about the motivations and context for the introduction.}
 
 State-specific (SS) electronic structure methods for excited states are on the rise. \cite{Gilbert_2008,Barca_2014,Thom_2008,Ye_2017,Barca_2018a,Thompson_2018,Hait_2020,Carter-Fenk_2020,Hait_2021,Mayhall_2010,Lee_2019,Kossoski_2021}
 Their treatment of excited states on an equal footing to the ground state provides a natural way to compute relative energies such as excitation energies.
@@ -122,6 +143,13 @@ Atomic units will be used throughout the manuscript.
 \label{sec:theoretical}
 %=================================================================%
 
+%=================================================================%
+\subsection{Exact Electronic Energy Landscape}
+\label{subsec:exactLandscape}
+%=================================================================%
+\hugh{Summarise the FCI equation. Describe eigenstates as a stationary point on an energy surface. 
+Here we can mention the connection to the Hessian eigenvalues. Mention invariance to orbital rotations.}
+
 The exact solution $\ket{\Psi_{\FCI}}$, in a finite Hilbert space, of the non-relativistic electronic Schr\"odinger equation in the Born-Oppenheimer approximation
 \begin{equation}
   \label{eq:schro_eq}
@@ -141,6 +169,11 @@ An equivalent way to determine these coefficients is to find the stationary poin
 \end{equation}
  with respect to their variation.
 The number of CI coefficients $N_{det}$ to determine grows exponentially with the size of the underlying one-electron basis $K$ and the number of electrons $N$ and therefore can be determined only for small systems.
+
+%=================================================================%
+\subsection{Complete Active Space Self-Consistent Field}
+\label{subsec:CASSCF}
+%=================================================================%
 
 A natural way of approximating the exact wave function (\ref{eq:fci_wf}) is to truncate the sum to a number of determinants that we can handle. Then by diagonalization of the Hamiltonian within this finite subset of determinants we obtain an approximation of the exact solutions.
 However, the resulting approximate wave functions will not be stationary points of the energy.
@@ -179,6 +212,11 @@ The orbital rotation coefficients $\kappa_p^q$ and the CI rotation coefficients 
 \end{equation}
 with $\bm{\kappa}$ and $\bm{S}$ the vectors that gather the rotation coefficients.
 
+%=================================================================%
+\subsection{Optimization Techniques}
+\label{subsec:optimization}
+%=================================================================%
+
 In this work we are concerned with understanding the CASSCF solution space so we choose an algorithm which can converge on any stationary points given the right initial point.
 Of course, such an algorithm would be too computationally expensive to be used for real systems but here we focus on understanding in details small systems.
 Therefore, we choose a general second-order Newton-Raphson scheme. \cite{Olsen_1983}
@@ -206,6 +244,11 @@ The expression of the gradient and the Hessian in terms of one- and two-electron
 Note that the index $p$, $q$, $r$ and $s$ correspond to spatial orbitals as we restricted this study to the restricted formalism of MCSCF.
 Investigation of the unrestricted MCSCF landscape, and comparison with its restricted counterpart, should also be interesting but is out of the scope of this work.
 
+%=================================================================%
+\subsection{Distinguishing Unique Solutions}
+\label{subsec:distinguishSolutions}
+%=================================================================%
+
 Because we aim at finding multiple SS-CASSCF solutions we need a way to distinguish them.
 To do this we need a canonical way to represent the solutions as they are defined up to some redundant rotations. \cite{Helgaker_2000}
 The canonical orbitals are defined as the orbitals which diagonalize the following generalized Fock matrix
@@ -225,8 +268,8 @@ Each rotation elements $\kappa_{pq}$ and $S_{L}$ were chosen equal to $0$, $\pi/
 As mentioned in the grid approach of Ref.~\onlinecite{Thompson_2018}, we do not really need to consider other values because $\pi/4$ swap two orbitals (or two CI vectors) while $\pi/8$ mixes them.
 
 %=================================================================%
-\section{Computational details}
-\label{sec:comp_details}
+\subsection{Computational details}
+\label{subsec:comp_details}
 %=================================================================%
 
 The results of this manuscript have been obtained using our own second-order Newton-Raphson CASSCF module implemented in the open-source software package pySCF. \cite{Sun_2020}
@@ -238,8 +281,129 @@ The threshold of convergence for the gradient amplitudes in the Newton-Raphson a
 \label{sec:results}
 %=================================================================%
 
+%=================================================================%
+\subsection{\ce{H2} binding curve (6-31G)}
+\label{sec:results}
+%=================================================================%
+
+%=================================================================%
+\subsubsection{Equilibrium geometry}
+%=================================================================%
+
+\hugh{Describe the multiple solutions we find, including a mention towards the spurious solutions. 
+Discuss the Hessian indices and bad relationship with the excitation level.
+Compare state-specific excitations with state-averaged results, including MAE for state energies and excitation energies.}
+
+%=================================================================%
+\subsubsection{Ground state binding curve}
+%=================================================================%
+
+\hugh{Explore the spurious ground state solutions; story as follows. 
+We note that the energies are basically the same at equilibrium but we note that the different states have different
+binding curves and only one of them gives the correct dissociation energy. 
+This inspires us to look at the natural orbitals, which reveals that we have the wrong ``less occupied'' orbital in the 
+active space.
+This is not a big problem at equilibrium because the single determinant is pretty good, but doesn't seem 
+to be fixed toward dissociation. 
+It's interesting that we don't see the CASSCF state fixing itself...
+The spurious solutions are also associated with incorrect Hessian index. 
+\textbf{CHECK: The downhill directions must correspond to a active-virtual orbital rotation.}
+\textbf{QUESTION: Can we justify why the active orbitals are conserved along the binding curve?}
+We verify our prediction about the origin of these spurious solutions by increasing the size of the active space,  
+revealing a combinatorial increase in the number of unphysical solutions. 
+\textbf{QUESTION: What effect might these spurious solutions have on practical calculations?}
+}
+
+%=================================================================%
+\subsubsection{Closed-shell excited states}
+%=================================================================%
+
+\hugh{Numerically demonstrate that the same spurious solutions emerge for the other closed-shell states, which further 
+supports the idea that their origin is an over-expressive active space.
+We make the prediction that spurious solutions will not be present when the size of the active space doesn't have this
+redundancy.}
+
+%=================================================================%
+\subsubsection{Open-shell singlet and triplet states}
+%=================================================================%
+
+\hugh{We then talk about the open-shell states. For the triplet ground state, we don't find any spurious solutions
+because all the active orbitals are required to fully capture the static correlation. 
+On the other hand, for the (1s)(2s) excitations in the dissociation limit, we find symmetry-broken wave functions. 
+We diagnose these from their symmetry-broken orbitals, but we can also verify that the many-electron wave function doesn't 
+transform as an irreducible representation of the molecular electronic point group.
+Therefore, we find symmetry-breaking thresholds that are analogous to the Coulson--Fischer point in Hartree--Fock theory.
+}
+
+\hugh{We can explain the origin of this symmetry breaking by decomposing the correct wave function limit
+In dissociation, we expect the open-shell triplet state to have a wave function of the form
+\begin{equation}
+\begin{split}
+\ket{\Psi} &= \frac{1}{2}\qty(\ket{1s_\text{L}2s_\text{R}} - \ket{1s_\text{R}2s_\text{L}})\qty(\ket{\alpha\beta} + \ket{\beta \alpha})
+\\
+&= \frac{1}{2}\qty(\ket{1s_\text{L}\bar{2}s_\text{R}} + \ket{\bar{1}s_\text{L}2s_\text{R}} - \ket{1s_\text{R}\bar{2}s_\text{L}} 
+-  \ket{\bar{1}s_\text{R}2s_\text{L}}).
+\end{split}
+\end{equation}
+Correctly describing this wave function clearly needs four orbitals in the active space, $\{1s_\text{L}, 1s_\text{R},2s_\text{L}, 2s_\text{R}  \}$ so is beyond the capabilities of our CASSCF wave function.
+Instead, we get a symmetry-broken state by only picking a sub-component of the wave function that can be described with 
+our active space, e.g.\
+\begin{equation}
+\ket{\tilde{\Psi}} = \frac{1}{\sqrt{2}} \ket{1s_\text{L}2s_\text{R}}\qty(\ket{\alpha\beta} + \ket{\beta \alpha}).
+\end{equation}
+This is \textit{exactly} the same behaviour as HF theory, where the UHF state in the dissociation limit has selected one 
+of the two configurations that are present in the exact wave function; we can think of it ``freezing'' one of the 
+fluctuating resonance structures or ``pinning'' the electrons such that the excited electron only ever occurs on one of the
+hydrogens (rather than fluctuating).\cite{Burton_2021b}
+We will need the orbital plots to illustrate this spatial symmetry breaking.
+}
+
+\hugh{We can also think about quantifying this issue using a new idea: the maximum entanglement entropy for a wave function 
+approximation.
+The entanglement entropy for an $N$-electron system can be defined using the spin-orbital natural occupation numbers as
+\begin{equation}
+\Omega = - \frac{1}{N} \sum_{i} n_i \log{n_i}.
+\end{equation}
+The maximum entropy that can be obtained by a CASSCF state will depend on the number of electrons $n$ and orbitals $m$ 
+in the active space $(2n,m)$. 
+We can maximise $\Omega$ by equally distributing the electrons in the active orbitals, giving 
+\begin{equation}
+\Omega_{\text{max}} = - \frac{2n}{N} \log\frac{n}{m}.
+\end{equation}
+For a single Slater determinant, we get $\Omega_{\text{max}} = 0$.
+For the $(2,2)$ active space we consider here, we 
+get $\Omega_{\text{max}} = \log 2$, but the exact open-shell triplet state will be closer to 
+ $\Omega = 2 \log 2$ (assuming equal distributon among four active spatial orbitals).
+We get symmetry breaking to account for the drastic failure of the wave function ansatz.
+\textbf{I don't know how far we can extend these ideas, could be an interesting new way to think about symmetry breaking.}
+}
+
+\hugh{It might be worth thinking about whether symmetry breaking has any effect on subsequent CASPT2 calculations. 
+Gabriela's work suggested a potential connection between the Coulson--Fischer point and divergent MP2, so there might 
+be something here.
+This connection could highlight that CASPT2 is diverging when the active space is insufficient etc.
+}
+
+%=================================================================%
+\subsection{Avoided crossing in Lithium Fluoride}
+%=================================================================%
+
+\hugh{Now we move on to discuss the avoided crossing in LiF. Here we can discuss the 
+solutions and talk about their diabatic nature. We have identified the extra ground-state solution 
+at equilibrium, and we can justify the existence of this state using the same ideas we developed by 
+understanding \ce{H2}.
+Might be worth analysing the physical properties of these states, in particular the dipole moment which is expected to
+change suddenly through the avoided crossing.
+Do we recover these properties? Does the spurious solution have any effect on their quality?
+} 
+
+%=================================================================%
+\section{Results (original)}
+\label{sec:results}
+%=================================================================%
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\subsection{SS-CASSCF excited states}
+\subsubsection{SS-CASSCF excited states}
 \label{sec:excited}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -646,11 +810,15 @@ We believe that one could take advantage of this property to target effectively 
 
 Talk about how to choose the physical solution, spin symmetry breaking, neuscamman's multiple solution.
 
+\hugh{Add potential connection to RDMFT.}
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%
 \begin{acknowledgements}
 %%%%%%%%%%%%%%%%%%%%%%%%
 \todo{Add acknowledgements}
+H.G.A.B was supported by New College, Oxford, through the Astor Junior Research Fellowship.
+
 %%%%%%%%%%%%%%%%%%%%%%
 \end{acknowledgements}
 %%%%%%%%%%%%%%%%%%%%%%
