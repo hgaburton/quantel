@@ -36,6 +36,15 @@
 
 \input{commands}
 
+\newcommand{\Norb}{K}
+\newcommand{\Ndet}{N_\text{det}}
+
+% Bold symbols
+\newcommand{\bC}{\bm{C}}
+\newcommand{\bc}{\bm{c}}
+\newcommand{\br}{\bm{r}}
+\newcommand{\bx}{\bm{x}}
+
 \newcommand{\UOX}{Physical and Theoretical Chemical Laboratory, Department of Chemistry, University of Oxford, Oxford, OX1 3QZ, U.K.}
 
 \begin{document}	
@@ -147,34 +156,50 @@ Atomic units will be used throughout the manuscript.
 \subsection{Exact Electronic Energy Landscape}
 \label{subsec:exactLandscape}
 %=================================================================%
-\hugh{Summarise the FCI equation. Describe eigenstates as a stationary point on an energy surface. 
-Here we can mention the connection to the Hessian eigenvalues. Mention invariance to orbital rotations.}
-
-The exact solution $\ket{\Psi_{\FCI}}$, in a finite Hilbert space, of the non-relativistic electronic Schr\"odinger equation in the Born-Oppenheimer approximation
+\hugh{Under the Born--Oppenheimer approximation, the exact wave function of the $k$-th electronic energy level satisfies the 
+non-relativistic Schr\"{o}dinger equation\cite{Szabo_1996}
 \begin{equation}
-  \label{eq:schro_eq}
-  \hH \ket{\Psi_{\FCI}} = E \ket{\Psi_{\FCI}},
+\hH \ket{\Psi_k} = E_k \ket{\Psi_k}.
+\label{eq:schro_eq}
 \end{equation}
-where $\hH$ is the electronic Hamiltonian, can be written as \cite{Szabo_1996}
+Within a finite Hilbert space, this state can be expanded as a full configuration interaction (FCI) wave function
 \begin{equation}
   \label{eq:fci_wf}
-  \ket{\Psi_{\FCI}} = \sum_I^{N_{det}} C_I\ket{I},
+  \ket{\Psi_{k}} = \sum_I^{\Ndet} C_{I\,k}\ket{\Phi_I},
 \end{equation}
-\ie as a linear combination of $N_{det}$ Slater determinants $\ket{I}$.
-The CI coefficients $C_I$ are determined by diagonalization of the Hamiltonian within the basis of Slater determinants.
-An equivalent way to determine these coefficients is to find the stationary points of the energy
+where $\ket{\Phi_I}$ are the complete set of Slater determinants built from the molecular orbitals (MO) $\phi_p(\bx)$.
+Here, $\bx = (\br,\sigma)$ is the combined spatial and spin electronic coordinate.
+The MOs are constructed as a linear combination of $\Norb$ atomic orbitals $\chi_{\mu} (\bx)$ as
+\begin{equation}
+  \label{eq:mo}
+  \phi_p(\bx) = \sum^K_\mu \chi_{\mu}(\bx)\, c_{\cdot i}^{\mu \cdot}
+\end{equation}
+where we use the nonorthogonal tensor notation of Ref.~\onlinecite{Head-Gordon_1998}. 
+The exact FCI wave function is invariant to unitary transformations between the MOs.
+} 
+
+The CI coefficients $\bm{C}$ are conventionally determined by diagonalising the Hamiltonian within the basis of Slater determinants.
+An alternative approach is to identify stationary points of the energy expectation value 
 \begin{equation}
   \label{eq:fci_nrj}
-  E = \frac{\mel{\Psi_{\FCI}}{\hH}{\Psi_{\FCI}}}{\braket{\Psi_{\FCI}}{\Psi_{\FCI}}},
+  E(\bC) = \mel{\Psi_{k}(\bC)}{\hH}{\Psi_{k}(\bC)}
 \end{equation}
- with respect to their variation.
-The number of CI coefficients $N_{det}$ to determine grows exponentially with the size of the underlying one-electron basis $K$ and the number of electrons $N$ and therefore can be determined only for small systems.
+subject to the normalisation constraint $\sum_{I=1}^{\Ndet} \abs{C_{I\,k}}^2 = 1$.
+\hugh{In this electronic energy landscape perspective (see Ref.~\onlinecite{Burton_2022}), the ground state is the global minimum 
+and excited states form higher saddle points of the energy.\cite{Burton_2021,Burton_2022} 
+The Hessian index of these saddle points (the number of downhill directions) increases with each excitation; for example, 
+the first excited state is an index-1 saddle point with one negative Hessian eigenvalue.\cite{Burton_2022,Bacalis_2016,Bacalis_2020,Golab_1983}
+}
 
 %=================================================================%
 \subsection{Complete Active Space Self-Consistent Field}
 \label{subsec:CASSCF}
 %=================================================================%
 
+\todo{Should mention that we only care about active-inactive orbital transformations. This set us up to mention we can do the canonicalisation
+in Section II D}
+
+The number of CI coefficients $N_{det}$ to determine grows exponentially with the size of the underlying one-electron basis $K$ and the number of electrons $N$ and therefore can be determined only for small systems.
 A natural way of approximating the exact wave function (\ref{eq:fci_wf}) is to truncate the sum to a number of determinants that we can handle. Then by diagonalization of the Hamiltonian within this finite subset of determinants we obtain an approximation of the exact solutions.
 However, the resulting approximate wave functions will not be stationary points of the energy.
 For a truncated CI expansion one needs to optimize the CI coefficients as for the complete expansion but also the coefficients $c_i^\mu$ of the molecular orbitals
