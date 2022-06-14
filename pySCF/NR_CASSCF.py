@@ -178,13 +178,13 @@ def kernel(self):
     self.e_tot = nrj + enuc
     print("The energy at convergence is ", self.e_tot, "\n")
 
-    #print("This is the CI coefficients at convergence\n")
-    ##self.matprint(self.mat_CI)
-    #print("")
-    #print("This is the MO coefficients at convergence\n")
-    #self.matprint(self.mo_coeff)
+    print("This is the CI coefficients at convergence\n")
+    self.matprint(self.mat_CI)
+    print("")
+    print("This is the MO coefficients at convergence\n")
+    self.matprint(self.mo_coeff)
     tmp = self.mo_coeff
-    #print("")
+    print("")
 
     if np.count_nonzero(np.around(dm1_cas - np.diag(np.diagonal(dm1_cas)),7)) > 0:
         print("The density matrix is non-diagonal, transformation of the MO to natural orbitals\n")
@@ -194,10 +194,10 @@ def kernel(self):
     no_coeff, ci, mo_energy, mo_occ = self.canonicalize_( mo_coeff=self.mo_coeff, ci=self.mat_CI[:,0], eris=self.eri, sort=True, cas_natorb=True, casdm1=dm1_cas)
     self.mo_coeff = tmp
 
-    #print("This is the natural orbitals\n")
-    #self.matprint(no_coeff)
-    #print(no_coeff.tolist())
-    #print("")
+    print("This is the natural orbitals\n")
+    self.matprint(no_coeff)
+    print(no_coeff.tolist())
+    print("")
 
     print("The occupations in the natural orbital basis are\n")
     self.matprint(mo_occ)
@@ -208,7 +208,7 @@ def kernel(self):
     print("")
 
     print("This is the CI vector in the natural orbital basis\n")
-    #self.matprint(ci.reshape((1,-1)))
+    self.matprint(ci.reshape((1,-1)))
     print("")
 
 
