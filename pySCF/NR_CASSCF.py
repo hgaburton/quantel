@@ -31,6 +31,7 @@ from cas_noci import *
 from pyscf.fci.cistring import make_strings, parity
 from gnme import utils
 
+
 def kernel(self):
     ''' This function is the one that we will run the Newton-Raphson calculation for a given NR_CASSCF object '''
     kernel_start_time = datetime.datetime.now() # Save initial time
@@ -60,8 +61,20 @@ def kernel(self):
 
     H_fci = self.fcisolver.pspace(self.h1eff, self.h2eff, self.ncas, self.nelecas, np=1000000)[1]
 
+    energy = 1e10
     damp = 0.1
 
+    # Trust radius
+    min_step = 0.01
+    max_step = 2*np.pi
+    tol_high = 1.2
+    tol_low  = 0.8
+    scale_up = 1.5
+    r_trust  = 1.0
+
+    print("  =====================================")
+    print("       {:^16s}    {:^8s}    {:^8s}".format("   Energy / Eh","Step","Error"))
+    print("  =====================================")
     while conv > self.conv_threshold and step < self.max_iterations:
 
         # Compute gradient and Hessian
@@ -72,9 +85,32 @@ def kernel(self):
         nIndepRot = len(g) - len(g_ci)
 
         H = self.get_hessian(H_fci)
+        eig, vec = np.linalg.eigh(H) 
 
         # Update rotation parameters
-        NR = -damp*np.dot(scipy.linalg.pinv(H),g)
+        NR = np.zeros(g.shape)
+        for i in range(eig.size):
+            if(abs(eig[i]) < 1e-12): 
+                continue
+            if self.Hind == None:
+                NR -= (np.dot(vec[:,i],g) / eig[i]) * vec[:,i]
+            else:
+                if i < self.Hind:
+                    NR -= (- np.dot(vec[:,i],g) / np.abs(eig[i])) * vec[:,i]
+                else:
+                    NR -= ( np.dot(vec[:,i],g) / np.abs(eig[i])) * vec[:,i]
+
+        # Rescale step length
+        step_length = np.sqrt(np.dot(NR,NR))
+        scale = min(step_length,r_trust) / step_length
+        #scale = damp
+        NR *= scale
+        step_length = np.sqrt(np.dot(NR,NR))
+
+        # energy change model
+        dE_model = np.dot(NR,g) * (1 - 0.5 * scale)
+
+        #NR = -damp*np.dot(scipy.linalg.pinv(H),g)
         NR_Orb = NR[:nIndepRot]
         NR_Orb = self.unpack_uniq_var(NR_Orb)
 
@@ -105,10 +141,24 @@ def kernel(self):
         elif np.max(np.abs(g))>conv and damp>0.01:
             damp = damp*0.8
 
-        conv = np.max(np.abs(g))
-        # print("At this iteration the convergence is ", conv)
+        conv   = np.max(np.abs(g))
+        e_ref  = energy 
+        energy = self.get_energy(self.h1e, self.eri, dm1_cas, dm2_cas) + enuc
+
+        if(step > 0):   
+            dE = energy - e_ref
+            #print("Actual change, model = {: 10.6f} {: 10.6f} {: 10.6f} ".format( energy - e_ref, dE_model, dE / dE_model))
+            # scale trust radius
+            if(dE / dE_model > tol_low and dE / dE_model < tol_high):
+                r_trust *= scale_up
+            else: 
+                r_trust /= scale_up
+            r_trust = min(max(r_trust, min_step),max_step)
 
         step += 1
+
+        print(" {: 5d} {: 16.10f}    {:8.2e}    {:8.2e}".format(step,energy,step_length,conv))
+    print("  =====================================")
 
     self.conv = conv
     self.nb_it = step
@@ -128,13 +178,13 @@ def kernel(self):
     self.e_tot = nrj + enuc
     print("The energy at convergence is ", self.e_tot, "\n")
 
-    print("This is the CI coefficients at convergence\n")
-    self.matprint(self.mat_CI)
-    print("")
-    print("This is the MO coefficients at convergence\n")
-    self.matprint(self.mo_coeff)
+    #print("This is the CI coefficients at convergence\n")
+    ##self.matprint(self.mat_CI)
+    #print("")
+    #print("This is the MO coefficients at convergence\n")
+    #self.matprint(self.mo_coeff)
     tmp = self.mo_coeff
-    print("")
+    #print("")
 
     if np.count_nonzero(np.around(dm1_cas - np.diag(np.diagonal(dm1_cas)),7)) > 0:
         print("The density matrix is non-diagonal, transformation of the MO to natural orbitals\n")
@@ -144,10 +194,10 @@ def kernel(self):
     no_coeff, ci, mo_energy, mo_occ = self.canonicalize_( mo_coeff=self.mo_coeff, ci=self.mat_CI[:,0], eris=self.eri, sort=True, cas_natorb=True, casdm1=dm1_cas)
     self.mo_coeff = tmp
 
-    print("This is the natural orbitals\n")
-    self.matprint(no_coeff)
-    print(no_coeff.tolist())
-    print("")
+    #print("This is the natural orbitals\n")
+    #self.matprint(no_coeff)
+    #print(no_coeff.tolist())
+    #print("")
 
     print("The occupations in the natural orbital basis are\n")
     self.matprint(mo_occ)
@@ -158,7 +208,7 @@ def kernel(self):
     print("")
 
     print("This is the CI vector in the natural orbital basis\n")
-    self.matprint(ci.reshape((1,-1)))
+    #self.matprint(ci.reshape((1,-1)))
     print("")
 
 
@@ -195,7 +245,8 @@ def kernel(self):
     return
 
 def grid_point(nb_point, n, length):
-    ''' This function compute the decomposition of a number n in the nb_point basis. For example if nb_point=2, it gives the binary decomposition. This is used to build the grid. '''
+    ''' This function compute the decomposition of a number n in the nb_point basis. 
+        For example if nb_point=2, it gives the binary decomposition. This is used to build the grid. '''
     if n == 0:
         return np.zeros((length))
     nums = []
@@ -208,7 +259,9 @@ def grid_point(nb_point, n, length):
     return nums
 
 def form_rotMO(self,nb_point,index_orb):
-    """ This function compute the orbital rotation matrix associated to a given number decomposition index_orb in the nb_point basis obtained with the grid_point function."""
+    """ This function compute the orbital rotation matrix associated to 
+        a given number decomposition index_orb in the nb_point basis 
+        obtained with the grid_point function."""
     ncore = self.ncore
     ncas = self.ncas
     nvir = self.norb - ncore - ncas
@@ -232,7 +285,8 @@ def form_rotMO(self,nb_point,index_orb):
     return K
 
 def form_rotCI(self,nb_point,index_ci):
-    """ This function compute the CI rotation matrix associated to a given number decomposition index_orb in the nb_point basis obtained with the grid_point function."""
+    """ This function compute the CI rotation matrix associated to a given number 
+        decomposition index_orb in the nb_point basis obtained with the grid_point function."""
     S = np.zeros((self.nDet, self.nDet))
     S[0,1:] = index_ci
     S = np.asarray(S - S.T)*(1/8)*np.pi #Create the rotation associated to index_ci
@@ -241,7 +295,9 @@ def form_rotCI(self,nb_point,index_ci):
 
 def grid_search(self, grid_option):
     ''' This function runs the Newton-Raphson algorithm for a grid of starting point.
-    If grid option = full, it performs the full grid search. Else grid_option should be a number, and it will perform grid_option Newton-Raphson calculations starting from random point on the grid. '''
+        If grid option = full, it performs the full grid search. Else grid_option 
+        should be a number, and it will perform grid_option Newton-Raphson 
+        calculations starting from random point on the grid. '''
     grid_start_time = datetime.datetime.now() # Save initial time
 
     self.initMO # We initialize the quantities that need it
@@ -260,6 +316,7 @@ def grid_search(self, grid_option):
     print("The molecule has ", self.nelec[0]+self.nelec[1], " electrons and the basis set is constituted of ", self.norb, " basis functions.")
     print("The active space is a ", self.ncas, " orbitals and ", self.nelecas[0]+self.nelecas[1], " electrons active space.")
     print("Therefore there is ", self.nDet, " determinants.")
+    print("Searching for solutions with Hessian index ", self.Hind)
 
     ncore = self.ncore
     ncas = self.ncas
@@ -299,7 +356,7 @@ def grid_search(self, grid_option):
                 # Run the calculations
                 print("Start the Newton-Raphson calculation number", iterator, ".\n")
                 print("The mo coefficients are rotated by ", index_orb, " and the CI coefficients are rotated by ", index_ci, ".\n")
-                tmp_cas = NR_CASSCF(self._scf,self.ncas,self.nelecas,ncore=self.ncore,initMO=K,initCI=S,frozen=self.frozen)
+                tmp_cas = NR_CASSCF(self._scf,self.ncas,self.nelecas,ncore=self.ncore,initMO=K,initCI=S,frozen=self.frozen,Hind=self.Hind)
                 tmp_cas.kernel()
                 iterator += 1
 
@@ -316,7 +373,7 @@ def grid_search(self, grid_option):
             # Run the calculations
             print("Start the Newton-Raphson calculation number", iterator, ".\n")
             print("The mo coefficients are rotated by ", index_orb, " and the CI coefficients are rotated by ", index_ci, ".\n")
-            tmp_cas = NR_CASSCF(self._scf,self.ncas,self.nelecas,ncore=self.ncore,initMO=K,initCI=S,frozen=self.frozen)
+            tmp_cas = NR_CASSCF(self._scf,self.ncas,self.nelecas,ncore=self.ncore,initMO=K,initCI=S,frozen=self.frozen,Hind=self.Hind)
             tmp_cas.kernel()
 
             iterator += 1
@@ -353,7 +410,7 @@ class NR_CASSCF(lib.StreamObject):
 
     ''' #TODO Write the documentation
 
-    def __init__(self,myhf_or_mol,ncas,nelecas,ncore=None,initMO = None, initCI = None,frozen=None,thresh=1e-8):
+    def __init__(self,myhf_or_mol,ncas,nelecas,ncore=None,initMO = None, initCI = None,frozen=None,thresh=1e-8,Hind=None):
         ''' The init method is ran when an instance of the class is created to initialize all the args, kwargs and attributes
         '''
         if isinstance(myhf_or_mol, gto.Mole):   # Check if the arg is an HF object or a molecule object
@@ -399,6 +456,8 @@ class NR_CASSCF(lib.StreamObject):
 
         self.conv_threshold = thresh
         self.max_iterations = 512
+
+        self.Hind = Hind
 
         self.e_tot = None
         self.conv = None
@@ -675,7 +734,9 @@ class NR_CASSCF(lib.StreamObject):
         return H
 
     def uniq_var_indices(self, nmo, frozen):
-        ''' This function creates a matrix of boolean of size (norb,norb). A True element means that this rotation should be taken into account during the optimization. Taken from pySCF.mcscf.casscf '''
+        ''' This function creates a matrix of boolean of size (norb,norb). 
+            A True element means that this rotation should be taken into 
+            account during the optimization. Taken from pySCF.mcscf.casscf '''
         norb = self.norb
         ncore = self.ncore
         ncas = self.ncas
@@ -1283,7 +1344,7 @@ if __name__ == '__main__':
     def read_config(file):
         f = open(file,"r")
         lines = f.read().splitlines()
-        basis, charge, spin, frozen, cas, grid_option = 'sto-3g', 0, 0, 0, (0,0), 1000
+        basis, charge, spin, frozen, cas, grid_option, Hind = 'sto-3g', 0, 0, 0, (0,0), 1000, None
         for line in lines:
             if re.match('basis', line) is not None:
                 basis = str(re.split(r'\s', line)[-1])
@@ -1293,6 +1354,10 @@ if __name__ == '__main__':
                 spin = int(re.split(r'\s', line)[-1])
             elif re.match('frozen', line) is not None:
                 frozen = int(re.split(r'\s', line)[-1])
+            elif re.match('seed', line) is not None:
+                random.seed(int(line.split()[-1]))
+            elif re.match('index', line) is not None:
+                Hind = int(line.split()[-1])
             elif re.match('cas', line) is not None:
                 tmp = list(re.split(r'\s', line)[-1])
                 cas = (int(tmp[1]), int(tmp[3]))
@@ -1301,16 +1366,15 @@ if __name__ == '__main__':
                     grid_option = re.split(r'\s', line)[-1]
                 else:
                     grid_option = int(re.split(r'\s', line)[-1])
-        return basis, charge, spin, frozen, cas, grid_option
+        return basis, charge, spin, frozen, cas, grid_option, Hind
 
-    mol = gto.Mole()
+    mol = gto.Mole(symmetry=False,unit='B')
     mol.atom = sys.argv[1]
-    mol.unit = 'B'
-    basis, charge, spin, frozen, cas, grid_option = read_config(sys.argv[2])
+    basis, charge, spin, frozen, cas, grid_option, Hind = read_config(sys.argv[2])
     mol.basis = basis
     mol.charge = charge
     mol.spin = spin
     mol.build()
     myhf = mol.RHF().run()
-    mycas = NR_CASSCF(myhf,cas[0],cas[1],frozen=frozen)
+    mycas = NR_CASSCF(myhf,cas[0],cas[1],frozen=frozen,Hind=Hind)
     grid_search(mycas, grid_option)
