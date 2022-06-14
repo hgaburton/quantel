@@ -332,7 +332,7 @@ def grid_search(self, grid_option):
     Nb_orb_point = int(nb_point**Nb_rot) # Number of orbitals points on the grid
 
     print("There are ", nb_point, " points per rotation elements")
-    print("This gives ", Nb_CI_point, " CI points and ",Nb_orb_point, " orbital points.\n")
+    #print("This gives ", Nb_CI_point, " CI points and ",Nb_orb_point, " orbital points.\n")
 
     if grid_option == 'full':
         print("Performing the whole grid search")
@@ -356,7 +356,8 @@ def grid_search(self, grid_option):
                 # Run the calculations
                 print("Start the Newton-Raphson calculation number", iterator, ".\n")
                 print("The mo coefficients are rotated by ", index_orb, " and the CI coefficients are rotated by ", index_ci, ".\n")
-                tmp_cas = NR_CASSCF(self._scf,self.ncas,self.nelecas,ncore=self.ncore,initMO=K,initCI=S,frozen=self.frozen,Hind=self.Hind)
+                tmp_cas = NR_CASSCF(self._scf,self.ncas,self.nelecas,
+                          ncore=self.ncore,initMO=K,initCI=S,frozen=self.frozen,maxit=self.maxit,Hind=self.Hind)
                 tmp_cas.kernel()
                 iterator += 1
 
@@ -410,7 +411,8 @@ class NR_CASSCF(lib.StreamObject):
 
     ''' #TODO Write the documentation
 
-    def __init__(self,myhf_or_mol,ncas,nelecas,ncore=None,initMO = None, initCI = None,frozen=None,thresh=1e-8,Hind=None):
+    def __init__(self,myhf_or_mol,ncas,nelecas,
+                 ncore=None,initMO = None, initCI = None,maxit=1000,frozen=None,thresh=1e-8,Hind=None):
         ''' The init method is ran when an instance of the class is created to initialize all the args, kwargs and attributes
         '''
         if isinstance(myhf_or_mol, gto.Mole):   # Check if the arg is an HF object or a molecule object
@@ -455,7 +457,7 @@ class NR_CASSCF(lib.StreamObject):
         self.fcisolver = fci.direct_spin1.FCISolver(mol)
 
         self.conv_threshold = thresh
-        self.max_iterations = 512
+        self.max_iterations = maxit
 
         self.Hind = Hind
 
@@ -1344,7 +1346,7 @@ if __name__ == '__main__':
     def read_config(file):
         f = open(file,"r")
         lines = f.read().splitlines()
-        basis, charge, spin, frozen, cas, grid_option, Hind = 'sto-3g', 0, 0, 0, (0,0), 1000, None
+        basis, charge, spin, frozen, cas, grid_option, Hind, maxit = 'sto-3g', 0, 0, 0, (0,0), 1000, None, 1000
         for line in lines:
             if re.match('basis', line) is not None:
                 basis = str(re.split(r'\s', line)[-1])
@@ -1358,6 +1360,8 @@ if __name__ == '__main__':
                 random.seed(int(line.split()[-1]))
             elif re.match('index', line) is not None:
                 Hind = int(line.split()[-1])
+            elif re.match('maxit', line) is not None:
+                maxit = int(line.split()[-1])
             elif re.match('cas', line) is not None:
                 tmp = list(re.split(r'\s', line)[-1])
                 cas = (int(tmp[1]), int(tmp[3]))
@@ -1366,15 +1370,15 @@ if __name__ == '__main__':
                     grid_option = re.split(r'\s', line)[-1]
                 else:
                     grid_option = int(re.split(r'\s', line)[-1])
-        return basis, charge, spin, frozen, cas, grid_option, Hind
+        return basis, charge, spin, frozen, cas, grid_option, Hind, maxit
 
     mol = gto.Mole(symmetry=False,unit='B')
     mol.atom = sys.argv[1]
-    basis, charge, spin, frozen, cas, grid_option, Hind = read_config(sys.argv[2])
+    basis, charge, spin, frozen, cas, grid_option, Hind, maxit = read_config(sys.argv[2])
     mol.basis = basis
     mol.charge = charge
     mol.spin = spin
     mol.build()
     myhf = mol.RHF().run()
-    mycas = NR_CASSCF(myhf,cas[0],cas[1],frozen=frozen,Hind=Hind)
+    mycas = NR_CASSCF(myhf,cas[0],cas[1],frozen=frozen,Hind=Hind,maxit=maxit)
     grid_search(mycas, grid_option)
