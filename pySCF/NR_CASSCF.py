@@ -412,7 +412,7 @@ class NR_CASSCF(lib.StreamObject):
     ''' #TODO Write the documentation
 
     def __init__(self,myhf_or_mol,ncas,nelecas,
-                 ncore=None,initMO = None, initCI = None,maxit=1000,frozen=None,thresh=1e-8,Hind=None):
+                 ncore=None,initMO = None, initCI = None,maxit=1000,frozen=None,thresh=1e-10,Hind=None):
         ''' The init method is ran when an instance of the class is created to initialize all the args, kwargs and attributes
         '''
         if isinstance(myhf_or_mol, gto.Mole):   # Check if the arg is an HF object or a molecule object

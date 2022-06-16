@@ -137,9 +137,9 @@ def scalar_twosol(file,myhf,nbsol1,nbsol2):
 
     metric = mycas1.mol.intor('int1e_ovlp')
 
-    # print("Projecting CAS_2 into active space for CAS_1:")
+    #print("Projecting CAS_2 into active space for CAS_1:")
     projvec = cas_proj(mycas1, mycas2, metric)
-    # print(projvec)
+    #print(projvec)
 
     # print("Total overlap = {:20.10f}".format(mycas_new.mat_CI[:,0].dot(projvec)))
     scal = mycas1.mat_CI[:,0].dot(projvec)
@@ -379,7 +379,7 @@ if __name__ == '__main__':
     print(["Nb calc",'NRJ','Nb neg','Nb pos','Nb zero','Spin','Mul'])
     matprint(unique_sols)
 
-    print('The total calculation time is ', datetime.timedelta(seconds=time_tot))
+    #print('The total calculation time is ', datetime.timedelta(seconds=time_tot))
 
     # We can utilize this to plot the index as a function of the nrj
     # print(unique_sols[:,(0,1)])
@@ -399,21 +399,18 @@ if __name__ == '__main__':
     myhf = mol.RHF().run()
 
     scal = scalar_twosol(file,myhf,1,35)
-    print(scal)
 
     dupe = []
     n = len(unique_sols)
     # n = 10
     for i in range(n):
-        for j in range(i+1,n):
-            if np.around(unique_sols[i,1],4) == np.around(unique_sols[j,1],4):
+        for j in range(i):
+            if abs(unique_sols[i,1] - unique_sols[j,1]) < 1e-6:
                 scal = scalar_twosol(file,myhf,unique_sols[i,0],unique_sols[j,0])
-                if np.around(scal,4) == 1:
+                if abs(abs(scal) - 1) < 1e-6:
                     dupe.append(j)
-    print(dupe)
-    print(np.unique(dupe))
     if len(np.unique(dupe))>0:
         unique_sols = np.delete(unique_sols,np.unique(dupe),axis=0)
     print("There are ", len(unique_sols), " unique solutions.")
     print(["Nb calc",'NRJ','Nb neg','Nb pos','Nb zero','Spin','Mul'])
-    matprint(unique_sols[:10])
+    matprint(unique_sols)
