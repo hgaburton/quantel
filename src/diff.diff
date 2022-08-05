@@ -1,0 +1,136 @@
+diff --git a/pySCF/NR_CASSCF.py b/pySCF/NR_CASSCF.py
+index 29165f8..e69459b 100644
+--- a/pySCF/NR_CASSCF.py
++++ b/pySCF/NR_CASSCF.py
+@@ -60,6 +60,8 @@ def kernel(self):
+     dm2 = self.CASRDM2_to_RDM2(dm1_cas,dm2_cas)
+ 
+     H_fci = self.fcisolver.pspace(self.h1eff, self.h2eff, self.ncas, self.nelecas, np=1000000)[1]
++    H = self.get_hessian(H_fci)
++    print("Initial Hessian index =", np.sum(np.linalg.eigvalsh(H)<0))
+ 
+     energy = 1e10
+     damp = 0.1
+@@ -141,7 +143,7 @@ def kernel(self):
+         elif np.max(np.abs(g))>conv and damp>0.01:
+             damp = damp*0.8
+ 
+-        conv   = np.max(np.abs(g))
++        conv   = np.linalg.norm(g)*np.sqrt(1.0/g.size)
+         e_ref  = energy 
+         energy = self.get_energy(self.h1e, self.eri, dm1_cas, dm2_cas) + enuc
+ 
+@@ -181,10 +183,10 @@ def kernel(self):
+     print("This is the CI coefficients at convergence\n")
+     self.matprint(self.mat_CI)
+     print("")
+-    print("This is the MO coefficients at convergence\n")
+-    self.matprint(self.mo_coeff)
++    #print("This is the MO coefficients at convergence\n")
++    #self.matprint(self.mo_coeff)
+     tmp = self.mo_coeff
+-    print("")
++    #print("")
+ 
+     if np.count_nonzero(np.around(dm1_cas - np.diag(np.diagonal(dm1_cas)),7)) > 0:
+         print("The density matrix is non-diagonal, transformation of the MO to natural orbitals\n")
+@@ -194,10 +196,9 @@ def kernel(self):
+     no_coeff, ci, mo_energy, mo_occ = self.canonicalize_( mo_coeff=self.mo_coeff, ci=self.mat_CI[:,0], eris=self.eri, sort=True, cas_natorb=True, casdm1=dm1_cas)
+     self.mo_coeff = tmp
+ 
+-    print("This is the natural orbitals\n")
+-    self.matprint(no_coeff)
+-    print(no_coeff.tolist())
+-    print("")
++    #print("This is the natural orbitals\n")
++    #self.matprint(no_coeff)
++    #print("")
+ 
+     print("The occupations in the natural orbital basis are\n")
+     self.matprint(mo_occ)
+@@ -419,8 +420,7 @@ class NR_CASSCF(lib.StreamObject):
+             myhf = scf.RHF(myhf_or_mol)
+         else:
+             myhf = myhf_or_mol
+-
+-            mol = myhf.mol
++        mol = myhf.mol
+         self.mol = mol                          # Molecule object
+         self.nelec = mol.nelec                  # Number of electrons
+         self._scf = myhf                        # SCF object
+@@ -541,7 +541,8 @@ class NR_CASSCF(lib.StreamObject):
+ 
+     #Taken from pyscf
+     def get_jk(self, mol, dm, hermi=1, with_j=True, with_k=True, omega=None):
+-        return self._scf.get_jk(mol, dm, hermi,
++        return 
++        self._scf.get_jk(mol, dm, hermi,
+                                 with_j=with_j, with_k=with_k, omega=omega)
+ 
+     def get_veff(self, mol=None, dm=None, hermi=1):
+@@ -621,6 +622,7 @@ class NR_CASSCF(lib.StreamObject):
+             nDetb = scipy.special.comb(ncas,nelecas[1]).astype(int)
+             ci = ci.reshape((nDeta,nDetb))
+ 
++        print(ci,ncas,nelecas)
+         dm1_cas, dm2_cas = self.fcisolver.make_rdm12(ci,ncas,nelecas) # The make_rdm12 method takes a ci vector as a matrix na x nb
+ 
+         return dm1_cas.T, 0.5*dm2_cas # We transpose the 1-RDM because their convention is <|a_q^\dagger a_p|>
+@@ -713,28 +715,6 @@ class NR_CASSCF(lib.StreamObject):
+         dm2[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc] = dm2_cas # Finally we add the uvxy sector
+         return dm2
+ 
+-    def get_hamiltonian(self):
+-        ''' This method build the Hamiltonian matrix '''
+-        ncore = self.ncore
+-        ncas = self.ncas
+-        norb = self.norb
+-        nocc = ncore + ncas
+-        nvir = norb - nocc
+-
+-        H = np.zeros((self.nDet,self.nDet))
+-
+-        h1e = self.h1e
+-        eri = self.eri
+-
+-        id = np.identity(self.nDet)
+-        for i in range(self.nDet):
+-            for j in range(self.nDet):
+-                dm1_cas, dm2_cas = self.get_tCASRDM12(id[:,i],id[:,j])
+-                dm1 = self.CASRDM1_to_RDM1(dm1_cas,True)
+-                dm2 = self.CASRDM2_to_RDM2(dm1_cas,dm2_cas,True)
+-                H[i,j] = np.einsum('pq,pq',h1e,dm1) + np.einsum('pqrs,pqrs',eri,dm2)
+-        return H
+-
+     def uniq_var_indices(self, nmo, frozen):
+         ''' This function creates a matrix of boolean of size (norb,norb). 
+             A True element means that this rotation should be taken into 
+@@ -1336,6 +1316,28 @@ class NR_CASSCF(lib.StreamObject):
+                 print(("{:"+str(col_maxes[i])+fmt+"}").format(y), end="  ")
+             print("")
+ 
++#    def get_hamiltonian(self):
++#        ''' This method build the Hamiltonian matrix '''
++#        ncore = self.ncore
++#        ncas = self.ncas
++#        norb = self.norb
++#        nocc = ncore + ncas
++#        nvir = norb - nocc
++#
++#        H = np.zeros((self.nDet,self.nDet))
++#
++#        h1e = self.h1e
++#        eri = self.eri
++#
++#        id = np.identity(self.nDet)
++#        for i in range(self.nDet):
++#            for j in range(self.nDet):
++#                dm1_cas, dm2_cas = self.get_tCASRDM12(id[:,i],id[:,j])
++#                dm1 = self.CASRDM1_to_RDM1(dm1_cas,True)
++#                dm2 = self.CASRDM2_to_RDM2(dm1_cas,dm2_cas,True)
++#                H[i,j] = np.einsum('pq,pq',h1e,dm1) + np.einsum('pqrs,pqrs',eri,dm2)
++#        return H
++
+ 
+ 
+ 
