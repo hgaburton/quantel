@@ -3,11 +3,12 @@
 import datetime
 import numpy as np
 
-def NewtonRaphson(obj, thresh=1e-8, maxit=100, index=None):
+def NewtonRaphson(obj, thresh=1e-8, maxit=100, index=None, plev=0):
     ''' This function is the one that we will run the Newton-Raphson calculation for a given NR_CASSCF object '''
     kernel_start_time = datetime.datetime.now() # Save initial time
 
-    print("Initialization of the Newton-Raphson loop")
+    if plev>0: print()
+    if plev>0: print("  Initializing Newton-Raphson solver...")
     istep = 0
     conv = 1
     energy = 1e10
@@ -21,20 +22,20 @@ def NewtonRaphson(obj, thresh=1e-8, maxit=100, index=None):
     scale_up = 1.5
     r_trust  = 1.0
 
-    print(index)
-    print("  ==============================================")
-    print("       {:^16s}    {:^8s}    {:^8s}".format("   Energy / Eh","Step Len","Error"))
-    print("  ==============================================")
+    if plev>0: print("  ==============================================")
+    if plev>0: print("       {:^16s}    {:^8s}    {:^8s}".format("   Energy / Eh","Step Len","Error"))
+    if plev>0: print("  ==============================================")
     while conv > thresh and istep < maxit:
         # Get gradient and Hessian
         g = obj.get_gradient()
         H = obj.get_hessian()
 
         # Compute Newton-Raphson step
+        
         eig, vec = np.linalg.eigh(H) 
         step     = np.zeros(g.shape)
         for i in range(eig.size):
-            if(abs(eig[i]) < 1e-12): 
+            if(abs(eig[i]) < 1e-10): 
                 continue
             if index == None:
                 step -= (np.dot(vec[:,i],g) / eig[i]) * vec[:,i]
@@ -76,10 +77,10 @@ def NewtonRaphson(obj, thresh=1e-8, maxit=100, index=None):
 
         istep += 1
 
-        print(" {: 5d} {: 16.10f}    {:8.2e}    {:8.2e}".format(istep,energy,step_length,conv))
-    print("  ==============================================")
+        if plev>0: print(" {: 5d} {: 16.10f}    {:8.2e}    {:8.2e}".format(istep,energy,step_length,conv))
+    if plev>0: print("  ==============================================")
     kernel_end_time = datetime.datetime.now() # Save end time
     computation_time = kernel_end_time - kernel_start_time
-    print("  Newton-Raphson walltime: ", computation_time.total_seconds(), " seconds")
+    if plev>0: print("  Newton-Raphson walltime: ", computation_time.total_seconds(), " seconds")
 
     return

@@ -2,13 +2,6 @@
 # Author: Antoine Marie
 
 import os
-os.environ["OMP_NUM_THREADS"] = "1" # export OMP_NUM_THREADS=1
-os.environ["OPENBLAS_NUM_THREADS"] = "1" # export OPENBLAS_NUM_THREADS=1
-os.environ["MKL_NUM_THREADS"] = "1" # export MKL_NUM_THREADS=1
-os.environ["VECLIB_MAXIMUM_THREADS"] = "1" # export VECLIB_MAXIMUM_THREADS=1
-os.environ["NUMEXPR_NUM_THREADS"] = "1" # export NUMEXPR_NUM_THREADS=1
-
-
 import sys
 from functools import reduce
 import numpy as np
@@ -30,7 +23,10 @@ from pyscf.lo import orth
 from cas_noci import *
 from pyscf.fci.cistring import make_strings, parity
 from gnme import utils
-from NR_CASSCF import *
+from ss_casscf import ss_casscf
+from newton_raphson import NewtonRaphson
+from lbfgs import LBFGS
+from itertools import cycle
 
 if __name__ == '__main__':
 
@@ -64,44 +60,79 @@ if __name__ == '__main__':
                     grid_option = int(re.split(r'\s', line)[-1])
         return basis, charge, spin, frozen, cas, grid_option, Hind, maxit
 
+    np.set_printoptions(linewidth=10000,precision=6,suppress=True)
+
     # initialise stuff
-    mol = gto.Mole(symmetry=False,unit='B')
-    mol.atom = sys.argv[1]
     basis, charge, spin, frozen, cas, grid_option, Hind, maxit = read_config(sys.argv[2])
-    mol.basis = basis
-    mol.charge = charge
-    mol.spin = spin
+    mol = gto.Mole(symmetry=False,unit='B',charge=charge,spin=spin,basis=basis)
+    mol.atom = sys.argv[1]
     mol.build()
-    metric = mol.intor("int1e_ovlp")
     myhf = mol.RHF().run()
+    np.savetxt('hf_mo_energy',np.vstack((np.arange(myhf.mo_coeff.shape[1])+1,myhf.mo_energy,myhf.mo_occ)).T,
+                           fmt=["%5d","%16.10f","%16.10f"])
+    np.savetxt('hf_mo_coeff',myhf.mo_coeff,fmt="%16.10f")
 
-    np.set_printoptions(linewidth=10000)
+    # Run a reference calculation
+    myhf.mo_coeff[:,[6,8,9,12]] = myhf.mo_coeff[:,[8,6,12,9]]
+    #mc = mcscf.state_average_(mcscf.CASSCF(myhf, 2, 2,), [1.0,0.0,0.0,0.0])
+    #mc.verbose = 4
+    #mc.kernel()
+    #mo_guess = mc.mo_coeff
+    #ci_guess = np.vstack([np.ravel(v) for v in mc.ci]).T
+ 
+    #mo_guess = np.genfromtxt('mo_coeff')
+    #ci_guess = np.genfromtxt('mat_ci')
 
-    mc = mcscf.state_average_(mcscf.CASSCF(myhf, 2, 2,), [0.25,0.25,0.25,0.25])
-    mc.verbose = 4
-    mc.kernel()
-    MOguess = mc.mo_coeff
-    CIguess = np.vstack([np.ravel(v) for v in mc.ci]).T
+    molist = []
+    cilist = []
+    mycas = ss_casscf(mol,cas[0],cas[1])
 
-    print(CIguess)
+    mo_guess = myhf.mo_coeff.copy()
+    mo_guess[:,[6,8,9,12]] = mo_guess[:,[8,6,12,9]]
+    ci_guess = np.identity(4)
 
+    print(mo_guess)
+    print(ci_guess)
+    mycas.initialise(mo_guess, ci_guess[:,:])
+    LBFGS(mycas,plev=1)
+    molist.append([mycas.mo_coeff.copy()])
+    cilist.append([mycas.mat_CI.copy()])
 
-    mycas = NR_CASSCF(myhf,cas[0],cas[1],Hind=Hind,maxit=maxit)
-    mycas.initMO
-    mycas.initCI
-    mycas.initializeMO()
-    mycas.initializeCI()
-    mycas.initHeff
+    hess = mycas.get_hessian()
+    e, v = np.linalg.eigh(hess)
+    print("Hessian index = ", np.sum(e < 0))
 
+    mycas.canonicalize_()
+    np.savetxt('mo_energy',np.vstack((np.arange(mycas.nmo)+1,mycas.mo_energy,mycas.mo_occ)).T,
+                           fmt=["%5d","%16.10f","%16.10f"])
+    np.savetxt('mo_coeff',mycas.mo_coeff,fmt="%16.10f")
+    np.savetxt('mat_ci',mycas.mat_CI,fmt="%16.10f")
 
-    newcas = NR_CASSCF(myhf,cas[0],cas[1],initMO=MOguess,initCI=CIguess[:,[0,1,2,3]],Hind=Hind,maxit=maxit)
-    newcas.kernel()
+    mycas.initialise(mo_guess, ci_guess)
+    NewtonRaphson(mycas,plev=1)
+    hess = mycas.get_hessian()
+    e, v = np.linalg.eigh(hess)
+    print("Hessian index = ", np.sum(e < 0))
 
-    newcas = NR_CASSCF(myhf,cas[0],cas[1],initMO=MOguess,initCI=CIguess[:,[1,2,3,0]],Hind=Hind,maxit=maxit)
-    newcas.kernel()
+    ## Now work through bond angles
+    #ref_geom = np.copy(mol.atom_coords())
+    #print()
+    #for theta in np.linspace(0,np.pi,361):
+    #    coords = ref_geom.copy()
+    #    coords[0:2,1] =   np.cos(theta) * ref_geom[0:2,1] + np.sin(theta) * ref_geom[0:2,2]
+    #    coords[0:2,2] = - np.sin(theta) * ref_geom[0:2,1] - np.cos(theta) * ref_geom[0:2,2]
+    #    mol.set_geom_(coords)
+    #    
 
-    newcas = NR_CASSCF(myhf,cas[0],cas[1],initMO=MOguess,initCI=CIguess[:,[2,3,0,1]],Hind=Hind,maxit=maxit)
-    newcas.kernel()
+    #    elist = [theta*180/np.pi]
+    #    for i in range(4):
+    #        mycas = ss_casscf(mol,cas[0],cas[1])
+    #        mycas.initialise(molist[i][-1], cilist[i][-1])
+    #        LBFGS(mycas,plev=1)
+    #        molist[i].append(mycas.mo_coeff.copy())
+    #        cilist[i].append(mycas.mat_CI.copy())
 
-    newcas = NR_CASSCF(myhf,cas[0],cas[1],initMO=MOguess,initCI=CIguess[:,[3,0,1,2]],Hind=Hind,maxit=maxit)
-    newcas.kernel()
+    #        elist.append(mycas.energy)
+
+    #    print(" {: 5.2f}  {: 16.10f}  {: 16.10f}  {: 16.10f}  {: 16.10f}".format(*elist))
+    #    sys.stdout.flush()

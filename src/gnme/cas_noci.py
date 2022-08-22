@@ -59,7 +59,7 @@ def cas_proj(cas_x, cas_w, metric):
                 Sb_tmp[ib] = pwb * pxb * np.prod(apair.get_overlap(bx_str_b,bw_str_b))
 
             # Evaluate this component
-            proj_vec[xind] = np.dot(np.outer(Sa_tmp,Sb_tmp).ravel(), cas_w.mat_CI[:,0])
+            proj_vec[xind] = np.dot(np.outer(Sa_tmp,Sb_tmp).ravel(), cas_w.mat_ci[:,0])
             
             # Increment counter
             xind += 1
@@ -114,4 +114,4 @@ if __name__=='__main__':
     projvec = cas_proj(cas1,cas2,metric)
     print(projvec)
 
-    print("Total overlap = {:20.10f}".format(cas1.mat_CI[:,0].dot(projvec)))
+    print("Total overlap = {:20.10f}".format(cas1.mat_ci[:,0].dot(projvec)))
