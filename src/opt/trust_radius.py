@@ -6,6 +6,16 @@ class TrustRadius:
     '''A class to manage the trust radius updates and steps'''
 
     def __init__(self, rtrust, minstep, maxstep):
+        '''Initialise the TrustRadius object
+
+           Parameters:
+               rtrust : float
+                   Initial value of the trust radius
+               minstep : float
+                   Minimum allowed step size
+               maxstep : float
+                   Maximum allowed step size
+        '''
      
         # Check consistency of input
         assert(minstep < maxstep)
@@ -30,7 +40,24 @@ class TrustRadius:
         return self.__minstep
 
     def dogleg_step(self, pu, pb):
-        '''Compute a dogleg step using the algorithm in...'''
+        '''Compute an optimal dogleg step for the trust region
+        
+           Based on the dogleg method described on page 73 in
+           "Numerical Optimization", J. Nocedal and S. J. Wright
+
+           Parameters:
+               pu : ndarray
+                   Unconstrained step, the minimum of the model function along the 
+                   steepest-descent pathway
+               pb : ndarray
+                   Proposed second-order step (either Quasi-Newton or Newton-Raphson)
+           
+           Returns:
+               step : ndarray
+                   The optimal dogleg step
+               comment : str
+                   Descriptor for the chosen type of step
+        '''
 
         # Get lengths of Newton-Rahpson (pb) and Steepest-Descent (pu) steps 
         lb = np.linalg.norm(pb)
@@ -62,9 +89,22 @@ class TrustRadius:
 
 
     def accept_step(self, dE_actual, dE_model, step_length):
-        '''Determine whether to accept or reject a step and update the 
-           trust radius accordingly'''
+        '''Determine whether to accept or reject a step and update trust radius
         
+           Based on Algorithm 4.1 outline on page 69 of 
+           "Numerical Optimization", J. Nocedal and S. J. Wright
+           
+           Parameters:
+               dE_actual : float
+                   True energy change for the step
+               dE_model : float 
+                   Energy change predicted by the trust region quadratic model
+               step_length : float
+                   Length of the step
+
+           Returns:
+               accept : bool
+           '''
         # Get quality metric
         rho = dE_actual / dE_model
 
