@@ -58,7 +58,6 @@ class TrustRadius:
                comment : str
                    Descriptor for the chosen type of step
         '''
-
         # Get lengths of Newton-Rahpson (pb) and Steepest-Descent (pu) steps 
         lb = np.linalg.norm(pb)
         lu = np.linalg.norm(pu)

@@ -87,6 +87,8 @@ if __name__ == '__main__':
             continue
         s2 = mycas.s2
         hindices = mycas.get_hessian_index()
+        if hindices[0] != Hind: 
+            continue
         mycas.canonicalize_()
 
         # Get the distances
