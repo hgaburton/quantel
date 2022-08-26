@@ -5,8 +5,7 @@ import numpy as np
 from scipy.linalg import expm as scipy_expm
 from pyscf import gto
 from ss_casscf import ss_casscf
-from newton_raphson import NewtonRaphson
-from gnme.cas_noci import cas_proj
+from opt.eigenvector_following import EigenFollow
 
 def random_rot(n, lmin, lmax):
     X = lmin + np.random.rand(n,n) * (lmax - lmin)
@@ -23,6 +22,7 @@ if __name__ == '__main__':
         f = open(file,"r")
         lines = f.read().splitlines()
         basis, charge, spin, frozen, cas, grid_option, Hind, maxit = 'sto-3g', 0, 0, 0, (0,0), 1000, None, 1000
+        unit_str = 'B'
         for line in lines:
             if re.match('basis', line) is not None:
                 basis = str(re.split(r'\s', line)[-1])
@@ -43,12 +43,14 @@ if __name__ == '__main__':
                 cas = (int(tmp[1]), int(tmp[3]))
             elif re.match('nsample', line) is not None:
                 nsample = int(re.split(r'\s', line)[-1])
-        return basis, charge, spin, frozen, cas, nsample, Hind, maxit
+            elif re.match('units', line) is not None:
+                unit_str = str(re.split(r'\s', line)[-1])
+        return basis, charge, spin, frozen, cas, nsample, Hind, maxit, unit_str
 
     # Initialise the molecular structure
-    mol = gto.Mole(symmetry=False,unit='B')
+    basis, charge, spin, frozen, cas, nsample, Hind, maxit, unit_str = read_config(sys.argv[2])
+    mol = gto.Mole(symmetry=False,unit=unit_str)
     mol.atom = sys.argv[1]
-    basis, charge, spin, frozen, cas, nsample, Hind, maxit = read_config(sys.argv[2])
     mol.basis = basis
     mol.charge = charge
     mol.spin = spin
@@ -80,7 +82,11 @@ if __name__ == '__main__':
 
         # Set orbital coefficients
         mycas.initialise(mo_guess, ci_guess)
-        NewtonRaphson(mycas,index=Hind,plev=0)
+        opt = EigenFollow()
+        if not opt.run(mycas, thresh=1e-10, maxit=500, index=Hind):
+            continue
+        s2 = mycas.s2
+        hindices = mycas.get_hessian_index()
         mycas.canonicalize_()
 
         # Get the distances
@@ -94,4 +100,5 @@ if __name__ == '__main__':
             cas_list.append(mycas.copy())
             np.savetxt('mo_coeff.{:d}.{:d}'.format(Hind,count), mycas.mo_coeff, fmt="% 20.16f")
             np.savetxt('mat_ci.{:d}.{:d}'.format(Hind,count), mycas.mat_ci, fmt="% 20.16f")
-            np.savetxt('energy.{:d}.{:d}'.format(Hind,count), np.array([[mycas.energy, mycas.get_hessian_index(), mycas.spin_square()]]), fmt="% 18.12f % 5d % 12.6f")
+            np.savetxt('energy.{:d}.{:d}'.format(Hind,count), np.array([
+                  [mycas.energy, hindices[0], hindices[1], s2]]), fmt="% 18.12f % 5d % 5d % 12.6f")

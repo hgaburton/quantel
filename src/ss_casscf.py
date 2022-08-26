@@ -1,18 +1,11 @@
 #!/usr/bin/env python
 # Author: Antoine Marie, Hugh G. A. Burton
 
-
-import os
-import sys, re
 import numpy as np
 import scipy.linalg
 from functools import reduce
-from pyscf import lib
-from pyscf import gto, scf, ao2mo, fci, mcscf
-from newton_raphson import NewtonRaphson
+from pyscf import scf, fci, __config__, ao2mo, lib, mcscf
 from pyscf.mcscf import mc_ao2mo
-from pyscf import __config__
-from pyscf import ao2mo
 from gnme.cas_noci import cas_proj
 
 def delta_kron(i,j):
@@ -31,19 +24,23 @@ def orthogonalise(mat, metric, thresh=1e-10,fill=True):
     ortho = reduce(np.dot, (mat.conj().T, metric, mat))
     ortho_test = np.linalg.norm(ortho - np.identity(ortho.shape[0])) / np.sqrt(ortho.size)
     if ortho_test > thresh:
+        # First Gram-Schmidt
         proj = np.zeros(metric.shape)
         for i in range(0,mat.shape[1]):
             mat[:,i] -= proj.dot(metric.dot(mat[:,i]))
             norm = reduce(np.dot, (mat[:,i].T, metric, mat[:,i]))
             mat[:,i] /= np.sqrt(norm)
-            proj     += mat[:,i].dot(mat[:,i].T)
+            proj     += np.outer(mat[:,i], mat[:,i])
 
+        # Second Gram-Schmidt
         proj = np.zeros(metric.shape)
         for i in range(0,mat.shape[1]):
             mat[:,i] -= proj.dot(metric.dot(mat[:,i]))
             norm = reduce(np.dot, (mat[:,i].T, metric, mat[:,i]))
             mat[:,i] /= np.sqrt(norm)
-            proj     += mat[:,i].dot(mat[:,i].T)
+            proj     += np.outer(mat[:,i], mat[:,i])
+
+        # Double-check the normalisation
         for i in range(mat.shape[1]):
             norm = reduce(np.dot, (mat[:,i].T, metric, mat[:,i]))
             mat[:,i] /= np.sqrt(reduce(np.dot, (mat[:,i], metric, mat[:,i])))
@@ -140,17 +137,50 @@ class ss_casscf():
 
         # Initialise integrals
         self.update_integrals()
-        self.energy       = self.get_energy()
-        self.s2           = self.spin_square()
 
-
-    def get_energy(self):
+    @property
+    def energy(self):
         ''' Compute the energy corresponding to a given set of one-el integrals, two-el integrals, 1- and 2-RDM '''
-        return np.einsum('pq,pq', self.h1eff, self.dm1_cas) + 0.5 * np.einsum('pqrs,pqrs', self.h2eff, self.dm2_cas) + self.energy_core
+        E  = self.energy_core
+        E += np.einsum('pq,pq', self.h1eff, self.dm1_cas)
+        E += 0.5 * np.einsum('pqrs,pqrs', self.h2eff, self.dm2_cas)
+        return E
 
-    def spin_square(self):
+    @property
+    def s2(self):
         ''' Compute the spin of a given FCI vector '''
         return self.fcisolver.spin_square(self.mat_ci[:,0], self.ncas, self.nelecas)[0]
+
+    @property
+    def gradient(self):
+        g_orb = self.get_orbital_gradient()
+        g_ci  = self.get_ci_gradient()  
+
+        # Unpack matrices/vectors accordingly
+        return np.concatenate((g_orb, g_ci))
+
+    @property
+    def hessian(self):
+        ''' This method concatenate the orb-orb, orb-CI and CI-CI part of the Hessian '''
+        self.eri = ao2mo.incore.full(self._scf._eri, self.mo_coeff, compact=False).reshape((self.nmo,)*4)
+        H_OrbOrb = (self.get_hessianOrbOrb()[:,:,self.rot_idx])[self.rot_idx,:]
+        H_CICI   = self.get_hessianCICI()
+        H_OrbCI  = self.get_hessianOrbCI()[self.rot_idx,:]
+
+        return np.block([[H_OrbOrb, H_OrbCI],
+                         [H_OrbCI.T, H_CICI]])
+
+    def get_hessian_index(self, tol=1e-16):
+        eigs = scipy.linalg.eigvalsh(self.hessian)
+        ndown = 0
+        nzero = 0
+        nuphl = 0
+        for i in eigs:
+            if i < -tol:  ndown += 1
+            elif i > tol: nuphl +=1
+            else:         nzero +=1 
+        return ndown, nzero, nuphl
+
 
 
     def update_integrals(self):
@@ -182,8 +212,12 @@ class ss_casscf():
         self.ham = self.fcisolver.pspace(self.h1eff, self.h2eff, self.ncas, self.nelecas, np=1000000)[1]
 
     def restore_last_step(self):
+        # Restore coefficients
         self.mo_coeff = self.mo_coeff_save.copy()
         self.mat_ci   = self.mat_ci_save.copy()
+
+        # Finally, update our integrals for the new coefficients
+        self.update_integrals()
 
     def save_last_step(self):
         self.mo_coeff_save = self.mo_coeff.copy()
@@ -199,8 +233,6 @@ class ss_casscf():
 
         # Finally, update our integrals for the new coefficients
         self.update_integrals()
-        self.energy       = self.get_energy()
-        self.s2           = self.spin_square()
 
     def rotate_orb(self,step): 
         orb_step = np.zeros((self.norb,self.norb))
@@ -247,10 +279,25 @@ class ss_casscf():
         ncore = self.ncore
         return self._eri.ppaa[ncore:nocc,ncore:nocc,:,:].copy()
 
+
     def get_casrdm_12(self):
         civec = np.reshape(self.mat_ci[:,0],(self.nDeta,self.nDetb))
         dm1_cas, dm2_cas = self.fcisolver.make_rdm12(civec, self.ncas, self.nelecas)
         return dm1_cas, dm2_cas
+
+
+    def get_spin_dm1(self):
+        # Reformat the CI vector
+        civec = np.reshape(self.mat_ci[:,0],(self.nDeta,self.nDetb))
+        
+        # Compute spin density in the active space
+        alpha_dm1_cas, beta_dm1_cas = self.fcisolver.make_rdm1s(civec, self.ncas, self.nelecas)
+        spin_dens_cas = alpha_dm1_cas - beta_dm1_cas
+
+        # Transform into the AO basis
+        mo_cas = self.mo_coeff[:, self.ncore:self.ncore+self.ncas]
+        ao_spin_dens  = np.dot(mo_cas, np.dot(spin_dens_cas, mo_cas.T))
+        return ao_spin_dens
 
 
     def get_fock_matrices(self):
@@ -317,13 +364,6 @@ class ss_casscf():
         # Return gradient
         return 2.0 * np.einsum('i,ij,jk->k', self.mat_ci[:,0], self.ham, self.mat_ci[:,1:])
     
-    def get_gradient(self):
-        g_orb = self.get_orbital_gradient()
-        g_ci  = self.get_ci_gradient()  
-
-        # Unpack matrices/vectors accordingly
-        return np.concatenate((g_orb, g_ci))
-
     def CASRDM1_to_RDM1(self, dm1_cas, transition=False):
         ''' Transform 1-RDM from CAS space into full MO space'''
         ncore = self.ncore
@@ -578,19 +618,6 @@ class ss_casscf():
         return 2.0 * np.einsum('ki,kl,lj->ij', self.mat_ci[:,1:], self.ham - e0 * np.identity(self.nDet), self.mat_ci[:,1:])
 
 
-    def get_hessian(self):
-        ''' This method concatenate the orb-orb, orb-CI and CI-CI part of the Hessian '''
-        self.eri = ao2mo.incore.full(self._scf._eri, self.mo_coeff, compact=False).reshape((self.nmo,)*4)
-        #self.eri = np.asarray(self.mol.ao2mo(self.mo_coeff))
-        #self.eri = ao2mo.restore(1, self.eri, self.norb)
-        H_OrbOrb = (self.get_hessianOrbOrb()[:,:,self.rot_idx])[self.rot_idx,:]
-        H_CICI   = self.get_hessianCICI()
-        H_OrbCI  = self.get_hessianOrbCI()[self.rot_idx,:]
-
-        return np.block([[H_OrbOrb, H_OrbCI],
-                         [H_OrbCI.T, H_CICI]])
-
-
     def _eig(self, h, *args):
         return scf.hf.eig(h, None)
     def get_hcore(self, mol=None):
@@ -598,24 +625,20 @@ class ss_casscf():
     def get_fock(self, mo_coeff=None, ci=None, eris=None, casdm1=None, verbose=None):
         return mcscf.casci.get_fock(self, mo_coeff, ci, eris, casdm1, verbose)
     def cas_natorb(self, mo_coeff=None, ci=None, eris=None, sort=False, casdm1=None, verbose=None, with_meta_lowdin=True):
-        return mcscf.casci.cas_natorb(self, mo_coeff, ci, eris, sort, casdm1, verbose, True)
+        test = mcscf.casci.cas_natorb(self, mo_coeff, ci, eris, sort, casdm1, verbose, True)
+        return test
     def canonicalize_(self):
         # Compute canonicalised natural orbitals
-        self.mo_coeff, ci, self.mo_energy = mcscf.casci.canonicalize(self, self.mo_coeff, self.mat_ci[:,0], 
-                                                                     self._eri, True, True, self.dm1_cas)
+        self.mo_coeff, ci, self.mo_energy = mcscf.casci.canonicalize(self, self.mo_coeff, ci=self.mat_ci[:,0], 
+                                                       eris=self._eri, sort=True, cas_natorb=True, casdm1=self.dm1_cas)
+
         # Insert new "occupied" ci vector
         self.mat_ci[:,0] = ci.ravel()
-        # Orthogonalise "unoccupied" ci vectors
-        self.mat_ci[:,1:] -= (self.mat_ci[:,[0]].dot(self.mat_ci[:,[0]].T)).dot(self.mat_ci[:,1:])
-        self.mat_ci[:,1:] = orthogonalise(self.mat_ci[:,1:], np.identity(self.nDet),fill=False)
+        self.mat_ci = orthogonalise(self.mat_ci, np.identity(self.nDet))
+
         # Update integrals
         self.update_integrals()
         return
-
-    def get_hessian_index(self):
-        hess = self.get_hessian()
-        eigs = scipy.linalg.eigvalsh(hess)
-        return np.sum(eigs<0)
 
     def uniq_var_indices(self, nmo, frozen):
         ''' This function creates a matrix of boolean of size (norb,norb). 
@@ -636,6 +659,9 @@ class ss_casscf():
 
 ##### Main #####
 if __name__ == '__main__':
+    import sys, re, os
+    from newton_raphson import NewtonRaphson
+    from pyscf import gto
 
     np.set_printoptions(linewidth=10000)
 
