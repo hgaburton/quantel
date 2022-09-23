@@ -5,7 +5,7 @@ import numpy as np
 class TrustRadius:
     '''A class to manage the trust radius updates and steps'''
 
-    def __init__(self, rtrust, minstep, maxstep):
+    def __init__(self, rtrust, minstep, maxstep, dogleg=True):
         '''Initialise the TrustRadius object
 
            Parameters:
@@ -18,14 +18,15 @@ class TrustRadius:
         '''
      
         # Check consistency of input
-        assert(minstep < maxstep)
-        assert(rtrust > minstep and rtrust < maxstep)
+        assert(minstep <= maxstep)
+        assert(rtrust >= minstep and rtrust <= maxstep)
 
         # Save control variables
         self.__rtrust  = rtrust
         self.__maxstep = maxstep
         self.__minstep = minstep
         self.__eta = 0.125
+        self.__dogleg = dogleg
 
     @property
     def rtrust(self):
@@ -61,6 +62,7 @@ class TrustRadius:
         # Get lengths of Newton-Rahpson (pb) and Steepest-Descent (pu) steps 
         lb = np.linalg.norm(pb)
         lu = np.linalg.norm(pu)
+        
 
         if(lb <= self.__rtrust):
             # Take Newton step if within trust radius
@@ -84,6 +86,16 @@ class TrustRadius:
             step = pu + tau * (pb - pu)
             comment = "Dogleg step"
 
+        return step, comment
+
+    def truncated_step(self, pu):
+        lu = np.linalg.norm(pu)
+        if(lu > self.__rtrust):
+            step = (self.__rtrust / lu) * pu
+            comment = "Truncated step"
+        else:
+            step = pu
+            comment = ""
         return step, comment
 
 

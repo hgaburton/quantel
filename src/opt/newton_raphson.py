@@ -1,86 +1,78 @@
 #!/usr/bin/python3
 
-import datetime
+import datetime, sys
 import numpy as np
 
-def NewtonRaphson(obj, thresh=1e-8, maxit=100, index=None, plev=0):
-    ''' This function is the one that we will run the Newton-Raphson calculation for a given NR_CASSCF object '''
-    kernel_start_time = datetime.datetime.now() # Save initial time
+class NewtonRaphson:
 
-    if plev>0: print()
-    if plev>0: print("  Initializing Newton-Raphson solver...")
-    istep = 0
-    conv = 1
-    energy = 1e10
-    damp = 0.1
+    def __init__(self, **kwargs):
+        '''Initialise the Newton-Raphson procedure'''
+        self.control = dict()
+        self.control["hesstol"] = 1e-16
 
-    # Trust radius
-    min_step = 0.01
-    max_step = 2 * np.pi
-    tol_high = 1.2
-    tol_low  = 0.8
-    scale_up = 1.5
-    r_trust  = 1.0
+    def run(self, obj, thresh=1e-8, maxit=100, index=None, plev=1):
+        ''' This function runs the optimisation'''
 
-    if plev>0: print("  ==============================================")
-    if plev>0: print("       {:^16s}    {:^8s}    {:^8s}".format("   Energy / Eh","Step Len","Error"))
-    if plev>0: print("  ==============================================")
-    while conv > thresh and istep < maxit:
-        # Get gradient and Hessian
-        g = obj.get_gradient()
-        H = obj.get_hessian()
+        kernel_start_time = datetime.datetime.now() # Save initial time
 
-        # Compute Newton-Raphson step
-        
-        eig, vec = np.linalg.eigh(H) 
-        step     = np.zeros(g.shape)
-        for i in range(eig.size):
-            if(abs(eig[i]) < 1e-10): 
-                continue
-            if index == None:
-                step -= (np.dot(vec[:,i],g) / eig[i]) * vec[:,i]
-            else:
-                if i < index:
-                    step -= (- np.dot(vec[:,i],g) / np.abs(eig[i])) * vec[:,i]
+        if plev>0: print()
+        if plev>0: print("  Initializing Newton-Raphson solver...")
+
+        # Initialise reference energy
+        eref = obj.energy
+
+        if plev>0: print("  ================================================================")
+        if plev>0: print("       {:^16s}    {:^8s}    {:^8s}    {:^8s}".format("   Energy / Eh","Index","Step Len","Error"))
+        if plev>0: print("  ================================================================")
+
+        converged = False
+        for istep in range(maxit+1):
+            # Get gradient and check convergence
+            grad = obj.gradient
+            conv = np.linalg.norm(grad) * np.sqrt(1.0/grad.size)
+            eref = obj.energy
+
+            # Get Hessian eigen-decomposition
+            hess_eig, hess_vec = np.linalg.eigh(obj.hessian) 
+            cur_hind = np.sum(hess_eig<0)
+
+            if istep > 0 and plev > 0:
+                print(" {: 5d} {: 16.10f}    {:8.0f}    {:8.2e}    {:8.2e}    {:10s}".format(
+                      istep, eref, cur_hind, step_length, conv, ""))
+            elif plev > 0:
+                print(" {: 5d} {: 16.10f}    {:8.0f}                {:8.2e}".format(istep, eref, cur_hind, conv))
+            sys.stdout.flush()
+
+            if(index == None):
+                index = np.sum(hess_eig < 0)
+
+            # Check if we have convergence
+            if(conv < thresh): 
+                converged = True
+                break
+
+            # Compute Newton-Raphson step
+            step     = np.zeros(grad.shape)
+            for i, eigval in enumerate(hess_eig):
+                if(abs(eigval) < self.control['hesstol']): 
+                    continue
                 else:
-                    step -= (  np.dot(vec[:,i],g) / np.abs(eig[i])) * vec[:,i]
+                    step -= (np.dot(hess_vec[:,i],grad) / eigval) * hess_vec[:,i]
+            print(hess_eig)
+            print(step)
 
-        # Rescale step length
-        step_length = np.sqrt(np.dot(step,step))
-        scale = min(step_length, r_trust) / step_length
-        #scale = damp
-        step *= scale
-        step_length = np.sqrt(np.dot(step,step))
+            # Transform step back into full space and take step
+            step_length = np.linalg.norm(step)
+            if(step_length < thresh*thresh):
+                return converged
+            obj.take_step(step)
 
-        # energy change model
-        dE_model = np.dot(step, g) * (1 - 0.5 * scale)
-        obj.take_step(step)
+            # Increment the iteration counter
+            istep += 1
 
-        if np.max(np.abs(g)) < conv and damp < 4:
-            damp = damp * 1.1
-        elif np.max(np.abs(g)) > conv and damp > 0.01:
-            damp = damp * 0.8
+        if plev>0: print("  ================================================================")
+        kernel_end_time = datetime.datetime.now() # Save end time
+        computation_time = kernel_end_time - kernel_start_time
+        if plev>0: print("  Eigenvector-following walltime: ", computation_time.total_seconds(), " seconds")
 
-        conv   = np.linalg.norm(g) * np.sqrt(1.0/g.size)
-        e_ref  = energy 
-        energy = obj.energy
-
-        if(istep > 0):   
-            dE = energy - e_ref
-            #print("Actual change, model = {: 10.6f} {: 10.6f} {: 10.6f} ".format( energy - e_ref, dE_model, dE / dE_model))
-            # scale trust radius
-            if(dE / dE_model > tol_low and dE / dE_model < tol_high):
-                r_trust *= scale_up
-            else: 
-                r_trust /= scale_up
-            r_trust = min(max(r_trust, min_step),max_step)
-
-        istep += 1
-
-        if plev>0: print(" {: 5d} {: 16.10f}    {:8.2e}    {:8.2e}".format(istep,energy,step_length,conv))
-    if plev>0: print("  ==============================================")
-    kernel_end_time = datetime.datetime.now() # Save end time
-    computation_time = kernel_end_time - kernel_start_time
-    if plev>0: print("  Newton-Raphson walltime: ", computation_time.total_seconds(), " seconds")
-
-    return
+        return converged

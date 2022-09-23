@@ -392,6 +392,23 @@ class ss_casscf():
 
         return t_dm1_cas.T, 0.5*t_dm2_cas
 
+    def get_tCASRDM1(self,ci1,ci2):
+        ''' This method compute the 1-electrons transition density matrix between the ci vectors ci1 and ci2 '''
+        ncas = self.ncas
+        nelecas = self.nelecas
+        if len(ci1.shape)==1:
+            nDeta = scipy.special.comb(ncas,nelecas[0]).astype(int)
+            nDetb = scipy.special.comb(ncas,nelecas[1]).astype(int)
+            ci1 = ci1.reshape((nDeta,nDetb))
+        if len(ci2.shape)==1:
+            nDeta = scipy.special.comb(ncas,nelecas[0]).astype(int)
+            nDetb = scipy.special.comb(ncas,nelecas[1]).astype(int)
+            ci2 = ci2.reshape((nDeta,nDetb))
+
+        t_dm1_cas = self.fcisolver.trans_rdm1(ci1,ci2,ncas,nelecas)
+
+        return t_dm1_cas.T
+
     def get_ham_commutator(self):
         ''' This method build the Hamiltonian commutator matrices '''
         ncore = self.ncore; ncas = self.ncas; norb = self.norb
@@ -404,8 +421,9 @@ class ss_casscf():
 
         # Compute contribution for each CI contribution
         mat_id = np.identity(self.nDet)
+        two_el = 0
         for i in range(self.nDet):
-            for j in range(self.nDet):
+            for j in range(i,self.nDet):
                 dm1_cas, dm2_cas = self.get_tCASRDM12(mat_id[i],mat_id[j])
                 dm1 = self.CASRDM1_to_RDM1(dm1_cas,True)
                 dm2 = self.CASRDM2_to_RDM2(dm1_cas,dm2_cas,True)
@@ -440,6 +458,64 @@ class ss_casscf():
                              - np.einsum('pqri,pqrt->ti', self.eri[:,:,:,:ncore], dm2[:,:,:,ncore:nocc]) 
                              + np.einsum('pqts,pqis->ti', self.eri[:,:,ncore:nocc,:], dm2[:,:,:ncore,:]) 
                              - np.einsum('pqis,pqts->ti', self.eri[:,:,:ncore,:], dm2[:,:,ncore:nocc,:]) )
+                    H_ti[:,:,i,j] = one_el + two_el
+                H_ti[:,:,j,i] = np.conjugate(H_ti[:,:,i,j])
+
+        return H_ai, H_at, H_ti
+
+    def get_approx_ham_commutator(self):
+        ''' This method build the Hamiltonian commutator matrices '''
+        ncore = self.ncore; ncas = self.ncas; norb = self.norb
+        nocc = ncore + ncas; nvir = norb - nocc
+
+        # Initialise output
+        H_ai = np.zeros((nvir,ncore,self.nDet,self.nDet))
+        H_at = np.zeros((nvir,ncas, self.nDet,self.nDet))
+        H_ti = np.zeros((ncas,ncore,self.nDet,self.nDet))
+
+        # Compute contribution for each CI contribution
+        mat_id = np.identity(self.nDet)
+        two_el = 0
+        for i in range(self.nDet):
+            for j in range(self.nDet):
+                dm1_cas, dm2_cas = self.get_tCASRDM12(mat_id[i],mat_id[j])
+                print("CASRDM1_to_RDM1")
+                dm1 = self.CASRDM1_to_RDM1(dm1_cas,True)
+                print("CASRDM2_to_RDM2")
+                dm2 = self.CASRDM2_to_RDM2(dm1_cas,dm2_cas,True)
+                if ncore>0 and nvir>0:
+                    print("one_el")
+                    one_el = ( np.einsum('pa,pi->ai', self.h1e[:,nocc:], dm1[:,:ncore]) 
+                             + np.einsum('ap,ip->ai', self.h1e[nocc:,:], dm1[:ncore,:]) )
+                    #two_el = ( np.einsum('pars,pirs->ai', self.eri[:,nocc:,:,:], dm2[:,:ncore,:,:]) 
+                    #         + np.einsum('aqrs,iqrs->ai', self.eri[nocc:,:,:,:], dm2[:ncore,:,:,:]) 
+                    #         + np.einsum('pqra,pqri->ai', self.eri[:,:,:,nocc:], dm2[:,:,:,:ncore]) 
+                    #         + np.einsum('pqas,pqis->ai', self.eri[:,:,nocc:,:], dm2[:,:,:ncore,:]) )
+                    H_ai[:,:,i,j] = one_el + two_el
+
+                if nvir>0:
+                    one_el = ( np.einsum('pa,pt->at', self.h1e[:,nocc:], dm1[:,ncore:nocc]) 
+                             + np.einsum('ap,tp->at', self.h1e[nocc:,:], dm1[ncore:nocc,:]) )
+                    #two_el = ( np.einsum('pars,ptrs->at', self.eri[:,nocc:,:,:], dm2[:,ncore:nocc,:,:])  
+                    #         + np.einsum('aqrs,tqrs->at', self.eri[nocc:,:,:,:], dm2[ncore:nocc,:,:,:]) 
+                    #         + np.einsum('pqra,pqrt->at', self.eri[:,:,:,nocc:], dm2[:,:,:,ncore:nocc]) 
+                    #         + np.einsum('pqas,pqts->at', self.eri[:,:,nocc:,:], dm2[:,:,ncore:nocc,:]) )
+                    H_at[:,:,i,j] = one_el + two_el
+
+                if ncore>0:
+                    print("one_el")
+                    one_el = ( np.einsum('pt,pi->ti', self.h1e[:,ncore:nocc], dm1[:,:ncore]) 
+                             - np.einsum('pi,pt->ti', self.h1e[:,:ncore], dm1[:,ncore:nocc]) 
+                             + np.einsum('tp,ip->ti', self.h1e[ncore:nocc,:], dm1[:ncore,:]) 
+                             - np.einsum('ip,tp->ti', self.h1e[:ncore,:], dm1[ncore:nocc,:]) )
+                    #two_el = ( np.einsum('ptrs,pirs->ti', self.eri[:,ncore:nocc,:,:], dm2[:,:ncore,:,:]) 
+                    #         - np.einsum('pirs,ptrs->ti', self.eri[:,:ncore,:,:], dm2[:,ncore:nocc,:,:]) 
+                    #         + np.einsum('tqrs,iqrs->ti', self.eri[ncore:nocc,:,:,:], dm2[:ncore,:,:,:]) 
+                    #         - np.einsum('iqrs,tqrs->ti', self.eri[:ncore,:,:,:], dm2[ncore:nocc,:,:,:]) 
+                    #         + np.einsum('pqrt,pqri->ti', self.eri[:,:,:,ncore:nocc], dm2[:,:,:,:ncore]) 
+                    #         - np.einsum('pqri,pqrt->ti', self.eri[:,:,:,:ncore], dm2[:,:,:,ncore:nocc]) 
+                    #         + np.einsum('pqts,pqis->ti', self.eri[:,:,ncore:nocc,:], dm2[:,:,:ncore,:]) 
+                    #         - np.einsum('pqis,pqts->ti', self.eri[:,:,:ncore,:], dm2[:,:,ncore:nocc,:]) )
                     H_ti[:,:,i,j] = one_el + two_el
 
         return H_ai, H_at, H_ti
@@ -579,6 +655,65 @@ class ss_casscf():
         e0 = np.einsum('i,ij,j', self.mat_ci[:,0], self.ham, self.mat_ci[:,0])
         return 2.0 * np.einsum('ki,kl,lj->ij', self.mat_ci[:,1:], self.ham - e0 * np.identity(self.nDet), self.mat_ci[:,1:])
 
+    def get_metric(self):
+        met_CICI   = self.get_metricCICI()
+        print(self.rot_idx)
+        met_OrbCI  = self.get_metricOrbCI()[self.rot_idx,:]
+        met_OrbOrb = self.get_metricOrbOrb()[self.rot_idx,:][:,self.rot_idx]
+
+        return np.block([[met_OrbOrb,  met_OrbCI],
+                         [met_OrbCI.T, met_CICI]])
+
+    def get_metricOrbOrb(self):
+
+        norb = self.norb; ncore = self.ncore; ncas = self.ncas
+        nocc = ncore + ncas; nvir = norb - nocc
+
+        met = np.zeros((norb,norb,norb,norb))
+        dm1_cas, dm2_cas = self.get_casrdm_12()
+
+        if ncore>0 and nvir>0:
+            for i in range(ncore):
+                for a in range(nocc,norb):
+                    met[a,i,a,i] = 1
+
+        if nvir>0:
+            for a in range(nocc,norb):
+                for t in range(ncore,nocc):
+                    for u in range(ncore,nocc):
+                        dm_tt = dm1_cas[t-ncore,t-ncore]
+                        dm_uu = dm1_cas[u-ncore,u-ncore]
+                        met[a,t,a,u] = dm1_cas[t-ncore,u-ncore]/np.sqrt(dm_tt * dm_uu)
+
+        if ncore>0:
+            for i in range(ncore):
+                for t in range(ncore,nocc):
+                    for u in range(ncore,nocc):
+                        m_t = 2 - dm1_cas[t-ncore,t-ncore]
+                        m_u = 2 - dm1_cas[u-ncore,u-ncore]
+                        met[i,t,i,u] = (2*delta_kron(t,u) - dm1_cas[u-ncore,t-ncore])/np.sqrt(m_t * m_u)
+
+        return met
+        
+
+    def get_metricOrbCI(self):
+        '''Build the orbital-CI component of the metric'''
+        met = np.zeros((self.norb,self.norb,self.nDet-1))
+
+        mat_ci = self.mat_ci
+        ci0 = mat_ci[:,0]
+
+        for k in range(len(mat_ci)-1):
+            ciK = mat_ci[:,k+1]
+            dm1_cas = self.get_tCASRDM1(ciK, ci0)
+            dm1 = self.CASRDM1_to_RDM1(dm1_cas,True)
+            met[:,:,k] = dm1 - dm1.T
+            print(met[:,:,k])
+
+        return met
+
+    def get_metricCICI(self):
+        return np.identity(self.nDet-1)
 
     def _eig(self, h, *args):
         return scf.hf.eig(h, None)
