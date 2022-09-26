@@ -115,6 +115,8 @@ class ModeControl:
                 continue
             qn_t[i] = - gt[i] / hess_eig[i]
 
+        qn_t = np.clip(qn_t, -self.control["maxstep"], self.control["maxstep"])
+
         # Truncate step using Trust radius
         step_t, comment = self.__trust.truncated_step(qn_t)
         
