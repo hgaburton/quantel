@@ -92,7 +92,7 @@ if __name__ == '__main__':
         for i in range(nstates):
             old_tag = "{:s}{:04d}".format(prefix, i+1)
             mo_guess = np.genfromtxt(old_tag+".mo_coeff")
-            ci_guess = np.genfromtxt(old_tag+".mat_ci")
+            ci_guess = np.asmatrix(np.genfromtxt(old_tag+".mat_ci"))
 
             # Set orbital coefficients
             mycas.initialise(mo_guess, ci_guess)

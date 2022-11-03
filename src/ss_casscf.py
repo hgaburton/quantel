@@ -324,7 +324,10 @@ class ss_casscf():
     def get_ci_gradient(self):
         ''' This method build the CI part of the gradient '''
         # Return gradient
-        return 2.0 * np.einsum('i,ij,jk->k', self.mat_ci[:,0], self.ham, self.mat_ci[:,1:])
+        if(self.nDet > 1):
+            return 2.0 * np.einsum('i,ij,jk->k', self.mat_ci[:,0], self.ham, self.mat_ci[:,1:])
+        else:
+            return np.zeros((0))
     
     def CASRDM1_to_RDM1(self, dm1_cas, transition=False):
         ''' Transform 1-RDM from CAS space into full MO space'''
@@ -652,8 +655,11 @@ class ss_casscf():
 
     def get_hessianCICI(self):
         ''' This method build the CI-CI part of the hessian '''
-        e0 = np.einsum('i,ij,j', self.mat_ci[:,0], self.ham, self.mat_ci[:,0])
-        return 2.0 * np.einsum('ki,kl,lj->ij', self.mat_ci[:,1:], self.ham - e0 * np.identity(self.nDet), self.mat_ci[:,1:])
+        if(self.nDet > 1):
+            e0 = np.einsum('i,ij,j', self.mat_ci[:,0], self.ham, self.mat_ci[:,0])
+            return 2.0 * np.einsum('ki,kl,lj->ij', self.mat_ci[:,1:], self.ham - e0 * np.identity(self.nDet), self.mat_ci[:,1:])
+        else: 
+            return np.zeros((0,0))
 
     def get_metric(self):
         met_CICI   = self.get_metricCICI()

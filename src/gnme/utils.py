@@ -16,6 +16,25 @@ def orthogonalisation_matrix(M, thresh=1e-8):
 
     return X
 
+def gen_eig_sym(M, S, thresh=1e-8):
+    # Check the input
+    assert(M.shape[0] == S.shape[0])
+    assert(M.shape[1] == S.shape[1])
+
+    # Build orthogonalisation matrix
+    X = orthogonalisation_matrix(S, thresh=thresh)
+
+    # Project into non-null subspace
+    Mp = X.H.dot(M.dot(X))
+
+    # Solve orthogonalised problem
+    eigval, eigvec_p = np.linalg.eigh(Mp)
+
+    # Project back into full space
+    eigvec = X.dot(eigvec_p)
+
+    return eigval, eigvec
+
 def orthogonalise(C,S,thresh=1e-8):
     '''Orthogonalise a set of occipied orbitals C with respect to the overlap matrix S'''
 
