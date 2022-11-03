@@ -83,7 +83,6 @@ if __name__ == '__main__':
     for itest in range(nsample):
         # Randomly perturb CI and MO coefficients
         mo_guess = ref_mo.dot(random_rot(nmo,  -np.pi, np.pi))
-#        mo_guess = ref_mo.copy()
         ci_guess = ref_ci.dot(random_rot(ndet, -np.pi, np.pi))
 
         # Set orbital coefficients
@@ -93,30 +92,8 @@ if __name__ == '__main__':
             continue
         s2 = mycas.s2
         hindices = mycas.get_hessian_index()
-        #print(mycas.mo_coeff)
-        #print(mycas.mat_ci)
-        #print(hindices)
-        #hess = mycas.hessian
-        #print(np.linalg.eigvalsh(hess))
-        #print(np.linalg.eigvalsh(hess[:mycas.nrot,:mycas.nrot]))
-        #print(np.linalg.eigvalsh(hess[mycas.nrot:,mycas.nrot:]))
-        #met = mycas.get_metric()
-        #print("metric\n",met)
-        #print(scipy_eigvalsh(hess,met))
         if hindices[0] != Hind: 
             continue
-        #mycas.canonicalize_()
-        #print()
-        #print(mycas.mo_coeff)
-        #print(mycas.mat_ci)
-        #print(mycas.get_hessian_index())
-        #hess = mycas.hessian
-        #print(np.linalg.eigvalsh(hess))
-        #print(np.linalg.eigvalsh(hess[:mycas.nrot,:mycas.nrot]))
-        #print(np.linalg.eigvalsh(hess[mycas.nrot:,mycas.nrot:]))
-        #met = mycas.get_metric()
-        #print("metric\n",met)
-        #print(scipy_eigvalsh(hess,met))
 
         # Get the distances
         new = True
