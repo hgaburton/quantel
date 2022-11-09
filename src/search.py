@@ -87,13 +87,33 @@ if __name__ == '__main__':
 
         # Set orbital coefficients
         mycas.initialise(mo_guess, ci_guess)
-        opt = EigenFollow(minstep=1e-8)
+        num_hess = mycas.get_numerical_hessian(eps=1e-5)
+        hess = mycas.hessian
+        print("Numerical Hessian")
+        print(num_hess)
+        print("Hessian")
+        print(hess)
+        print("Hessian")
+        print(np.linalg.eigvalsh(num_hess))
+        print(np.linalg.eigvalsh(hess))
+        print("Gradient")
+        print(mycas.get_numerical_gradient())
+        print(mycas.gradient)
+        quit()
+
+        opt = EigenFollow(minstep=0.0,rtrust=0.15)
         if not opt.run(mycas, thresh=thresh, maxit=500, index=Hind):
             continue
         s2 = mycas.s2
         hindices = mycas.get_hessian_index()
-        if hindices[0] != Hind: 
-            continue
+        pushoff = 0.01
+        while hindices[0] != Hind: 
+            # Try to perturb along relevant number of downhill directions
+            mycas.pushoff(1,pushoff)
+            opt.run(mycas, thresh=thresh, maxit=500, index=Hind)
+            hindices = mycas.get_hessian_index()
+            pushoff *= 2
+
 
         # Get the distances
         new = True

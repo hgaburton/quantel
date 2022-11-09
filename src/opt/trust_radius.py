@@ -40,6 +40,10 @@ class TrustRadius:
     def minstep(self):
         return self.__minstep
 
+    @minstep.setter
+    def minstep(self, minstep):
+        self.__minstep = minstep
+
     def dogleg_step(self, pu, pb):
         '''Compute an optimal dogleg step for the trust region
         
@@ -59,10 +63,11 @@ class TrustRadius:
                comment : str
                    Descriptor for the chosen type of step
         '''
+#        return self.truncated_step(pb)
+
         # Get lengths of Newton-Rahpson (pb) and Steepest-Descent (pu) steps 
         lb = np.linalg.norm(pb)
         lu = np.linalg.norm(pu)
-        
 
         if(lb <= self.__rtrust):
             # Take Newton step if within trust radius
@@ -89,7 +94,13 @@ class TrustRadius:
         return step, comment
 
     def truncated_step(self, pu):
+        #step = np.clip(pu, -self.__rtrust, self.__rtrust)
         lu = np.linalg.norm(pu)
+        #if(np.linalg.norm(step) == np.linalg.norm(step)):
+        #    return step, "Truncated"
+        #else:
+        #    return step, ""
+
         if(lu > self.__rtrust):
             step = (self.__rtrust / lu) * pu
             comment = "Truncated step"
@@ -119,19 +130,21 @@ class TrustRadius:
         # Get quality metric
         rho = dE_actual / dE_model
 
+        #print("{: 10.6f} {: 10.6f} {: 10.6f}".format(dE_model, dE_actual, rho))
+
         # Update trust radius if suitable
         if rho < 0.25:
             # Reduce trust radius if bad energy model
-            self.__rtrust = max(0.25 * self.__rtrust, self.__minstep)
+            self.__rtrust = max(self.__rtrust/1.1, self.__minstep)
         else:
             # Increase trust radius if good energy model and step length 
             # equals trust radius
             if rho > 0.75 and abs(step_length - self.__rtrust) < 1e-8:
-                self.__rtrust = min(2.0 * self.__rtrust, self.__maxstep)
+                self.__rtrust = min(1.1 * self.__rtrust, self.__maxstep)
 
         # Accept step if trust radius is equal to minimum step size
         if abs(self.__rtrust - self.__minstep) < 1e-8:
             return True
         
         # Otherwise, accept if rho is above a threshold
-        return rho > self.__eta
+        return True #abs(rho) > self.__eta

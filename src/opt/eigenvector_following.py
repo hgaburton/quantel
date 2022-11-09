@@ -10,9 +10,9 @@ class EigenFollow:
         '''Initialise the eigenvector following instance'''
 
         self.control = dict()
-        self.control["minstep"] = 0.0
+        self.control["minstep"] = 0.01
         self.control["maxstep"] = np.pi
-        self.control["rtrust"]  = 0.01
+        self.control["rtrust"]  = 0.15
         self.control["hesstol"] = 1e-16
 
         for key in kwargs:
@@ -56,7 +56,7 @@ class EigenFollow:
             elif plev > 0:
                 print(" {: 5d} {: 16.10f}    {:8.0f}                {:8.2e}".format(istep, eref, cur_hind, conv))
             sys.stdout.flush()
-
+ 
             if(index == None):
                 index = np.sum(hess_eig < 0)
 
@@ -131,9 +131,10 @@ class EigenFollow:
                 # Downhill step for this direction
                 qn_t[i] = - 2.0 * gt[i] / denom
                 sd_t[i] = - gt[i]
+#            print("{: 10.6f} {: 10.6f} {: 10.6f} {: 10.6f}".format(hess_eig[i],gt[i],sd_t[i],qn_t[i]))
 
-        qn_t = np.clip(qn_t, -self.control["maxstep"], self.control["maxstep"])
-        sd_t = np.clip(sd_t, -self.control["maxstep"], self.control["maxstep"])
+        #qn_t = np.clip(qn_t, -self.control["maxstep"], self.control["maxstep"])
+        #sd_t = np.clip(sd_t, -self.control["maxstep"], self.control["maxstep"])
 
         # Get unconstrained minimisation step
         alpha = - np.dot(gt, sd_t) / np.einsum('i,i,i', sd_t, hess_eig, sd_t)
