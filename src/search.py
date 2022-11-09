@@ -71,7 +71,6 @@ if __name__ == '__main__':
 
     nmo = myhf.mo_coeff.shape[1]
     ndet = mycas.nDet
-    print(ndet)
 
     # Get inital coefficients and CI vectors
     ref_mo = myhf.mo_coeff.copy()
@@ -87,19 +86,16 @@ if __name__ == '__main__':
 
         # Set orbital coefficients
         mycas.initialise(mo_guess, ci_guess)
-        num_hess = mycas.get_numerical_hessian(eps=1e-5)
-        hess = mycas.hessian
-        print("Numerical Hessian")
-        print(num_hess)
-        print("Hessian")
-        print(hess)
-        print("Hessian")
-        print(np.linalg.eigvalsh(num_hess))
-        print(np.linalg.eigvalsh(hess))
-        print("Gradient")
-        print(mycas.get_numerical_gradient())
-        print(mycas.gradient)
-        quit()
+        #num_hess = mycas.get_numerical_hessian(eps=1e-5)
+        #hess = mycas.hessian
+        #print("Numerical Hessian")
+        #print(num_hess)
+        #print("Hessian")
+        #print(hess)
+        #print("Hessian")
+        #print(np.linalg.eigvalsh(num_hess))
+        #print(np.linalg.eigvalsh(hess))
+        #quit()
 
         opt = EigenFollow(minstep=0.0,rtrust=0.15)
         if not opt.run(mycas, thresh=thresh, maxit=500, index=Hind):

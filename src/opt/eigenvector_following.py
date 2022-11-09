@@ -91,7 +91,6 @@ class EigenFollow:
             istep += 1
 
         if plev>0: print("  ================================================================")
-        print(hess_eig)
         kernel_end_time = datetime.datetime.now() # Save end time
         computation_time = kernel_end_time - kernel_start_time
         if plev>0: print("  Eigenvector-following walltime: ", computation_time.total_seconds(), " seconds")
@@ -131,10 +130,9 @@ class EigenFollow:
                 # Downhill step for this direction
                 qn_t[i] = - 2.0 * gt[i] / denom
                 sd_t[i] = - gt[i]
-#            print("{: 10.6f} {: 10.6f} {: 10.6f} {: 10.6f}".format(hess_eig[i],gt[i],sd_t[i],qn_t[i]))
 
-        #qn_t = np.clip(qn_t, -self.control["maxstep"], self.control["maxstep"])
-        #sd_t = np.clip(sd_t, -self.control["maxstep"], self.control["maxstep"])
+#        qn_t = np.clip(qn_t, -self.control["maxstep"], self.control["maxstep"])
+#        sd_t = np.clip(sd_t, -self.control["maxstep"], self.control["maxstep"])
 
         # Get unconstrained minimisation step
         alpha = - np.dot(gt, sd_t) / np.einsum('i,i,i', sd_t, hess_eig, sd_t)

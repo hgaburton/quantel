@@ -135,16 +135,16 @@ class TrustRadius:
         # Update trust radius if suitable
         if rho < 0.25:
             # Reduce trust radius if bad energy model
-            self.__rtrust = max(self.__rtrust/1.1, self.__minstep)
+            self.__rtrust = max(0.5 * self.__rtrust, self.__minstep)
         else:
             # Increase trust radius if good energy model and step length 
             # equals trust radius
             if rho > 0.75 and abs(step_length - self.__rtrust) < 1e-8:
-                self.__rtrust = min(1.1 * self.__rtrust, self.__maxstep)
+                self.__rtrust = min(2 * self.__rtrust, self.__maxstep)
 
         # Accept step if trust radius is equal to minimum step size
         if abs(self.__rtrust - self.__minstep) < 1e-8:
             return True
         
         # Otherwise, accept if rho is above a threshold
-        return True #abs(rho) > self.__eta
+        return rho > self.__eta
