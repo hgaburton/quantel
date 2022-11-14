@@ -41,8 +41,9 @@ if __name__ == '__main__':
             elif re.match('maxit', line) is not None:
                 maxit = int(line.split()[-1])
             elif re.match('cas', line) is not None:
-                tmp = list(re.split(r'\s', line)[-1])
-                cas = (int(tmp[1]), int(tmp[3]))
+                tmp = re.split(r'\s', line)[-1]
+                tmp2 = tmp[1:-1].split(',')
+                cas = (int(tmp2[0]), int(tmp2[1]))
             elif re.match('nsample', line) is not None:
                 nsample = int(re.split(r'\s', line)[-1])
             elif re.match('units', line) is not None:
@@ -97,19 +98,26 @@ if __name__ == '__main__':
         #print(np.linalg.eigvalsh(hess))
         #quit()
 
+        mycas.canonicalize_()
+
         opt = EigenFollow(minstep=0.0,rtrust=0.15)
         if not opt.run(mycas, thresh=thresh, maxit=500, index=Hind):
             continue
         s2 = mycas.s2
         hindices = mycas.get_hessian_index()
         pushoff = 0.01
-        while hindices[0] != Hind: 
+        pushit  = 0
+        while hindices[0] != Hind and pushit < 5: 
             # Try to perturb along relevant number of downhill directions
             mycas.pushoff(1,pushoff)
             opt.run(mycas, thresh=thresh, maxit=500, index=Hind)
             hindices = mycas.get_hessian_index()
             pushoff *= 2
+            pushit  += 1
 
+        if hindices[0] != Hind: continue
+
+        mycas.canonicalize_()
 
         # Get the distances
         new = True

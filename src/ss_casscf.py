@@ -62,7 +62,7 @@ class ss_casscf():
         # Represent the alternative CAS state in the current CI space
         vec2 = cas_proj(self, them, self.ovlp) 
         # Compute the overlap and return
-        return np.dot(self.mat_ci[:,0].conj(), vec2)
+        return np.dot(np.asarray(self.mat_ci)[:,0].conj(), vec2)
 
     def sanity_check(self):
         '''Need to be run at the start of the kernel to verify that the number of 
@@ -342,7 +342,7 @@ class ss_casscf():
         ''' This method build the CI part of the gradient '''
         # Return gradient
         if(self.nDet > 1):
-            return 2.0 * np.einsum('i,ij,jk->k', self.mat_ci[:,0], self.ham, self.mat_ci[:,1:])
+            return 2.0 * np.einsum('i,ij,jk->k', np.asarray(self.mat_ci)[:,0], self.ham, self.mat_ci[:,1:])
         else:
             return np.zeros((0))
     
@@ -552,7 +552,7 @@ class ss_casscf():
     def get_hessianCICI(self):
         ''' This method build the CI-CI part of the hessian '''
         if(self.nDet > 1):
-            e0 = np.einsum('i,ij,j', self.mat_ci[:,0], self.ham, self.mat_ci[:,0])
+            e0 = np.einsum('i,ij,j', np.asarray(self.mat_ci)[:,0], self.ham, np.asarray(self.mat_ci)[:,0])
             return 2.0 * np.einsum('ki,kl,lj->ij', 
                     self.mat_ci[:,1:], self.ham - e0 * np.identity(self.nDet), self.mat_ci[:,1:])
         else: 
