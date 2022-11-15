@@ -161,9 +161,14 @@ class ss_casscf():
         # Two-electron integrals
         ao2mo_level = getattr(__config__, 'mcscf_mc1step_CASSCF_ao2mo_level', 2)
         self._eri = mc_ao2mo._ERIS(self, self.mo_coeff, method='incore', level=ao2mo_level)
-        self.eri = ao2mo.incore.full(self._scf._eri, self.mo_coeff, compact=False).reshape((self.nmo,)*4)
-        self.eri = np.asarray(self.mol.ao2mo(self.mo_coeff))
-        self.eri = ao2mo.restore(1, self.eri, self.norb)
+
+        # Occupied orbitals
+        nocc = self.ncore + self.ncas
+        Cocc = self.mo_coeff[:,:nocc]
+        self.ppoo = ao2mo.incore.general(self._scf._eri, (Cocc, Cocc, self.mo_coeff, self.mo_coeff), compact=False)
+        self.ppoo = self.ppoo.reshape((nocc,nocc,self.nmo,self.nmo)).transpose(2,3,0,1)
+        self.popo = ao2mo.incore.general(self._scf._eri, (Cocc, self.mo_coeff, Cocc, self.mo_coeff), compact=False)
+        self.popo = self.popo.reshape((nocc,self.nmo,nocc,self.nmo)).transpose(1,0,3,2)
 
         # Effective Hamiltonians in CAS space
         self.h1eff, self.energy_core = self.get_h1eff()
@@ -333,38 +338,38 @@ class ss_casscf():
 
     def get_orbital_gradient(self):
         ''' This method builds the orbital part of the gradient '''
-        g_orb = np.zeros((self.norb,self.norb))
-        ncore = self.ncore
-        ncas  = self.ncas
-        nocc  = ncore + ncas
-        nvir  = self.norb - nocc
-        nmo   = self.nmo
-
-        # Gradient computation from mc1step
-        jkcaa = np.empty((nocc,ncas))
-        vhf_a = np.empty((nmo,nmo))
-        dm2tmp = self.dm2_cas.transpose(1,2,0,3) + self.dm2_cas.transpose(0,2,1,3)
-        dm2tmp = dm2tmp.reshape(ncas**2,-1)
-        hdm2   = np.empty((nmo,ncas,nmo,ncas))
-        g_dm2  = np.empty((nmo,ncas))
-        for i in range(nmo):
-            jbuf = self._eri.ppaa[i]
-            kbuf = self._eri.papa[i]
-            if i < nocc: jkcaa[i] = np.einsum('ik,ik->i', 6 * kbuf[:,i] - 2 * jbuf[i], self.dm1_cas)
-            vhf_a[i] =(np.einsum('quv,uv->q', jbuf, self.dm1_cas) -
-                       np.einsum('uqv,uv->q', kbuf, self.dm1_cas) * 0.5)
-            jtmp = lib.dot(jbuf.reshape(nmo,-1), self.dm2_cas.reshape(self.ncas*self.ncas,-1))
-            jtmp = jtmp.reshape(nmo,ncas,ncas)
-            ktmp = lib.dot(kbuf.transpose(1,0,2).reshape(self.nmo,-1), dm2tmp)
-            hdm2[i] = (ktmp.reshape(self.nmo,self.ncas,self.ncas)+jtmp).transpose(1,0,2)
-            g_dm2[i] = np.einsum('uuv->v', jtmp[ncore:nocc])
-        jbuf = kbuf = jtmp = ktmp = dm2tmp = None
-        vhf_ca = self._eri.vhf_c + vhf_a
-
-        g_orb = np.zeros_like(self.h1e_mo)
-        g_orb[:,:ncore] = (self.h1e_mo[:,:ncore] + vhf_ca[:,:ncore]) * 2
-        g_orb[:,ncore:nocc] = np.dot(self.h1e_mo[:,ncore:nocc]+self._eri.vhf_c[:,ncore:nocc],self.dm1_cas)
-        g_orb[:,ncore:nocc] += g_dm2
+#        g_orb = np.zeros((self.norb,self.norb))
+#        ncore = self.ncore
+#        ncas  = self.ncas
+#        nocc  = ncore + ncas
+#        nvir  = self.norb - nocc
+#        nmo   = self.nmo
+#
+#        # Gradient computation from mc1step
+#        jkcaa = np.empty((nocc,ncas))
+#        vhf_a = np.empty((nmo,nmo))
+#        dm2tmp = self.dm2_cas.transpose(1,2,0,3) + self.dm2_cas.transpose(0,2,1,3)
+#        dm2tmp = dm2tmp.reshape(ncas**2,-1)
+#        hdm2   = np.empty((nmo,ncas,nmo,ncas))
+#        g_dm2  = np.empty((nmo,ncas))
+#        for i in range(nmo):
+#            jbuf = self._eri.ppaa[i]
+#            kbuf = self._eri.papa[i]
+#            if i < nocc: jkcaa[i] = np.einsum('ik,ik->i', 6 * kbuf[:,i] - 2 * jbuf[i], self.dm1_cas)
+#            vhf_a[i] =(np.einsum('quv,uv->q', jbuf, self.dm1_cas) -
+#                       np.einsum('uqv,uv->q', kbuf, self.dm1_cas) * 0.5)
+#            jtmp = lib.dot(jbuf.reshape(nmo,-1), self.dm2_cas.reshape(self.ncas*self.ncas,-1))
+#            jtmp = jtmp.reshape(nmo,ncas,ncas)
+#            ktmp = lib.dot(kbuf.transpose(1,0,2).reshape(self.nmo,-1), dm2tmp)
+#            hdm2[i] = (ktmp.reshape(self.nmo,self.ncas,self.ncas)+jtmp).transpose(1,0,2)
+#            g_dm2[i] = np.einsum('uuv->v', jtmp[ncore:nocc])
+#        jbuf = kbuf = jtmp = ktmp = dm2tmp = None
+#        vhf_ca = self._eri.vhf_c + vhf_a
+#
+#        g_orb = np.zeros_like(self.h1e_mo)
+#        g_orb[:,:ncore] = (self.h1e_mo[:,:ncore] + vhf_ca[:,:ncore]) * 2
+#        g_orb[:,ncore:nocc] = np.dot(self.h1e_mo[:,ncore:nocc]+self._eri.vhf_c[:,ncore:nocc],self.dm1_cas)
+#        g_orb[:,ncore:nocc] += g_dm2
 
         # New implementation
         g_orb = self.get_gen_fock(self.dm1_cas, self.dm2_cas, False)
@@ -497,8 +502,8 @@ class ss_casscf():
 
         #virtual-core virtual-core H_{ai,bj}
         if ncore>0 and nvir>0:
-            aibj = self.eri[nocc:,:ncore,nocc:,:ncore]
-            abij = self.eri[nocc:,nocc:,:ncore,:ncore]
+            aibj = self.popo[nocc:,:ncore,nocc:,:ncore]
+            abij = self.ppoo[nocc:,nocc:,:ncore,:ncore]
 
             Htmp[nocc:,:ncore,nocc:,:ncore] = ( 4 * (4 * aibj - abij.transpose((0,2,1,3)) - aibj.transpose((0,3,2,1)))  
                                               + 4 * np.einsum('ij,ab->aibj', id_cor, F_tot[nocc:,nocc:]) 
@@ -506,12 +511,12 @@ class ss_casscf():
 
         #virtual-core virtual-active H_{ai,bt}
         if ncore>0 and nvir>0:
-            aibv = self.eri[nocc:,:ncore,nocc:,ncore:nocc]
-            avbi = self.eri[nocc:,ncore:nocc,nocc:,:ncore]
-            abvi = self.eri[nocc:,nocc:,ncore:nocc,:ncore]
+            aibv = self.popo[nocc:,:ncore,nocc:,ncore:nocc]
+            avbi = self.popo[nocc:,ncore:nocc,nocc:,:ncore]
+            abvi = self.ppoo[nocc:,nocc:,ncore:nocc,:ncore]
 
             Htmp[nocc:,:ncore,nocc:,ncore:nocc] = ( 2 * np.einsum('tv,aibv->aibt', self.dm1_cas, 4 * aibv - avbi.transpose((0,3,2,1)) - abvi.transpose((0,3,1,2))) 
-                                                  - 2 * np.einsum('ab,tvxy,vixy ->aibt', id_vir, 0.5 * self.dm2_cas, self.eri[ncore:nocc, :ncore, ncore:nocc, ncore:nocc]) 
+                                                  - 2 * np.einsum('ab,tvxy,vixy ->aibt', id_vir, 0.5 * self.dm2_cas, self.ppoo[ncore:nocc, :ncore, ncore:nocc, ncore:nocc]) 
                                                   - 2 * np.einsum('ab,ti->aibt', id_vir, F_tot[ncore:nocc, :ncore]) 
                                                   - 1 * np.einsum('ab,tv,vi->aibt', id_vir, self.dm1_cas, self.F_core[ncore:nocc, :ncore]) )
 
@@ -521,12 +526,12 @@ class ss_casscf():
 
         #virtual-core active-core H_{ai,tj}
         if ncore>0 and nvir>0:
-            aivj = self.eri[nocc:,:ncore,ncore:nocc,:ncore]
-            avji = self.eri[nocc:,ncore:nocc,:ncore,:ncore]
-            ajvi = self.eri[nocc:,:ncore,ncore:nocc,:ncore]
+            aivj = self.ppoo[nocc:,:ncore,ncore:nocc,:ncore]
+            avji = self.ppoo[nocc:,ncore:nocc,:ncore,:ncore]
+            ajvi = self.ppoo[nocc:,:ncore,ncore:nocc,:ncore]
 
             Htmp[nocc:,:ncore,ncore:nocc,:ncore] = ( 2 * np.einsum('tv,aivj->aitj', (2 * id_cas - self.dm1_cas), 4 * aivj - avji.transpose((0,3,1,2)) - ajvi.transpose((0,3,2,1))) 
-                                                   - 2 * np.einsum('ji,tvxy,avxy -> aitj', id_cor, 0.5 * self.dm2_cas, self.eri[nocc:,ncore:nocc,ncore:nocc,ncore:nocc]) 
+                                                   - 2 * np.einsum('ji,tvxy,avxy -> aitj', id_cor, 0.5 * self.dm2_cas, self.ppoo[nocc:,ncore:nocc,ncore:nocc,ncore:nocc]) 
                                                    + 4 * np.einsum('ij,at-> aitj', id_cor, F_tot[nocc:, ncore:nocc]) 
                                                    - 1 * np.einsum('ij,tv,av-> aitj', id_cor, self.dm1_cas, self.F_core[nocc:, ncore:nocc]) )
 
@@ -536,23 +541,23 @@ class ss_casscf():
 
         #virtual-active virtual-active H_{at,bu}
         if nvir>0:
-            Htmp[nocc:, ncore:nocc, nocc:, ncore:nocc]  = ( 4 * np.einsum('tuvx,abvx->atbu', 0.5 * self.dm2_cas, self.eri[nocc:,nocc:,ncore:nocc,ncore:nocc]) 
-                                                          + 4 * np.einsum('txvu,axbv->atbu', 0.5 * self.dm2_cas, self.eri[nocc:,ncore:nocc,nocc:,ncore:nocc]) 
-                                                          + 4 * np.einsum('txuv,axbv->atbu', 0.5 * self.dm2_cas, self.eri[nocc:,ncore:nocc,nocc:,ncore:nocc]) )
-            Htmp[nocc:, ncore:nocc, nocc:, ncore:nocc] -= ( 2 * np.einsum('ab,tvxy,uvxy->atbu', id_vir, 0.5 * self.dm2_cas, self.eri[ncore:nocc,ncore:nocc,ncore:nocc,ncore:nocc]) 
+            Htmp[nocc:, ncore:nocc, nocc:, ncore:nocc]  = ( 4 * np.einsum('tuvx,abvx->atbu', 0.5 * self.dm2_cas, self.ppoo[nocc:,nocc:,ncore:nocc,ncore:nocc]) 
+                                                          + 4 * np.einsum('txvu,axbv->atbu', 0.5 * self.dm2_cas, self.popo[nocc:,ncore:nocc,nocc:,ncore:nocc]) 
+                                                          + 4 * np.einsum('txuv,axbv->atbu', 0.5 * self.dm2_cas, self.popo[nocc:,ncore:nocc,nocc:,ncore:nocc]) )
+            Htmp[nocc:, ncore:nocc, nocc:, ncore:nocc] -= ( 2 * np.einsum('ab,tvxy,uvxy->atbu', id_vir, 0.5 * self.dm2_cas, self.ppoo[ncore:nocc,ncore:nocc,ncore:nocc,ncore:nocc]) 
                                                           + 1 * np.einsum('ab,tv,uv->atbu', id_vir, self.dm1_cas, self.F_core[ncore:nocc,ncore:nocc]) )
-            Htmp[nocc:, ncore:nocc, nocc:, ncore:nocc] -= ( 2 * np.einsum('ab,uvxy,tvxy->atbu', id_vir, 0.5 * self.dm2_cas, self.eri[ncore:nocc,ncore:nocc,ncore:nocc,ncore:nocc]) 
+            Htmp[nocc:, ncore:nocc, nocc:, ncore:nocc] -= ( 2 * np.einsum('ab,uvxy,tvxy->atbu', id_vir, 0.5 * self.dm2_cas, self.ppoo[ncore:nocc,ncore:nocc,ncore:nocc,ncore:nocc]) 
                                                           + 1 * np.einsum('ab,uv,tv->atbu', id_vir, self.dm1_cas, self.F_core[ncore:nocc,ncore:nocc]) )
             Htmp[nocc:, ncore:nocc, nocc:, ncore:nocc] +=   2 * np.einsum('tu,ab->atbu', self.dm1_cas, self.F_core[nocc:, nocc:])
 
         #active-core virtual-active H_{ti,au}
         if ncore>0 and nvir>0:
-            avti = self.eri[nocc:, ncore:nocc, ncore:nocc, :ncore]
-            aitv = self.eri[nocc:, :ncore, ncore:nocc, ncore:nocc]
+            avti = self.ppoo[nocc:, ncore:nocc, ncore:nocc, :ncore]
+            aitv = self.ppoo[nocc:, :ncore, ncore:nocc, ncore:nocc]
 
-            Htmp[ncore:nocc,:ncore,nocc:,ncore:nocc]  = (- 4 * np.einsum('tuvx,aivx->tiau', 0.5 * self.dm2_cas, self.eri[nocc:,:ncore,ncore:nocc,ncore:nocc]) 
-                                                         - 4 * np.einsum('tvux,axvi->tiau', 0.5 * self.dm2_cas, self.eri[nocc:,ncore:nocc,ncore:nocc,:ncore]) 
-                                                         - 4 * np.einsum('tvxu,axvi->tiau', 0.5 * self.dm2_cas, self.eri[nocc:,ncore:nocc,ncore:nocc,:ncore]) )
+            Htmp[ncore:nocc,:ncore,nocc:,ncore:nocc]  = (- 4 * np.einsum('tuvx,aivx->tiau', 0.5 * self.dm2_cas, self.ppoo[nocc:,:ncore,ncore:nocc,ncore:nocc]) 
+                                                         - 4 * np.einsum('tvux,axvi->tiau', 0.5 * self.dm2_cas, self.ppoo[nocc:,ncore:nocc,ncore:nocc,:ncore]) 
+                                                         - 4 * np.einsum('tvxu,axvi->tiau', 0.5 * self.dm2_cas, self.ppoo[nocc:,ncore:nocc,ncore:nocc,:ncore]) )
             Htmp[ncore:nocc,:ncore,nocc:,ncore:nocc] += ( 2 * np.einsum('uv,avti->tiau', self.dm1_cas, 4 * avti - aitv.transpose((0,3,2,1)) - avti.transpose((0,2,1,3)) ) 
                                                         - 2 * np.einsum('tu,ai->tiau', self.dm1_cas, self.F_core[nocc:,:ncore]) 
                                                         + 2 * np.einsum('tu,ai->tiau', id_cas, F_tot[nocc:,:ncore]) )
@@ -562,16 +567,16 @@ class ss_casscf():
 
         #active-core active-core H_{ti,uj}
         if ncore>0:
-            viuj = self.eri[ncore:nocc,:ncore,ncore:nocc,:ncore]
-            uvij = self.eri[ncore:nocc,ncore:nocc,:ncore,:ncore]
+            viuj = self.ppoo[ncore:nocc,:ncore,ncore:nocc,:ncore]
+            uvij = self.ppoo[ncore:nocc,ncore:nocc,:ncore,:ncore]
 
             Htmp[ncore:nocc,:ncore,ncore:nocc,:ncore]  = 2 * np.einsum('tv,viuj->tiuj', id_cas - self.dm1_cas, 4 * viuj - viuj.transpose((2,1,0,3)) - uvij.transpose((1,2,0,3)) )
             Htmp[ncore:nocc,:ncore,ncore:nocc,:ncore] += np.einsum('tiuj->uitj', Htmp[ncore:nocc,:ncore,ncore:nocc,:ncore]) 
-            Htmp[ncore:nocc,:ncore,ncore:nocc,:ncore] += ( 4 * np.einsum('utvx,vxij->tiuj', 0.5 * self.dm2_cas, self.eri[ncore:nocc,ncore:nocc,:ncore,:ncore]) 
-                                                         + 4 * np.einsum('uxvt,vixj->tiuj', 0.5 * self.dm2_cas, self.eri[ncore:nocc,:ncore,ncore:nocc,:ncore]) 
-                                                         + 4  *np.einsum('uxtv,vixj->tiuj', 0.5 * self.dm2_cas, self.eri[ncore:nocc,:ncore,ncore:nocc,:ncore]) )
+            Htmp[ncore:nocc,:ncore,ncore:nocc,:ncore] += ( 4 * np.einsum('utvx,vxij->tiuj', 0.5 * self.dm2_cas, self.ppoo[ncore:nocc,ncore:nocc,:ncore,:ncore]) 
+                                                         + 4 * np.einsum('uxvt,vixj->tiuj', 0.5 * self.dm2_cas, self.ppoo[ncore:nocc,:ncore,ncore:nocc,:ncore]) 
+                                                         + 4  *np.einsum('uxtv,vixj->tiuj', 0.5 * self.dm2_cas, self.ppoo[ncore:nocc,:ncore,ncore:nocc,:ncore]) )
             Htmp[ncore:nocc,:ncore,ncore:nocc,:ncore] += ( 2 * np.einsum('tu,ij->tiuj', self.dm1_cas, self.F_core[:ncore, :ncore]) 
-                                                         - 4 * np.einsum('ij,tvxy,uvxy->tiuj', id_cor, 0.5 * self.dm2_cas, self.eri[ncore:nocc,ncore:nocc,ncore:nocc,ncore:nocc]) 
+                                                         - 4 * np.einsum('ij,tvxy,uvxy->tiuj', id_cor, 0.5 * self.dm2_cas, self.ppoo[ncore:nocc,ncore:nocc,ncore:nocc,ncore:nocc]) 
                                                          - 2 * np.einsum('ij,uv,tv->tiuj', id_cor, self.dm1_cas, self.F_core[ncore:nocc, ncore:nocc]) )
             Htmp[ncore:nocc,:ncore,ncore:nocc,:ncore] += ( 4 * np.einsum('ij,tu->tiuj', id_cor, F_tot[ncore:nocc, ncore:nocc]) 
                                                          - 4 * np.einsum('tu,ij->tiuj', id_cas, F_tot[:ncore, :ncore]) )
@@ -684,6 +689,7 @@ class ss_casscf():
 
                 Hess[i,j] = ((E1 - E2) - (E3 - E4)) / (4 * eps * eps)
                 if(i!=j): Hess[j,i] = Hess[i,j]
+
         return Hess
 
 

@@ -86,7 +86,7 @@ if __name__ == '__main__':
 
         # Set orbital coefficients
         mycas.initialise(mo_guess, ci_guess)
-        #num_hess = mycas.get_numerical_hessian(eps=1e-5)
+        #num_hess = mycas.get_numerical_hessian(eps=1e-4)
         #hess = mycas.hessian
         #print("Numerical Hessian")
         #print(num_hess)
