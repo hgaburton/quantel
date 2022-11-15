@@ -96,8 +96,9 @@ if __name__ == '__main__':
 
             # Set orbital coefficients
             mycas.initialise(mo_guess, ci_guess)
-            opt = ModeControl(rtrust=0.001,maxstep=0.1,minstep=1e-8)
-            if not opt.run(mycas, thresh=thresh, maxit=10000, index=None):
+            print(mycas.get_hessian_index())
+            opt = ModeControl(rtrust=0.15,minstep=0.0)
+            if not opt.run(mycas, thresh=thresh, maxit=1000, index=None):
                 continue
             s2 = mycas.s2
             hindices = mycas.get_hessian_index()

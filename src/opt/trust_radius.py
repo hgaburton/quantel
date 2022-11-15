@@ -94,12 +94,12 @@ class TrustRadius:
         return step, comment
 
     def truncated_step(self, pu):
-        #step = np.clip(pu, -self.__rtrust, self.__rtrust)
+        step = np.clip(pu, -self.__rtrust, self.__rtrust)
         lu = np.linalg.norm(pu)
-        #if(np.linalg.norm(step) == np.linalg.norm(step)):
-        #    return step, "Truncated"
-        #else:
-        #    return step, ""
+        if(np.linalg.norm(step) == np.linalg.norm(step)):
+            return step, "Truncated"
+        else:
+            return step, ""
 
         if(lu > self.__rtrust):
             step = (self.__rtrust / lu) * pu
