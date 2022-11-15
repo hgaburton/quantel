@@ -101,6 +101,7 @@ if __name__ == '__main__':
         if not opt.run(mycas, thresh=thresh, maxit=500, index=Hind):
             continue
         s2 = mycas.s2
+        print(s2)
         hindices = mycas.get_hessian_index()
         pushoff = 0.01
         while hindices[0] != Hind: 

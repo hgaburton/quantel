@@ -294,11 +294,41 @@ class ss_casscf():
 
     def get_gen_fock(self,dm1_cas,dm2_cas,transition=False):
         """Build generalised Fock matrix"""
-        dm1 = self.CASRDM1_to_RDM1(dm1_cas,transition)
-        dm2 = self.CASRDM2_to_RDM2(dm1_cas,dm2_cas,transition)
+        ncore = self.ncore
+        nocc  = self.ncore + self.ncas
 
+        dm1 = self.CASRDM1_to_RDM1(dm1_cas,transition)
+
+        # Effective Coulomb and exchange operators for active space
+        J_a = np.einsum('xypq,qp->xy',self._eri.ppaa, dm1_cas)
+        K_a = np.einsum('xpyq,pq->xy',self._eri.papa, dm1_cas)
+        V_a = 2 * J_a - K_a
+
+        # Universal contributions
         F  = np.einsum('qx,yq->xy',self.h1e_mo,dm1)  + np.einsum('xq,qy->xy',self.h1e_mo,dm1)
-        F += np.einsum('xqrs,yqrs->xy',self.eri,dm2) + np.einsum('qxrs,qyrs->xy',self.eri,dm2)
+        F += np.einsum('ki,jk->ij', self._eri.vhf_c, dm1)
+        F += np.einsum('ik,kj->ij', self._eri.vhf_c, dm1)
+
+        # Core-Core specific terms
+        F[:ncore,:ncore] += V_a[:ncore,:ncore] + V_a[:ncore,:ncore].T
+
+        # Active-Active specific terms
+        F[ncore:nocc, ncore:nocc] += np.einsum('xqrs,yqrs->xy',self._eri.ppaa[ncore:nocc,ncore:nocc,:,:],dm2_cas) 
+        F[ncore:nocc, ncore:nocc] += np.einsum('qxrs,qyrs->xy',self._eri.ppaa[ncore:nocc,ncore:nocc,:,:],dm2_cas) 
+
+        # Core-Active specific terms
+        F[ncore:nocc,:ncore] += V_a[ncore:nocc,:ncore] + (V_a[:ncore,ncore:nocc]).T
+
+        # Effective interaction with orbitals outside active space
+        ext_int = np.einsum('xprs,pars->xa',self._eri.papa[:,:,ncore:nocc,:], dm2_cas + dm2_cas.transpose(1,0,2,3))
+
+        # Active-core
+        F[:ncore,ncore:nocc] += ext_int[:ncore,:]
+        # Active-virtual
+        F[nocc:,ncore:nocc]  += ext_int[nocc:,:]
+        
+        # Core-virtual
+        F[nocc:,:ncore] += V_a[nocc:,:ncore] + (V_a[:ncore,nocc:]).T
         return F
 
     def get_orbital_gradient(self):
@@ -335,7 +365,10 @@ class ss_casscf():
         g_orb[:,:ncore] = (self.h1e_mo[:,:ncore] + vhf_ca[:,:ncore]) * 2
         g_orb[:,ncore:nocc] = np.dot(self.h1e_mo[:,ncore:nocc]+self._eri.vhf_c[:,ncore:nocc],self.dm1_cas)
         g_orb[:,ncore:nocc] += g_dm2
-        return 2.0 * (g_orb - g_orb.T)[self.rot_idx]
+
+        # New implementation
+        g_orb = self.get_gen_fock(self.dm1_cas, self.dm2_cas, False)
+        return (g_orb - g_orb.T)[self.rot_idx]
 
 
     def get_ci_gradient(self):
