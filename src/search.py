@@ -128,9 +128,12 @@ if __name__ == '__main__':
                 break
         if new: 
             count += 1
-            cas_list.append(mycas.copy())
             tag = "{:04d}".format(count)
             np.savetxt(tag+'.mo_coeff', mycas.mo_coeff, fmt="% 20.16f")
             np.savetxt(tag+'.mat_ci', mycas.mat_ci, fmt="% 20.16f")
             np.savetxt(tag+'.energy', np.array([
                   [mycas.energy, hindices[0], hindices[1], s2]]), fmt="% 18.12f % 5d % 5d % 12.6f")
+            
+            # Deallocate integrals to reduce memory footprint
+            mycas.deallocate()
+            cas_list.append(mycas.copy())

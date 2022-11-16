@@ -55,7 +55,6 @@ class ss_casscf():
     def copy(self):
         # Return a copy of the current object
         newcas = ss_casscf(self.mol, self.ncas, self.nelecas)
-        newcas.initialise(self.mo_coeff.copy(), self.mat_ci.copy())
         return newcas
 
     def overlap(self, them):
@@ -99,6 +98,19 @@ class ss_casscf():
 
         # Initialise integrals
         self.update_integrals()
+
+
+    def deallocate(self):
+        # Reduce the memory footprint for storing 
+        self._eri   = None
+        self.ppoo   = None
+        self.popo   = None
+        self.h1e    = None
+        self.h1eff  = None
+        self.h2eff  = None
+        self.F_core = None
+        self.F_cas  = None
+        self.ham    = None
 
     @property
     def energy(self):
@@ -253,7 +265,7 @@ class ss_casscf():
         '''Compute the active space two-particle Hamiltonian. '''
         nocc  = self.ncore + self.ncas
         ncore = self.ncore
-        return self._eri.ppaa[ncore:nocc,ncore:nocc,:,:].copy()
+        return self._eri.ppaa[ncore:nocc,ncore:nocc,:,:].(copy)
 
 
     def get_casrdm_12(self):
@@ -305,8 +317,8 @@ class ss_casscf():
         dm1 = self.CASRDM1_to_RDM1(dm1_cas,transition)
 
         # Effective Coulomb and exchange operators for active space
-        J_a = np.einsum('xypq,qp->xy',self._eri.ppaa, dm1_cas)
-        K_a = np.einsum('xpyq,pq->xy',self._eri.papa, dm1_cas)
+        J_a = np.einsum('xypq,qp->xy',self.ppaa, dm1_cas)
+        K_a = np.einsum('xpyq,pq->xy',self.papa, dm1_cas)
         V_a = 2 * J_a - K_a
 
         # Universal contributions
