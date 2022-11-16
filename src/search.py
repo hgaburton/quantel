@@ -135,5 +135,5 @@ if __name__ == '__main__':
                   [mycas.energy, hindices[0], hindices[1], s2]]), fmt="% 18.12f % 5d % 5d % 12.6f")
             
             # Deallocate integrals to reduce memory footprint
-            mycas.deallocate()
+        #    mycas.deallocate()
             cas_list.append(mycas.copy())

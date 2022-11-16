@@ -55,6 +55,7 @@ class ss_casscf():
     def copy(self):
         # Return a copy of the current object
         newcas = ss_casscf(self.mol, self.ncas, self.nelecas)
+        newcas.initialise(self.mo_coeff, self.mat_ci, integrals=False)
         return newcas
 
     def overlap(self, them):
@@ -83,10 +84,11 @@ class ss_casscf():
         self.t1e        = self.mol.intor('int1e_kin')  # Kinetic energy matrix elements
         self.hcore      = self.t1e + self.v1e          # 1-electron matrix elements in the AO basis
         self.norb       = self.hcore.shape[0]
-        self.ovlp       = self.mol.intor('int1e_ovlp') # Overlpa matrix
+        self.ovlp       = self.mol.intor('int1e_ovlp') # Overlap matrix
+        self._scf._eri  = self.mol.intor("int2e", aosym="s8") # Two electron integrals
        
 
-    def initialise(self, mo_guess, ci_guess):
+    def initialise(self, mo_guess, ci_guess, integrals=True):
         # Save orbital coefficients
         mo_guess = orthogonalise(mo_guess, self.ovlp)
         self.mo_coeff = mo_guess
@@ -97,7 +99,7 @@ class ss_casscf():
         self.mat_ci = ci_guess
 
         # Initialise integrals
-        self.update_integrals()
+        if(integrals): self.update_integrals()
 
 
     def deallocate(self):
@@ -170,10 +172,6 @@ class ss_casscf():
         # One-electron Hamiltonian
         self.h1e = np.einsum('ip,ij,jq->pq', self.mo_coeff, self.hcore, self.mo_coeff)
 
-        # Two-electron integrals
-        ao2mo_level = getattr(__config__, 'mcscf_mc1step_CASSCF_ao2mo_level', 2)
-        self._eri = mc_ao2mo._ERIS(self, self.mo_coeff, method='incore', level=ao2mo_level)
-
         # Occupied orbitals
         nocc = self.ncore + self.ncas
         Cocc = self.mo_coeff[:,:nocc]
@@ -181,6 +179,12 @@ class ss_casscf():
         self.ppoo = self.ppoo.reshape((nocc,nocc,self.nmo,self.nmo)).transpose(2,3,0,1)
         self.popo = ao2mo.incore.general(self._scf._eri, (Cocc, self.mo_coeff, Cocc, self.mo_coeff), compact=False)
         self.popo = self.popo.reshape((nocc,self.nmo,nocc,self.nmo)).transpose(1,0,3,2)
+
+        # Get core potential 
+        mo_core = self.mo_coeff[:,:self.ncore]
+        dm_core = np.dot(mo_core, mo_core.T)
+        vj, vk  = self._scf.get_jk(self.mol, dm_core)
+        self.vhf_c = reduce(np.dot, (self.mo_coeff.T, 2*vj - vk, self.mo_coeff))
 
         # Effective Hamiltonians in CAS space
         self.h1eff, self.energy_core = self.get_h1eff()
@@ -194,7 +198,7 @@ class ss_casscf():
         self.h1e_mo = reduce(np.dot, (self.mo_coeff.T, self.hcore, self.mo_coeff))
 
         # Fock matrices
-        self.F_core, self.F_cas = self.get_fock_matrices()
+        self.get_fock_matrices()
 
         # Hamiltonian in active space
         self.ham = self.fcisolver.pspace(self.h1eff, self.h2eff, self.ncas, self.nelecas, np=1000000)[1]
@@ -253,11 +257,11 @@ class ss_casscf():
         # Core energy
         energy_core  = self.enuc
         energy_core += np.einsum('ij,ji', self.core_dm, self.hcore)
-        energy_core += self._eri.vhf_c[:ncore,:ncore].trace()
+        energy_core += self.vhf_c[:ncore,:ncore].trace()
 
         # Get effective Hamiltonian in CAS space
         h1eff  = np.einsum('ki,kl,lj->ij', mo_cas.conj(), self.hcore, mo_cas)
-        h1eff += self._eri.vhf_c[ncore:nocc,ncore:nocc]
+        h1eff += self.vhf_c[ncore:nocc,ncore:nocc]
         return h1eff, energy_core
 
 
@@ -265,7 +269,7 @@ class ss_casscf():
         '''Compute the active space two-particle Hamiltonian. '''
         nocc  = self.ncore + self.ncas
         ncore = self.ncore
-        return self._eri.ppaa[ncore:nocc,ncore:nocc,:,:]
+        return self.ppoo[ncore:nocc,ncore:nocc,ncore:,ncore:]
 
 
     def get_casrdm_12(self):
@@ -297,47 +301,55 @@ class ss_casscf():
         vj = np.empty((self.nmo,self.nmo))
         vk = np.empty((self.nmo,self.nmo))
         for i in range(self.nmo):
-            vj[i] = np.einsum('ij,qij->q', self.dm1_cas, self._eri.ppaa[i])
-            vk[i] = np.einsum('ij,iqj->q', self.dm1_cas, self._eri.papa[i])
-        fock = self.h1e_mo +  self._eri.vhf_c + vj - vk*0.5
+            vj[i] = np.einsum('ij,qij->q', self.dm1_cas, self.ppoo[i,:,ncore:,ncore:])
+            vk[i] = np.einsum('ij,iqj->q', self.dm1_cas, self.popo[i,ncore:,:,ncore:])
+        fock = self.h1e_mo +  self.vhf_c + vj - vk*0.5
 
         # Core contribution
-        Fcore = self.h1e + self._eri.vhf_c
+        self.F_core = self.h1e + self.vhf_c
 
         # Active space contribution
-        Fcas = fock - Fcore
+        self.F_cas = fock - self.F_core
 
-        return Fcore, Fcas
+        return
 
     def get_gen_fock(self,dm1_cas,dm2_cas,transition=False):
         """Build generalised Fock matrix"""
         ncore = self.ncore
         nocc  = self.ncore + self.ncas
 
-        dm1 = self.CASRDM1_to_RDM1(dm1_cas,transition)
-
         # Effective Coulomb and exchange operators for active space
-        J_a = np.einsum('xypq,qp->xy',self._eri.ppaa, dm1_cas)
-        K_a = np.einsum('xpyq,pq->xy',self._eri.papa, dm1_cas)
+        J_a = np.empty((self.nmo, self.nmo))
+        K_a = np.empty((self.nmo, self.nmo))
+        for i in range(self.nmo):
+            J_a[i] = np.einsum('ij,qij->q', dm1_cas, self.ppoo[i,:,ncore:,ncore:])
+            K_a[i] = np.einsum('ij,iqj->q', dm1_cas, self.popo[i,ncore:,:,ncore:])
         V_a = 2 * J_a - K_a
 
         # Universal contributions
-        F  = np.einsum('qx,yq->xy',self.h1e_mo,dm1)  + np.einsum('xq,qy->xy',self.h1e_mo,dm1)
-        F += np.einsum('ki,jk->ij', self._eri.vhf_c, dm1)
-        F += np.einsum('ik,kj->ij', self._eri.vhf_c, dm1)
+        tdm1_cas = dm1_cas + dm1_cas.T
+        F = np.zeros((self.nmo,self.nmo))
+        if(not transition):
+            F[:ncore,:ncore] = 4.0 * self.F_core[:ncore,:ncore] 
+            F[ncore:,:ncore] = 4.0 * self.F_core[ncore:,:ncore] 
+        F[:,ncore:nocc] += np.einsum('qx,yq->xy', self.F_core[ncore:nocc,:], tdm1_cas)
 
         # Core-Core specific terms
         F[:ncore,:ncore] += V_a[:ncore,:ncore] + V_a[:ncore,:ncore].T
 
         # Active-Active specific terms
-        F[ncore:nocc, ncore:nocc] += np.einsum('xqrs,yqrs->xy',self._eri.ppaa[ncore:nocc,ncore:nocc,:,:],dm2_cas) 
-        F[ncore:nocc, ncore:nocc] += np.einsum('qxrs,qyrs->xy',self._eri.ppaa[ncore:nocc,ncore:nocc,:,:],dm2_cas) 
+        tdm2_cas = dm2_cas + dm2_cas.transpose(1,0,2,3)
+        Ftmp = np.empty((self.ncas, self.ncas))
+        for i in range(self.ncas):
+            Ftmp[i,:]  = np.einsum('qrs,yqrs->y',self.ppoo[ncore+i,ncore:nocc,ncore:,ncore:], tdm2_cas)
 
         # Core-Active specific terms
         F[ncore:nocc,:ncore] += V_a[ncore:nocc,:ncore] + (V_a[:ncore,ncore:nocc]).T
 
         # Effective interaction with orbitals outside active space
-        ext_int = np.einsum('xprs,pars->xa',self._eri.papa[:,:,ncore:nocc,:], dm2_cas + dm2_cas.transpose(1,0,2,3))
+        ext_int = np.empty((self.nmo, self.ncas))
+        for i in range(self.nmo):
+            ext_int[i,:] = np.einsum('prs,pars->a', self.popo[i,ncore:,ncore:nocc,ncore:], tdm2_cas)
 
         # Active-core
         F[:ncore,ncore:nocc] += ext_int[:ncore,:]
@@ -350,40 +362,6 @@ class ss_casscf():
 
     def get_orbital_gradient(self):
         ''' This method builds the orbital part of the gradient '''
-#        g_orb = np.zeros((self.norb,self.norb))
-#        ncore = self.ncore
-#        ncas  = self.ncas
-#        nocc  = ncore + ncas
-#        nvir  = self.norb - nocc
-#        nmo   = self.nmo
-#
-#        # Gradient computation from mc1step
-#        jkcaa = np.empty((nocc,ncas))
-#        vhf_a = np.empty((nmo,nmo))
-#        dm2tmp = self.dm2_cas.transpose(1,2,0,3) + self.dm2_cas.transpose(0,2,1,3)
-#        dm2tmp = dm2tmp.reshape(ncas**2,-1)
-#        hdm2   = np.empty((nmo,ncas,nmo,ncas))
-#        g_dm2  = np.empty((nmo,ncas))
-#        for i in range(nmo):
-#            jbuf = self._eri.ppaa[i]
-#            kbuf = self._eri.papa[i]
-#            if i < nocc: jkcaa[i] = np.einsum('ik,ik->i', 6 * kbuf[:,i] - 2 * jbuf[i], self.dm1_cas)
-#            vhf_a[i] =(np.einsum('quv,uv->q', jbuf, self.dm1_cas) -
-#                       np.einsum('uqv,uv->q', kbuf, self.dm1_cas) * 0.5)
-#            jtmp = lib.dot(jbuf.reshape(nmo,-1), self.dm2_cas.reshape(self.ncas*self.ncas,-1))
-#            jtmp = jtmp.reshape(nmo,ncas,ncas)
-#            ktmp = lib.dot(kbuf.transpose(1,0,2).reshape(self.nmo,-1), dm2tmp)
-#            hdm2[i] = (ktmp.reshape(self.nmo,self.ncas,self.ncas)+jtmp).transpose(1,0,2)
-#            g_dm2[i] = np.einsum('uuv->v', jtmp[ncore:nocc])
-#        jbuf = kbuf = jtmp = ktmp = dm2tmp = None
-#        vhf_ca = self._eri.vhf_c + vhf_a
-#
-#        g_orb = np.zeros_like(self.h1e_mo)
-#        g_orb[:,:ncore] = (self.h1e_mo[:,:ncore] + vhf_ca[:,:ncore]) * 2
-#        g_orb[:,ncore:nocc] = np.dot(self.h1e_mo[:,ncore:nocc]+self._eri.vhf_c[:,ncore:nocc],self.dm1_cas)
-#        g_orb[:,ncore:nocc] += g_dm2
-
-        # New implementation
         g_orb = self.get_gen_fock(self.dm1_cas, self.dm2_cas, False)
         return (g_orb - g_orb.T)[self.rot_idx]
 
@@ -396,57 +374,6 @@ class ss_casscf():
         else:
             return np.zeros((0))
     
-    def CASRDM1_to_RDM1(self, dm1_cas, transition=False):
-        ''' Transform 1-RDM from CAS space into full MO space'''
-        ncore = self.ncore
-        ncas = self.ncas
-        dm1 = np.zeros((self.norb,self.norb))
-        if transition is False and self.ncore > 0:
-            dm1[:ncore,:ncore] = 2 * np.identity(self.ncore, dtype="int") 
-        dm1[ncore:ncore+ncas,ncore:ncore+ncas] = dm1_cas
-        return dm1
-
-    def CASRDM2_to_RDM2(self, dm1_cas, dm2_cas, transition=False):
-        ''' This method takes a 2-RDM in the CAS space and transform it to the full MO space '''
-        ncore = self.ncore
-        ncas = self.ncas
-        norb = self.norb
-        nocc = ncore + ncas
-
-        dm1 = self.CASRDM1_to_RDM1(dm1_cas,transition)
-        dm2 = np.zeros((norb,norb,norb,norb))
-        if transition is False:
-            # Core contributions
-            for i in range(ncore):
-                for j in range(ncore):
-                    for k in range(ncore):
-                        for l in range(ncore):
-                            dm2[i,j,k,l]  = 4 * delta_kron(i,j) * delta_kron(k,l) 
-                            dm2[i,j,k,l] -= 2 * delta_kron(i,l) * delta_kron(k,j)
-
-                    for p in range(ncore,nocc):
-                        for q in range(ncore,nocc):
-                            dm2[i,j,p,q] = 2 * delta_kron(i,j) * dm1[q,p]
-                            dm2[p,q,i,j] = dm2[i,j,p,q]
-
-                            dm2[i,q,p,j] = - delta_kron(i,j) * dm1[q,p]
-                            dm2[p,j,i,q] = dm2[i,q,p,j]
-
-        else:
-            for i in range(ncore):
-                for j in range(ncore):
-                    for p in range(ncore,ncore+ncas):
-                        for q in range(ncore,ncore+ncas):
-                            dm2[i,j,p,q] = 2 * delta_kron(i,j) * dm1[q,p]
-                            dm2[p,q,i,j] = dm2[i,j,p,q]
-
-                            dm2[i,q,p,j] = - delta_kron(i,j) * dm1[q,p]
-                            dm2[p,j,i,q] = dm2[i,q,p,j]
-
-        # Insert the active-active sector
-        dm2[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc] = dm2_cas 
-        return dm2
-
     def get_tCASRDM12(self,ci1,ci2):
         ''' This method compute the 1- and 2-electrons transition density matrix between the ci vectors ci1 and ci2 '''
         ncas = self.ncas
@@ -620,9 +547,11 @@ class ss_casscf():
         return test
     def canonicalize_(self):
         # Compute canonicalised natural orbitals
+        ao2mo_level = getattr(__config__, 'mcscf_mc1step_CASSCF_ao2mo_level', 2)
         self.mo_coeff, ci, self.mo_energy = mcscf.casci.canonicalize(
                       self, self.mo_coeff, ci=self.mat_ci[:,0], 
-                      eris=self._eri, sort=True, cas_natorb=True, casdm1=self.dm1_cas)
+                      eris=mc_ao2mo._ERIS(self, self.mo_coeff, method='incore', level=ao2mo_level),
+                      sort=True, cas_natorb=True, casdm1=self.dm1_cas)
 
         # Insert new "occupied" ci vector
         self.mat_ci[:,0] = ci.ravel()
@@ -648,6 +577,58 @@ class ss_casscf():
                 mask[frozen] = mask[:,frozen] = False
         return mask
 
+    def CASRDM1_to_RDM1(self, dm1_cas, transition=False):
+        ''' Transform 1-RDM from CAS space into full MO space'''
+        ncore = self.ncore
+        ncas = self.ncas
+        dm1 = np.zeros((self.norb,self.norb))
+        if transition is False and self.ncore > 0:
+            dm1[:ncore,:ncore] = 2 * np.identity(self.ncore, dtype="int") 
+        dm1[ncore:ncore+ncas,ncore:ncore+ncas] = dm1_cas
+        return dm1
+
+    def CASRDM2_to_RDM2(self, dm1_cas, dm2_cas, transition=False):
+        ''' This method takes a 2-RDM in the CAS space and transform it to the full MO space '''
+        ncore = self.ncore
+        ncas = self.ncas
+        norb = self.norb
+        nocc = ncore + ncas
+
+        dm1 = self.CASRDM1_to_RDM1(dm1_cas,transition)
+        dm2 = np.zeros((norb,norb,norb,norb))
+        if transition is False:
+            # Core contributions
+            for i in range(ncore):
+                for j in range(ncore):
+                    for k in range(ncore):
+                        for l in range(ncore):
+                            dm2[i,j,k,l]  = 4 * delta_kron(i,j) * delta_kron(k,l) 
+                            dm2[i,j,k,l] -= 2 * delta_kron(i,l) * delta_kron(k,j)
+
+                    for p in range(ncore,nocc):
+                        for q in range(ncore,nocc):
+                            dm2[i,j,p,q] = 2 * delta_kron(i,j) * dm1[q,p]
+                            dm2[p,q,i,j] = dm2[i,j,p,q]
+
+                            dm2[i,q,p,j] = - delta_kron(i,j) * dm1[q,p]
+                            dm2[p,j,i,q] = dm2[i,q,p,j]
+
+        else:
+            for i in range(ncore):
+                for j in range(ncore):
+                    for p in range(ncore,ncore+ncas):
+                        for q in range(ncore,ncore+ncas):
+                            dm2[i,j,p,q] = 2 * delta_kron(i,j) * dm1[q,p]
+                            dm2[p,q,i,j] = dm2[i,j,p,q]
+
+                            dm2[i,q,p,j] = - delta_kron(i,j) * dm1[q,p]
+                            dm2[p,j,i,q] = dm2[i,q,p,j]
+
+        # Insert the active-active sector
+        dm2[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc] = dm2_cas 
+        return dm2
+
+
     def get_numerical_gradient(self,eps=1e-3):
         grad = np.zeros((self.dim))
         for i in range(self.dim):
@@ -672,6 +653,7 @@ class ss_casscf():
     def get_numerical_hessian(self,eps=1e-3):
         Hess = np.zeros((self.dim, self.dim))
         for i in range(self.dim):
+            print(i, self.dim)
             for j in range(i,self.dim):
                 x1 = np.zeros(self.dim)
                 x2 = np.zeros(self.dim)
