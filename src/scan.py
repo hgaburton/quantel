@@ -99,7 +99,6 @@ if __name__ == '__main__':
             opt = ModeControl(rtrust=0.15,minstep=0.0)
             if not opt.run(mycas, thresh=thresh, maxit=1000, index=None):
                 continue
-            s2 = mycas.s2
             hindices = mycas.get_hessian_index()
 
             # Get the distances
@@ -114,11 +113,10 @@ if __name__ == '__main__':
                 np.savetxt(tag+'.mo_coeff', mycas.mo_coeff, fmt="% 20.16f")
                 np.savetxt(tag+'.mat_ci', mycas.mat_ci, fmt="% 20.16f")
                 np.savetxt(tag+'.energy', np.array([
-                      [mycas.energy, hindices[0], hindices[1], s2]]), fmt="% 18.12f % 5d % 5d % 12.6f")
+                      [mycas.energy, hindices[0], hindices[1], mycas.s2]]), fmt="% 18.12f % 5d % 5d % 12.6f")
                 e_list.append(mycas.energy)
                 i_list.append(hindices[0])
                 # Deallocate to reduce memory footprint
-                mycas.deallocate()
                 cas_list.append(mycas.copy())
             else: 
                 print("Solution matches previous solution...",prev+1)

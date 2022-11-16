@@ -103,8 +103,6 @@ if __name__ == '__main__':
         opt = EigenFollow(minstep=0.0,rtrust=0.15)
         if not opt.run(mycas, thresh=thresh, maxit=500, index=Hind):
             continue
-        s2 = mycas.s2
-        print(s2)
         hindices = mycas.get_hessian_index()
         pushoff = 0.01
         pushit  = 0
@@ -132,7 +130,7 @@ if __name__ == '__main__':
             np.savetxt(tag+'.mo_coeff', mycas.mo_coeff, fmt="% 20.16f")
             np.savetxt(tag+'.mat_ci', mycas.mat_ci, fmt="% 20.16f")
             np.savetxt(tag+'.energy', np.array([
-                  [mycas.energy, hindices[0], hindices[1], s2]]), fmt="% 18.12f % 5d % 5d % 12.6f")
+                  [mycas.energy, hindices[0], hindices[1], mycas.s2]]), fmt="% 18.12f % 5d % 5d % 12.6f")
             
             # Deallocate integrals to reduce memory footprint
         #    mycas.deallocate()
