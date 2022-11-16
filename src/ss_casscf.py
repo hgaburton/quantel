@@ -265,7 +265,7 @@ class ss_casscf():
         '''Compute the active space two-particle Hamiltonian. '''
         nocc  = self.ncore + self.ncas
         ncore = self.ncore
-        return self._eri.ppaa[ncore:nocc,ncore:nocc,:,:].(copy)
+        return self._eri.ppaa[ncore:nocc,ncore:nocc,:,:]
 
 
     def get_casrdm_12(self):
@@ -317,8 +317,8 @@ class ss_casscf():
         dm1 = self.CASRDM1_to_RDM1(dm1_cas,transition)
 
         # Effective Coulomb and exchange operators for active space
-        J_a = np.einsum('xypq,qp->xy',self.ppaa, dm1_cas)
-        K_a = np.einsum('xpyq,pq->xy',self.papa, dm1_cas)
+        J_a = np.einsum('xypq,qp->xy',self._eri.ppaa, dm1_cas)
+        K_a = np.einsum('xpyq,pq->xy',self._eri.papa, dm1_cas)
         V_a = 2 * J_a - K_a
 
         # Universal contributions
