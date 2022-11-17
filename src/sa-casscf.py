@@ -27,10 +27,8 @@ from pyscf.mcscf import casci
 from pyscf import fci
 from pyscf.fci import spin_op
 from pyscf.lo import orth
-from cas_noci import *
 from pyscf.fci.cistring import make_strings, parity
 from gnme import utils
-from NR_CASSCF import *
 
 if __name__ == '__main__':
 
@@ -77,12 +75,11 @@ if __name__ == '__main__':
     mf = scf.RHF(mol)
     mf.kernel()
     
-    mc = mcscf.state_average_(mcscf.CASSCF(mf, 2, 2,), [1.00,0.,0.,0.])
+    mc = mcscf.state_average_(mcscf.CASSCF(mf, 2, 2,), [0,1.0,0.00,0.00])
     mc.verbose = 4
     mc.kernel()
     mo = mc.mo_coeff
 
-    mc = mcscf.CASCI(mf, 4, 4)
     emc = mc.casci(mo)[0]
 
     print('E(CAS) = %.12f, ref = -75.982521066893' % emc)
