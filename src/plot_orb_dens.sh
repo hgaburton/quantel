@@ -68,8 +68,8 @@ mol material Orbital
 mol addrep top
 
 scale by [lindex \$argv 2]
-rotate y by 00
-rotate x by 90
+rotate y by 90
+rotate x by 00
 
 #render gs [lindex \$argv 0].ps
 #render POV3 [lindex \$argv 0].pov 

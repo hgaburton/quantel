@@ -24,6 +24,7 @@ if __name__ == '__main__':
         f = open(file,"r")
         lines = f.read().splitlines()
         basis, charge, spin, frozen, cas, grid_option, Hind, maxit = 'sto-3g', 0, 0, 0, (0,0), 1000, None, 1000
+        nsample = 1
         unit_str = 'B'
         for line in lines:
             if re.match('basis', line) is not None:

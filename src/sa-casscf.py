@@ -75,7 +75,7 @@ if __name__ == '__main__':
     mf = scf.RHF(mol)
     mf.kernel()
     
-    mc = mcscf.state_average_(mcscf.CASSCF(mf, 2, 2,), [0,1.0,0.00,0.00])
+    mc = mcscf.state_average_(mcscf.CASSCF(mf, 2, 2,), [0,0.0,0.00,1.00])
     mc.verbose = 4
     mc.kernel()
     mo = mc.mo_coeff
