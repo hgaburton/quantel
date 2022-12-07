@@ -71,6 +71,21 @@ class CSFConstructor:
             else:
                 return mf.mo_coeff[:, self.permutation]
 
+    def update_coeffs(self, new_coeffs):
+        r"""
+        Get the coefficient matrices. Defaults to site basis (easier).
+        :param method: :str: Defines the basis used.
+                        "site": Site basis
+                        "hf": Hartree--Fock (HF) basis
+                        "hf_lc": Linear combination of HF orbitals
+        :return: 2D np.ndarray corresponding to the coefficients (permuted based on self.permutation)
+        """
+        if self.permutation is None:
+            return new_coeffs
+        else:
+            return new_coeffs[:, self.permutation]
+
+
     def form_dets_orbrep(self):
         r"""
         Returns all possible permutations of alpha and beta electrons in the orbitals given.

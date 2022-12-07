@@ -1,19 +1,25 @@
 #!/usr/bin/python3
 # Modified from ss_casscf code of Antoine Marie and Hugh G. A. Burton
+# This is code for a single CSF case -- just to understand what is going on here
 
 import numpy as np
 import scipy
 from functools import reduce
+from typing import List
 from pyscf import scf, fci, __config__, ao2mo, lib, mcscf
-from pyscf.mcscf import mc_ao2mo
-from mcscf.src.gnme.cas_noci import cas_proj
+from mcscf.src.csfs.CSFConstructor import CSFConstructor
 from mcscf.src.csfs.RDM_Generic import get_rdm12
 from mcscf.src.utils import delta_kron, orthogonalise
 
 
 class csf():
-    def __init__(self, mol, ncas, nelecas, ncore=None):
+    def __init__(self, mol, spin, ncas, nelecas, csf_idx: List[int],
+                 permutation: List[int] = None, mo_basis: 'str'='site', ncore=None):
         self.mol = mol
+        self.spin = spin
+        self.csf_idx = csf_idx
+        self.permutation = permutation
+        self.mo_basis = mo_basis
         self.nelec = mol.nelec
         self._scf = scf.RHF(mol)
         self.verbose = mol.verbose
@@ -39,13 +45,10 @@ class csf():
         self.get_ao_integrals()
 
         # Get information of CSFs
-        csf_info = CSFConstructor(mol, s, permutation, mo_basis="site")
+        self.csf_info = CSFConstructor(self.mol, self.spin, self.permutation, mo_basis=self.mo_basis)
 
-
-        # Get number of determinants
-        self.nDeta = (scipy.special.comb(self.ncas, self.nelecas[0])).astype(int)
-        self.nDetb = (scipy.special.comb(self.ncas, self.nelecas[1])).astype(int)
-        self.nDet = (self.nDeta * self.nDetb).astype(int)
+        # Get number of determinants (which is the dimension of the problem)
+        self.nDet = self.csf_info.n_dets
 
         # Save mapping indices for unique orbital rotations
         self.frozen = None
@@ -53,22 +56,15 @@ class csf():
         self.nrot = np.sum(self.rot_idx)
 
         # Dimensions of problem
-        self.dim = self.nrot + self.nDet - 1
-
-        # Define the FCI solver
-        self.fcisolver = fci.direct_spin1.FCISolver(mol)
+        # TODO: Check the dimensions of this problem
+        self.dim = self.nrot
 
     def copy(self):
         # Return a copy of the current object
-        newcas = ss_casscf(self.mol, self.ncas, self.nelecas)
-        newcas.initialise(self.mo_coeff, self.mat_ci, integrals=False)
-        return newcas
-
-    def overlap(self, them):
-        # Represent the alternative CAS state in the current CI space
-        vec2 = cas_proj(self, them, self.ovlp)
-        # Compute the overlap and return
-        return np.dot(np.asarray(self.mat_ci)[:, 0].conj(), vec2)
+        newcsf = csf(self.mol, self.spin, self.ncas, self.nelecas, self.csf_idx,
+                     self.permutation, self.mo_basis, self.ncore)
+        newcsf.initialise(self.mo_coeff, integrals=False)
+        return newcsf
 
     def sanity_check(self):
         '''Need to be run at the start of the kernel to verify that the number of
@@ -92,15 +88,11 @@ class csf():
         self.ovlp = self.mol.intor('int1e_ovlp')  # Overlap matrix
         self._scf._eri = self.mol.intor("int2e", aosym="s8")  # Two electron integrals
 
-    def initialise(self, mo_guess, ci_guess, integrals=True):
+    def initialise(self, mo_guess, integrals=True):
         # Save orbital coefficients
         mo_guess = orthogonalise(mo_guess, self.ovlp)
         self.mo_coeff = mo_guess
         self.nmo = self.mo_coeff.shape[1]
-
-        # Save CI coefficients
-        ci_guess = orthogonalise(ci_guess, np.identity(self.nDet))
-        self.mat_ci = ci_guess
 
         # Initialise integrals
         if (integrals): self.update_integrals()
@@ -115,7 +107,6 @@ class csf():
         self.h2eff = None
         self.F_core = None
         self.F_cas = None
-        self.ham = None
 
     @property
     def energy(self):
@@ -129,7 +120,7 @@ class csf():
     @property
     def s2(self):
         ''' Compute the spin of a given FCI vector '''
-        return self.fcisolver.spin_square(self.mat_ci[:, 0], self.ncas, self.nelecas)[0]
+        return None
 
     @property
     def gradient(self):
@@ -166,10 +157,6 @@ class csf():
         step = sum(eigvec[:, i] * angle for i in range(n))
         self.take_step(step)
 
-    def guess_casci(self, n):
-        self.mat_ci = np.linalg.eigh(self.ham)[1]
-        self.mat_ci[:, [0, n]] = self.mat_ci[:, [n, 0]]
-
     def update_integrals(self):
         # One-electron Hamiltonian
         self.h1e = np.einsum('ip,ij,jq->pq', self.mo_coeff, self.hcore, self.mo_coeff, optimize="optimal")
@@ -193,8 +180,9 @@ class csf():
         self.h2eff = self.get_h2eff()
         self.h2eff = ao2mo.restore(1, self.h2eff, self.ncas)
 
+        self.csf_info.update_coeffs(self.mo_coeff)
         # Reduced density matrices
-        self.dm1_cas, self.dm2_cas = self.get_casrdm_12()
+        self.dm1_cas, self.dm2_cas = self.get_csfrdm_12(self.csf_info)
 
         # Transform 1e integrals
         self.h1e_mo = reduce(np.dot, (self.mo_coeff.T, self.hcore, self.mo_coeff))
@@ -202,20 +190,15 @@ class csf():
         # Fock matrices
         self.get_fock_matrices()
 
-        # Hamiltonian in active space
-        self.ham = self.fcisolver.pspace(self.h1eff, self.h2eff, self.ncas, self.nelecas, np=1000000)[1]
-
     def restore_last_step(self):
         # Restore coefficients
         self.mo_coeff = self.mo_coeff_save.copy()
-        self.mat_ci = self.mat_ci_save.copy()
 
         # Finally, update our integrals for the new coefficients
         self.update_integrals()
 
     def save_last_step(self):
         self.mo_coeff_save = self.mo_coeff.copy()
-        self.mat_ci_save = self.mat_ci.copy()
 
     def take_step(self, step):
         # Save our last position
@@ -223,7 +206,6 @@ class csf():
 
         # Take steps in orbital and CI space
         self.rotate_orb(step[:self.nrot])
-        self.rotate_ci(step[self.nrot:])
 
         # Finally, update our integrals for the new coefficients
         self.update_integrals()
@@ -232,11 +214,6 @@ class csf():
         orb_step = np.zeros((self.norb, self.norb))
         orb_step[self.rot_idx] = step
         self.mo_coeff = np.dot(self.mo_coeff, scipy.linalg.expm(orb_step - orb_step.T))
-
-    def rotate_ci(self, step):
-        S = np.zeros((self.nDet, self.nDet))
-        S[1:, 0] = step
-        self.mat_ci = np.dot(self.mat_ci, scipy.linalg.expm(S - S.T))
 
     def get_h1eff(self):
         '''CAS sapce one-electron hamiltonian
@@ -272,33 +249,17 @@ class csf():
         ncore = self.ncore
         return self.ppoo[ncore:nocc, ncore:nocc, ncore:, ncore:]
 
-    def get_csfrdm_12(self):
+    def get_csfrdm_12(self, csfobj):
         r"""
         We first form a new CSFConstructor object with new coeffs
         :return:
         """
-        civec = np.reshape(self.mat_ci[:, 0], (self.nDeta, self.nDetb))
-        dm1_cas, dm2_cas = self.fcisolver.make_rdm12(civec, self.ncas, self.nelecas)
         dm1_csf, dm2_csf = get_rdm12(csfobj, self.csf_idx)
-        return dm1_cas, dm2_cas
-
-    def get_spin_dm1(self):
-        # Reformat the CI vector
-        civec = np.reshape(self.mat_ci[:, 0], (self.nDeta, self.nDetb))
-
-        # Compute spin density in the active space
-        alpha_dm1_cas, beta_dm1_cas = self.fcisolver.make_rdm1s(civec, self.ncas, self.nelecas)
-        spin_dens_cas = alpha_dm1_cas - beta_dm1_cas
-
-        # Transform into the AO basis
-        mo_cas = self.mo_coeff[:, self.ncore:self.ncore + self.ncas]
-        ao_spin_dens = np.dot(mo_cas, np.dot(spin_dens_cas, mo_cas.T))
-        return ao_spin_dens
+        return dm1_csf, dm2_csf
 
     def get_fock_matrices(self):
         ''' Compute the core part of the generalized Fock matrix '''
         ncore = self.ncore
-        nocc = self.ncore + self.ncas
 
         # Full Fock
         vj = np.empty((self.nmo, self.nmo))
@@ -537,17 +498,6 @@ class csf():
 
         return (Htmp)
 
-    def get_hessianCICI(self):
-        ''' This method build the CI-CI part of the hessian '''
-        if (self.nDet > 1):
-            e0 = np.einsum('i,ij,j', np.asarray(self.mat_ci)[:, 0], self.ham, np.asarray(self.mat_ci)[:, 0],
-                           optimize="optimal")
-            return 2.0 * np.einsum('ki,kl,lj->ij',
-                                   self.mat_ci[:, 1:], self.ham - e0 * np.identity(self.nDet), self.mat_ci[:, 1:],
-                                   optimize="optimal")
-        else:
-            return np.zeros((0, 0))
-
     def _eig(self, h, *args):
         return scf.hf.eig(h, None)
 
@@ -694,7 +644,7 @@ class csf():
 ##### Main #####
 if __name__ == '__main__':
     import sys, re, os
-    from opt.newton_raphson import NewtonRaphson
+    from mcscf.src.opt.newton_raphson import NewtonRaphson
     from pyscf import gto
 
     np.set_printoptions(linewidth=10000)
@@ -703,7 +653,8 @@ if __name__ == '__main__':
     def read_config(file):
         f = open(file, "r")
         lines = f.read().splitlines()
-        basis, charge, spin, frozen, cas, grid_option, Hind, maxit = 'sto-3g', 0, 0, 0, (0, 0), 1000, None, 1000
+        basis, charge, spin, frozen, cas, grid_option, Hind, maxit, \
+        csf_idx, permutation, mo_basis= 'sto-3g', 0, 0, 0, (0, 0), 1000, None, 1000, None, None, None
         for line in lines:
             if re.match('basis', line) is not None:
                 basis = str(re.split(r'\s', line)[-1])
@@ -727,35 +678,31 @@ if __name__ == '__main__':
                     grid_option = re.split(r'\s', line)[-1]
                 else:
                     grid_option = int(re.split(r'\s', line)[-1])
-        return basis, charge, spin, frozen, cas, grid_option, Hind, maxit
+            elif re.match('csf_idx', line) is not None:
+                csf_idx = [int(x) for x in re.split(r'\s', line)[1:]]
+            elif re.match('permutation', line) is not None:
+                permutation = [int(x) for x in re.split(r'\s', line)[1:]]
+            elif re.match('mo_basis', line) is not None:
+                mo_basis = re.split(r'\s', line)[-1]
+        return basis, charge, spin, frozen, cas, grid_option, Hind, maxit, csf_idx, permutation, mo_basis
 
 
     mol = gto.Mole(symmetry=False, unit='B')
     mol.atom = sys.argv[1]
-    basis, charge, spin, frozen, cas, grid_option, Hind, maxit = read_config(sys.argv[2])
+    basis, charge, spin, frozen, cas, grid_option, Hind, maxit, csf_idx, permutation, mo_basis = read_config(sys.argv[2])
     mol.basis = basis
     mol.charge = charge
     mol.spin = spin
     mol.build()
     myhf = mol.RHF().run()
 
-    # Initialise CAS object
-    mycas = ss_casscf(mol, cas[0], cas[1])
+    # Initialise CSF object
+    # TODO: Read in csf_idx, permutation and mo_basis from file. Then this might run
+    mycsf = csf(mol, spin, cas[0], cas[1], csf_idx, permutation, mo_basis)
 
     # Set orbital coefficients
-    ci_guess = np.identity(4)
-    mycas.initialise(myhf.mo_coeff, ci_guess)
-    NewtonRaphson(mycas, index=0)
+    mycsf.initialise(myhf.mo_coeff)
+    NewtonRaphson(mycsf, index=0)
 
     print()
-    print("  Final energy = {: 16.10f}".format(mycas.energy))
-    print("         <S^2> = {: 16.10f}".format(mycas.s2))
-
-    print()
-    print("  Canonical natural orbitals:      ")
-    print("  ---------------------------------")
-    print(" {:^5s}  {:^10s}  {:^10s}".format("  Orb", "Occ.", "Energy"))
-    print("  ---------------------------------")
-    for i in range(mycas.ncore + mycas.ncas):
-        print(" {:5d}  {: 10.6f}  {: 10.6f}".format(i + 1, mycas.mo_occ[i], mycas.mo_energy[i]))
-    print("  ---------------------------------")
+    print("  Final energy = {: 16.10f}".format(mycsf.energy))

@@ -9,7 +9,7 @@ from scipy.linalg import expm as scipy_expm
 from scipy.linalg import eigvalsh as scipy_eigvalsh
 from pyscf import gto
 #from ss_casscf import ss_casscf
-from CSFConstructor import CSFConstructor
+from mcscf.src.csfs.CSFConstructor import CSFConstructor
 from opt.eigenvector_following import EigenFollow
 
 
@@ -96,17 +96,6 @@ if __name__ == '__main__':
 
         # Set orbital coefficients
         mycas.initialise(mo_guess, ci_guess)
-        # num_hess = mycas.get_numerical_hessian(eps=1e-4)
-        # hess = mycas.hessian
-        # print("Numerical Hessian")
-        # print(num_hess)
-        # print("Hessian")
-        # print(hess)
-        # print("Hessian")
-        # print(np.linalg.eigvalsh(num_hess))
-        # print(np.linalg.eigvalsh(hess))
-        # quit()
-
         mycas.canonicalize_()
 
         opt = EigenFollow(minstep=0.0, rtrust=0.15)
