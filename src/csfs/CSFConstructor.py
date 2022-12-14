@@ -8,9 +8,9 @@ from math import comb
 from pyscf import gto, scf
 from typing import List
 from scipy import linalg
-from CouplingCoefficients import get_total_coupling_coefficient
-from Integrals import get_1e_int_gen, get_1e_core, get_2e
-from PermutationTools import get_phase_factor
+from csfs.CouplingCoefficients import get_total_coupling_coefficient
+from csfs.Integrals import get_1e_int_gen, get_1e_core, get_2e
+from csfs.PermutationTools import get_phase_factor
 
 np.set_printoptions(precision=6, suppress=True)
 

@@ -11,8 +11,8 @@ The 1RDM and 2RDM of the wavefunctions can then be constructed with this informa
 import numpy as np
 
 from itertools import combinations
-from CSFConstructor import CSFConstructor
-from GeneralisedSlaterCondon import get_det_overlap
+from csfs.CSFConstructor import CSFConstructor
+from csfs.GeneralisedSlaterCondon import get_det_overlap
 
 np.set_printoptions(precision=6, suppress=True)
 
@@ -247,5 +247,5 @@ def get_rdm12(csfobj: CSFConstructor, csf_idx):
     :return: 2RDM of the CSF
     """
     spatial_1rdm = spin_to_spatial_1rdm(build_generic_1rdm(csfobj, csf_idx))
-    spatial_2rdm = spin_to_spatial_1rdm(build_generic_2rdm(csfobj, csf_idx))
+    spatial_2rdm = spin_to_spatial_2rdm(build_generic_2rdm(csfobj, csf_idx))
     return spatial_1rdm, spatial_2rdm
