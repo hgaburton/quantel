@@ -532,9 +532,9 @@ class csf():
             Htmp[nocc:, ncore:nocc, ncore:nocc, ncore:nocc] = np.einsum("xyat->atxy", Htmp[ncore:nocc, ncore:nocc, nocc:, ncore:nocc])
 
         # active-active active-active H_{xy,tv}
-        Yxytv = 4 * np.einsum('xmtn,ymnv->xyti', 0.5 * self.dm2_cas, self.ppoo[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc], optimize="optimal") + \
-                4 * np.einsum('xmnt,ymnv->xyti', 0.5 * self.dm2_cas, self.ppoo[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc], optimize="optimal") + \
-                4 * np.einsum('xtmn,yvmn->xyti', 0.5 * self.dm2_cas, self.ppoo[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc], optimize="optimal")
+        Yxytv = 4 * np.einsum('xmtn,ymnv->xytv', 0.5 * self.dm2_cas, self.ppoo[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc], optimize="optimal") + \
+                4 * np.einsum('xmnt,ymnv->xytv', 0.5 * self.dm2_cas, self.ppoo[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc], optimize="optimal") + \
+                4 * np.einsum('xtmn,yvmn->xytv', 0.5 * self.dm2_cas, self.ppoo[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc], optimize="optimal")
         Htmp[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc] = 2 * np.einsum("xt,yv->xytv", self.dm1_cas, self.h1eff) - \
                                                                2 * np.einsum("xv,yt->xytv", self.dm1_cas, self.h1eff) + \
                                                                2 * np.einsum("yv,xt->xytv", self.dm1_cas, self.h1eff) - \
