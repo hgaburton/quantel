@@ -544,6 +544,8 @@ class csf():
                                                                    np.einsum("xt,yv->xytv", id_cas, F_tot[ncore:nocc, ncore:nocc] + F_tot.T[ncore:nocc, ncore:nocc]) + \
                                                                    np.einsum("yt,xv->xytv", id_cas, F_tot[ncore:nocc, ncore:nocc] + F_tot.T[ncore:nocc, ncore:nocc]) + \
                                                                    4 * Yxytv + 4 * np.einsum("xytv->xyvt", Yxytv)
+        print("Yxytv: ", Yxytv)
+        print("Htmp: ", Htmp)
         return (Htmp)
 
     def _eig(self, h, *args):
