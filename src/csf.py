@@ -500,50 +500,50 @@ class csf():
                         Htmp[ncore:nocc, :ncore, ncore:nocc, :ncore] + np.einsum('tiuj->ujti',
                                                                                  Htmp[ncore:nocc, :ncore, ncore:nocc,
                                                                                  :ncore], optimize="optimal"))
-            # Nick: Active-active Hessian contributions
-            # active-active active-core H_{xy,ti}
-            if ncore > 0:
-                Yxyit = 4 * np.einsum('xmtn,ymni->xyti', 0.5 * self.dm2_cas, self.ppoo[ncore:nocc, ncore:nocc, ncore:nocc, :ncore], optimize="optimal") + \
-                        4 * np.einsum('xmnt,ymni->xyti', 0.5 * self.dm2_cas, self.ppoo[ncore:nocc, ncore:nocc, ncore:nocc, :ncore], optimize="optimal") + \
-                        4 * np.einsum('xtmn,yimn->xyti', 0.5 * self.dm2_cas, self.ppoo[ncore:nocc, :ncore, ncore:nocc, ncore:nocc], optimize="optimal")
-                Htmp[ncore:nocc, ncore:nocc, ncore:nocc, :ncore] = 2 * np.einsum("xt,yi->xyti", self.dm1_cas) - \
-                                                                   2 * np.einsum("yt,xi->xyti", self.dm1_cas) + \
-                                                                   np.einsum("xi,yt->xyti", F_tot[ncore:nocc, :ncore] + F_tot.T[ncore:nocc, :ncore], id_cas) - \
-                                                                   np.einsum("yi,xt->xyti", F_tot[ncore:nocc, :ncore] + F_tot.T[ncore:nocc, :ncore], id_cas) + \
-                                                                   Yxyit + np.einsum("xyit->yxit", Yxyit)
-            # active-core active-active H_{ti, xy}
-            if ncore > 0:
-                Htmp[ncore:nocc, :ncore, ncore:nocc, ncore:nocc] = np.einsum("xyti->tixy", Htmp[ncore:nocc, ncore:nocc, ncore:nocc, :ncore])
+        # Nick: Active-active Hessian contributions
+        # active-active active-core H_{xy,ti}
+        if ncore > 0:
+            Yxyit = 4 * np.einsum('xmtn,ymni->xyti', 0.5 * self.dm2_cas, self.ppoo[ncore:nocc, ncore:nocc, ncore:nocc, :ncore], optimize="optimal") + \
+                    4 * np.einsum('xmnt,ymni->xyti', 0.5 * self.dm2_cas, self.ppoo[ncore:nocc, ncore:nocc, ncore:nocc, :ncore], optimize="optimal") + \
+                    4 * np.einsum('xtmn,yimn->xyti', 0.5 * self.dm2_cas, self.ppoo[ncore:nocc, :ncore, ncore:nocc, ncore:nocc], optimize="optimal")
+            Htmp[ncore:nocc, ncore:nocc, ncore:nocc, :ncore] = 2 * np.einsum("xt,yi->xyti", self.dm1_cas) - \
+                                                               2 * np.einsum("yt,xi->xyti", self.dm1_cas) + \
+                                                               np.einsum("xi,yt->xyti", F_tot[ncore:nocc, :ncore] + F_tot.T[ncore:nocc, :ncore], id_cas) - \
+                                                               np.einsum("yi,xt->xyti", F_tot[ncore:nocc, :ncore] + F_tot.T[ncore:nocc, :ncore], id_cas) + \
+                                                               Yxyit + np.einsum("xyit->yxit", Yxyit)
+        # active-core active-active H_{ti, xy}
+        if ncore > 0:
+            Htmp[ncore:nocc, :ncore, ncore:nocc, ncore:nocc] = np.einsum("xyti->tixy", Htmp[ncore:nocc, ncore:nocc, ncore:nocc, :ncore])
 
-            # active-active virtual-core H_{xy,ai}, as well as virtual-core active-active H_{ai,xy}
-            if ncore > 0 and nvir > 0:
-                pass    # This should be zero
+        # active-active virtual-core H_{xy,ai}, as well as virtual-core active-active H_{ai,xy}
+        if ncore > 0 and nvir > 0:
+            pass    # This should be zero
 
-            # active-active virtual-active H_{xy,at}
-            if nvir > 0:
-                Htmp[ncore:nocc, ncore:nocc, nocc:, ncore:nocc] = 2 * np.einsum("yt,xa->xyat", self.dm1_cas, self.h1eff) - \
-                                                                   2 * np.einsum("xt,ya->xyat", self.dm1_cas, self.h1eff) + \
-                                                                   np.einsum("xt,ya->xyat", id_cas, F_tot[ncore:nocc, ncore:]) - \
-                                                                   np.einsum("yt,xa->xyat", id_cas, F_tot[ncore:nocc, ncore:]) + \
-                                                                   np.einsum("xt,ay->xyat", id_cas, F_tot[ncore:, ncore:nocc]) - \
-                                                                   np.einsum("yt,ax->xyat", id_cas, F_tot[ncore:, ncore:nocc])
-            # virtual-active active-active H_{at, xy}
-            if nvir > 0:
-                Htmp[nocc:, ncore:nocc, ncore:nocc, ncore:nocc] = np.einsum("xyat->atxy", Htmp[ncore:nocc, ncore:nocc, nocc:, ncore:nocc])
+        # active-active virtual-active H_{xy,at}
+        if nvir > 0:
+            Htmp[ncore:nocc, ncore:nocc, nocc:, ncore:nocc] = 2 * np.einsum("yt,xa->xyat", self.dm1_cas, self.h1eff) - \
+                                                              2 * np.einsum("xt,ya->xyat", self.dm1_cas, self.h1eff) + \
+                                                              np.einsum("xt,ya->xyat", id_cas, F_tot[ncore:nocc, ncore:]) - \
+                                                              np.einsum("yt,xa->xyat", id_cas, F_tot[ncore:nocc, ncore:]) + \
+                                                              np.einsum("xt,ay->xyat", id_cas, F_tot[ncore:, ncore:nocc]) - \
+                                                              np.einsum("yt,ax->xyat", id_cas, F_tot[ncore:, ncore:nocc])
+        # virtual-active active-active H_{at, xy}
+        if nvir > 0:
+            Htmp[nocc:, ncore:nocc, ncore:nocc, ncore:nocc] = np.einsum("xyat->atxy", Htmp[ncore:nocc, ncore:nocc, nocc:, ncore:nocc])
 
-            # active-active active-active H_{xy,tv}
-            Yxytv = 4 * np.einsum('xmtn,ymnv->xyti', 0.5 * self.dm2_cas, self.ppoo[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc], optimize="optimal") + \
-                    4 * np.einsum('xmnt,ymnv->xyti', 0.5 * self.dm2_cas, self.ppoo[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc], optimize="optimal") + \
-                    4 * np.einsum('xtmn,yvmn->xyti', 0.5 * self.dm2_cas, self.ppoo[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc], optimize="optimal")
-            Htmp[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc] = 2 * np.einsum("xt,yv->xytv", self.dm1_cas, self.h1eff) - \
-                                                                   2 * np.einsum("xv,yt->xytv", self.dm1_cas, self.h1eff) + \
-                                                                   2 * np.einsum("yv,xt->xytv", self.dm1_cas, self.h1eff) - \
-                                                                   2 * np.einsum("yt,xv->xytv", self.dm1_cas, self.h1eff) - \
-                                                                   np.einsum("yv,xt->xytv", id_cas, F_tot[ncore:nocc, ncore:nocc] + F_tot.T[ncore:nocc, ncore:nocc]) + \
-                                                                   np.einsum("xv,yt->xytv", id_cas, F_tot[ncore:nocc, ncore:nocc] + F_tot.T[ncore:nocc, ncore:nocc]) - \
-                                                                   np.einsum("xt,yv->xytv", id_cas, F_tot[ncore:nocc, ncore:nocc] + F_tot.T[ncore:nocc, ncore:nocc]) + \
-                                                                   np.einsum("yt,xv->xytv", id_cas, F_tot[ncore:nocc, ncore:nocc] + F_tot.T[ncore:nocc, ncore:nocc]) + \
-                                                                   4 * Yxytv + 4 * np.einsum("xytv->xyvt", Yxytv)
+        # active-active active-active H_{xy,tv}
+        Yxytv = 4 * np.einsum('xmtn,ymnv->xyti', 0.5 * self.dm2_cas, self.ppoo[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc], optimize="optimal") + \
+                4 * np.einsum('xmnt,ymnv->xyti', 0.5 * self.dm2_cas, self.ppoo[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc], optimize="optimal") + \
+                4 * np.einsum('xtmn,yvmn->xyti', 0.5 * self.dm2_cas, self.ppoo[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc], optimize="optimal")
+        Htmp[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc] = 2 * np.einsum("xt,yv->xytv", self.dm1_cas, self.h1eff) - \
+                                                               2 * np.einsum("xv,yt->xytv", self.dm1_cas, self.h1eff) + \
+                                                               2 * np.einsum("yv,xt->xytv", self.dm1_cas, self.h1eff) - \
+                                                               2 * np.einsum("yt,xv->xytv", self.dm1_cas, self.h1eff) - \
+                                                               np.einsum("yv,xt->xytv", id_cas, F_tot[ncore:nocc, ncore:nocc] + F_tot.T[ncore:nocc, ncore:nocc]) + \
+                                                               np.einsum("xv,yt->xytv", id_cas, F_tot[ncore:nocc, ncore:nocc] + F_tot.T[ncore:nocc, ncore:nocc]) - \
+                                                               np.einsum("xt,yv->xytv", id_cas, F_tot[ncore:nocc, ncore:nocc] + F_tot.T[ncore:nocc, ncore:nocc]) + \
+                                                               np.einsum("yt,xv->xytv", id_cas, F_tot[ncore:nocc, ncore:nocc] + F_tot.T[ncore:nocc, ncore:nocc]) + \
+                                                               4 * Yxytv + 4 * np.einsum("xytv->xyvt", Yxytv)
         print("Yxytv: ", Yxytv)
         print("Htmp: ", Htmp)
         return (Htmp)
