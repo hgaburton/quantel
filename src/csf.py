@@ -511,19 +511,25 @@ class csf():
                                                                    np.einsum("xi,yt->xyti", F_tot[ncore:nocc, :ncore] + F_tot.T[ncore:nocc, :ncore], id_cas) - \
                                                                    np.einsum("yi,xt->xyti", F_tot[ncore:nocc, :ncore] + F_tot.T[ncore:nocc, :ncore], id_cas) + \
                                                                    Yxyit + np.einsum("xyit->yxit", Yxyit)
+            # active-core active-active H_{ti, xy}
+            if ncore > 0:
+                Htmp[ncore:nocc, :ncore, ncore:nocc, ncore:nocc] = np.einsum("xyti->tixy", Htmp[ncore:nocc, ncore:nocc, ncore:nocc, :ncore])
 
-            # active-active virtual-core H_{xy,ai}
+            # active-active virtual-core H_{xy,ai}, as well as virtual-core active-active H_{ai,xy}
             if ncore > 0 and nvir > 0:
                 pass    # This should be zero
 
             # active-active virtual-active H_{xy,at}
             if nvir > 0:
-                Htmp[ncore:nocc, ncore:nocc, :ncore, ncore:nocc] = 2 * np.einsum("yt,xa->xyat", self.dm1_cas, self.h1eff) - \
+                Htmp[ncore:nocc, ncore:nocc, nocc:, ncore:nocc] = 2 * np.einsum("yt,xa->xyat", self.dm1_cas, self.h1eff) - \
                                                                    2 * np.einsum("xt,ya->xyat", self.dm1_cas, self.h1eff) + \
                                                                    np.einsum("xt,ya->xyat", id_cas, F_tot[ncore:nocc, ncore:]) - \
                                                                    np.einsum("yt,xa->xyat", id_cas, F_tot[ncore:nocc, ncore:]) + \
                                                                    np.einsum("xt,ay->xyat", id_cas, F_tot[ncore:, ncore:nocc]) - \
                                                                    np.einsum("yt,ax->xyat", id_cas, F_tot[ncore:, ncore:nocc])
+            # virtual-active active-active H_{at, xy}
+            if nvir > 0:
+                Htmp[nocc:, ncore:nocc, ncore:nocc, ncore:nocc] = np.einsum("xyat->atxy", Htmp[ncore:nocc, ncore:nocc, nocc:, ncore:nocc])
 
             # active-active active-active H_{xy,tv}
             Yxytv = 4 * np.einsum('xmtn,ymnv->xyti', 0.5 * self.dm2_cas, self.ppoo[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc], optimize="optimal") + \
