@@ -231,8 +231,8 @@ def spin_to_spatial_2rdm(spin_2rdm):
                     spatial_2rdm[i][j][k][l] += spin_2rdm[i][j][k][l]
                     spatial_2rdm[i][j][k][l] += spin_2rdm[i + n_dim][j + n_dim][k + n_dim][l + n_dim]
                     # i and l have the same spin
-                    spatial_2rdm[i][j][k][l] += spin_2rdm[i+n_dim][j][k][l+n_dim]
-                    spatial_2rdm[i][j][k][l] += spin_2rdm[i][j+n_dim][k+n_dim][l]
+                    #spatial_2rdm[i][j][k][l] += spin_2rdm[i+n_dim][j][k][l+n_dim]
+                    #spatial_2rdm[i][j][k][l] += spin_2rdm[i][j+n_dim][k+n_dim][l]
                     # i and k have the same spin
                     spatial_2rdm[i][j][k][l] += spin_2rdm[i][j+n_dim][k][l+n_dim]
                     spatial_2rdm[i][j][k][l] += spin_2rdm[i+n_dim][j][k+n_dim][l]
@@ -248,4 +248,4 @@ def get_rdm12(csfobj: CSFConstructor, csf_idx):
     """
     spatial_1rdm = spin_to_spatial_1rdm(build_generic_1rdm(csfobj, csf_idx))
     spatial_2rdm = spin_to_spatial_2rdm(build_generic_2rdm(csfobj, csf_idx))
-    return spatial_1rdm, spatial_2rdm
+    return spatial_1rdm, spatial_2rdm.transpose((3, 1, 2, 0))

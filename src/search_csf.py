@@ -9,7 +9,7 @@ from scipy.linalg import expm as scipy_expm
 from scipy.linalg import eigvalsh as scipy_eigvalsh
 from pyscf import gto
 #from ss_casscf import ss_casscf
-from csfs.CSFConstructor import CSFConstructor
+from csf import csf # This is the csf object we interface with
 from opt.eigenvector_following import EigenFollow
 
 
@@ -31,7 +31,7 @@ if __name__ == '__main__':
         basis, charge, spin, frozen, cas, grid_option, Hind, maxit, thresh = 'sto-3g', 0, 0, 0, (
         0, 0), 1000, None, 1000, 1e-8
         nsample = 1
-        unit_str = 'B'
+        unit_str = 'A'
         for line in lines:
             if re.match('basis', line) is not None:
                 basis = str(re.split(r'\s', line)[-1])
@@ -57,11 +57,17 @@ if __name__ == '__main__':
                 unit_str = str(re.split(r'\s', line)[-1])
             elif re.match('thresh', line) is not None:
                 thresh = np.power(0.1, int(re.split(r'\s', line)[-1]))
-        return basis, charge, spin, frozen, cas, nsample, Hind, maxit, unit_str, thresh
+            elif re.match('csf_idx', line) is not None:
+                csf_idx = [int(x) for x in re.split(r'\s', line)[1:]]
+            elif re.match('permutation', line) is not None:
+                permutation = [int(x) for x in re.split(r'\s', line)[1:]]
+            elif re.match('mo_basis', line) is not None:
+                mo_basis = re.split(r'\s', line)[-1]
+        return basis, charge, spin, frozen, cas, nsample, Hind, maxit, unit_str, thresh, csf_idx, permutation, mo_basis
 
 
     # Initialise the molecular structure
-    basis, charge, spin, frozen, cas, nsample, Hind, maxit, unit_str, thresh = read_config(sys.argv[2])
+    basis, charge, spin, frozen, cas, nsample, Hind, maxit, unit_str, thresh, csf_idx, permutation, mo_basis = read_config(sys.argv[2])
     mol = gto.Mole(symmetry=False, unit=unit_str)
     mol.atom = sys.argv[1]
     mol.basis = basis
@@ -73,17 +79,19 @@ if __name__ == '__main__':
     g = mol.intor('int1e_ovlp')
 
     # Get an initial HF solution
-    myhf = mol.RHF().run()
+    # myhf = mol.RHF().run()
 
     # Initialise CSF object
     #mycas = ss_casscf(mol, cas[0], cas[1])
-    mycsf = CSFConstructor(mol, s, permutation, mo_basis)
+    #mycsf = CSFConstructor(mol, s, permutation, mo_basis)
+    mycsf = csf(mol, spin, cas[0], cas[1], csf_idx, permutation, mo_basis)
+    mycsf.initialise()
 
-    nmo = myhf.mo_coeff.shape[1]
-    ndet = mycas.nDet
+    nmo = mycsf.mo_coeff.shape[1]
+    ndet = mycsf.nDet
 
     # Get inital coefficients and CI vectors
-    ref_mo = myhf.mo_coeff.copy()
+    ref_mo = mycsf.mo_coeff.copy()
     ref_ci = np.identity(ndet)
 
     cas_list = []
@@ -95,41 +103,41 @@ if __name__ == '__main__':
         ci_guess = ref_ci.dot(random_rot(ndet, -np.pi, np.pi))
 
         # Set orbital coefficients
-        mycas.initialise(mo_guess, ci_guess)
-        mycas.canonicalize_()
+        mycsf.initialise(mo_guess)
+        #mycsf.canonicalize_()
 
         opt = EigenFollow(minstep=0.0, rtrust=0.15)
-        if not opt.run(mycas, thresh=thresh, maxit=500, index=Hind):
+        if not opt.run(mycsf, thresh=thresh, maxit=500, index=Hind):
             continue
-        hindices = mycas.get_hessian_index()
+        hindices = mycsf.get_hessian_index()
         pushoff = 0.01
         pushit = 0
         while hindices[0] != Hind and pushit < 5:
             # Try to perturb along relevant number of downhill directions
-            mycas.pushoff(1, pushoff)
-            opt.run(mycas, thresh=thresh, maxit=500, index=Hind)
-            hindices = mycas.get_hessian_index()
+            mycsf.pushoff(1, pushoff)
+            opt.run(mycsf, thresh=thresh, maxit=500, index=Hind)
+            hindices = mycsf.get_hessian_index()
             pushoff *= 2
             pushit += 1
 
         if hindices[0] != Hind: continue
 
-        mycas.canonicalize_()
+        #mycsf.canonicalize_()
 
         # Get the distances
         new = True
         for othercas in cas_list:
-            if 1.0 - abs(mycas.overlap(othercas)) < 1e-8:
+            if 1.0 - abs(mycsf.overlap(othercas)) < 1e-8:
                 new = False
                 break
         if new:
             count += 1
             tag = "{:04d}".format(count)
-            np.savetxt(tag + '.mo_coeff', mycas.mo_coeff, fmt="% 20.16f")
-            np.savetxt(tag + '.mat_ci', mycas.mat_ci, fmt="% 20.16f")
+            np.savetxt(tag + '.mo_coeff', mycsf.mo_coeff, fmt="% 20.16f")
+            np.savetxt(tag + '.mat_ci', mycsf.mat_ci, fmt="% 20.16f")
             np.savetxt(tag + '.energy', np.array([
-                [mycas.energy, hindices[0], hindices[1], mycas.s2]]), fmt="% 18.12f % 5d % 5d % 12.6f")
+                [mycsf.energy, hindices[0], hindices[1], mycas.s2]]), fmt="% 18.12f % 5d % 5d % 12.6f")
 
             # Deallocate integrals to reduce memory footprint
             #    mycas.deallocate()
-            cas_list.append(mycas.copy())
+            cas_list.append(mycsf.copy())

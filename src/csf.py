@@ -54,12 +54,12 @@ class csf():
         # Save mapping indices for unique orbital rotations
         self.frozen = None
         self.rot_idx = self.uniq_var_indices(self.norb, self.frozen)
-        print("rot_idx", self.rot_idx)
+        #print("rot_idx", self.rot_idx)
         self.nrot = np.sum(self.rot_idx)
 
         # Dimensions of problem
         # TODO: Check the dimensions of this problem
-        print("dim: ", self.nrot)
+        #print("dim: ", self.nrot)
         self.dim = self.nrot
 
     def copy(self):
@@ -91,10 +91,11 @@ class csf():
         self.ovlp = self.mol.intor('int1e_ovlp')  # Overlap matrix
         self._scf._eri = self.mol.intor("int2e", aosym="s8")  # Two electron integrals
 
-    def initialise(self, integrals=True):
+    def initialise(self, mo_guess=None, integrals=True):
         # Save orbital coefficients
         #mo_guess = orthogonalise(mo_guess, self.ovlp)
         self.mo_coeff = self.csf_info.coeffs
+        #print("MO coeff: ", self.mo_coeff)
         self.nmo = self.mo_coeff.shape[1]
 
         # Initialise integrals
@@ -544,8 +545,6 @@ class csf():
                                                                np.einsum("xt,yv->xytv", id_cas, F_tot[ncore:nocc, ncore:nocc] + F_tot.T[ncore:nocc, ncore:nocc]) + \
                                                                np.einsum("yt,xv->xytv", id_cas, F_tot[ncore:nocc, ncore:nocc] + F_tot.T[ncore:nocc, ncore:nocc]) + \
                                                                4 * Yxytv + 4 * np.einsum("xytv->xyvt", Yxytv)
-        print("Yxytv: ", Yxytv)
-        print("Htmp: ", Htmp)
         return (Htmp)
 
     def _eig(self, h, *args):
@@ -758,5 +757,4 @@ if __name__ == '__main__':
     # TODO: Check NewtonRaphson taking in arguments.
     nr = NewtonRaphson()
     nr.run(mycsf, index=Hind)
-    print()
     print("  Final energy = {: 16.10f}".format(mycsf.energy))
