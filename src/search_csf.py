@@ -104,6 +104,18 @@ if __name__ == '__main__':
 
         # Set orbital coefficients
         mycsf.initialise(mo_guess)
+
+        # Tests
+        num_hess = mycsf.get_numerical_hessian(eps=1e-4)
+        hess = mycsf.hessian
+        print("Numerical Hessian")
+        print(num_hess)
+        print("Hessian")
+        print(hess)
+        print("Hessian")
+        print(np.linalg.eigvalsh(num_hess))
+        print(np.linalg.eigvalsh(hess))
+        quit()
         #mycsf.canonicalize_()
 
         opt = EigenFollow(minstep=0.0, rtrust=0.15)
