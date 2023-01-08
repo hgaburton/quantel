@@ -105,23 +105,25 @@ if __name__ == '__main__':
         # Set orbital coefficients
         mycsf.initialise(mo_guess)
 
-        # Tests
-        num_hess = mycsf.get_numerical_hessian(eps=1e-4)
-        hess = mycsf.hessian
-        print("Numerical Hessian")
-        print(num_hess)
-        print("Hessian")
-        print(hess)
-        print("Hessian")
-        print(np.linalg.eigvalsh(num_hess))
-        print(np.linalg.eigvalsh(hess))
-        quit()
+        # Test
+        #num_hess = mycsf.get_numerical_hessian(eps=1e-4)
+        #hess = mycsf.hessian
+        #print("Numerical Hessian")
+        #print(num_hess)
+        #print("Hessian")
+        #print(hess)
+        #print("Hessian")
+        #print(np.linalg.eigvalsh(num_hess))
+        #print(np.linalg.eigvalsh(hess))
+        #quit()
         #mycsf.canonicalize_()
 
         opt = EigenFollow(minstep=0.0, rtrust=0.15)
         if not opt.run(mycsf, thresh=thresh, maxit=500, index=Hind):
             continue
         hindices = mycsf.get_hessian_index()
+        print("hindices: ", hindices)
+        print("hind: ", Hind)
         pushoff = 0.01
         pushit = 0
         while hindices[0] != Hind and pushit < 5:
@@ -129,13 +131,14 @@ if __name__ == '__main__':
             mycsf.pushoff(1, pushoff)
             opt.run(mycsf, thresh=thresh, maxit=500, index=Hind)
             hindices = mycsf.get_hessian_index()
+            print("hindices: ", hindices)
             pushoff *= 2
             pushit += 1
-
+        np.savetxt('h4.mo_coeff', mycsf.mo_coeff, fmt="% 20.16f")
         if hindices[0] != Hind: continue
 
         #mycsf.canonicalize_()
-
+        print("This part of the code is reached")
         # Get the distances
         new = True
         for othercas in cas_list:
