@@ -8,11 +8,11 @@ from math import comb
 from pyscf import gto, scf
 from typing import List
 from scipy import linalg
-from Auxiliary.SpatialBasis import spatial_one_and_two_e_int
-from ConfigurationStateFunctions.CouplingCoefficients import get_total_coupling_coefficient
-from Operators.Operators import create
-from ConfigurationStateFunctions.PermutationTools import get_phase_factor
-from ReducedDensityMatrices.ReducedDensityMatrices import get_mc_one_rdm, get_ri_mc_two_rdm,\
+from csfs.Auxiliary.SpatialBasis import spatial_one_and_two_e_int
+from csfs.ConfigurationStateFunctions.CouplingCoefficients import get_total_coupling_coefficient
+from csfs.Operators.Operators import create
+from csfs.ConfigurationStateFunctions.PermutationTools import get_phase_factor
+from csfs.ReducedDensityMatrices.ReducedDensityMatrices import get_mc_one_rdm, get_ri_mc_two_rdm,\
     get_spatial_one_rdm, get_spatial_two_rdm
 
 

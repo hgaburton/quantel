@@ -4,7 +4,7 @@ We form the 1-RDM and 2-RDM for single- and multi-configurational wavefunctions
 import copy
 import numpy as np
 import itertools
-from Operators.Operators import create, annihilate, excitation, overlap
+from csfs.Operators.Operators import create, annihilate, excitation, overlap
 
 
 def get_ri_kets(ket):
