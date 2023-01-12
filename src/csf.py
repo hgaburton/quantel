@@ -117,8 +117,13 @@ class csf():
         ''' Compute the energy corresponding to a given set of
              one-el integrals, two-el integrals, 1- and 2-RDM '''
         E = self.energy_core
+        Ecore = E
+        print("Ecore: ", Ecore)
         E += np.einsum('pq,pq', self.h1eff, self.dm1_cas, optimize="optimal")
+        onee = E - Ecore
+        print("1e: ", onee)
         E += 0.5 * np.einsum('pqrs,pqrs', self.h2eff, self.dm2_cas, optimize="optimal")
+        print("2e: ", E - Ecore - onee)
         return E
 
     @property

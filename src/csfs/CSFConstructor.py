@@ -16,7 +16,7 @@ np.set_printoptions(precision=6, suppress=True)
 
 
 class CSFConstructor:
-    def __init__(self, mol: gto.Mole, s: float, target_csfs: List[int], permutation: List[int] = None,
+    def __init__(self, mol: gto.Mole, s: float, permutation: List[int] = None,
                  mo_basis="custom", mo_coeffs = None):
         self.mol = mol
         self.bas = "sph"
@@ -24,7 +24,6 @@ class CSFConstructor:
         self.n_elec = mol.nelectron  # Number of electrons
         self.spin = mol.spin  # M_s value
         self.s = s
-        self.target_csfs = target_csfs
         self.n_alpha = (mol.nelectron + 2 * mol.spin) // 2  # Number of alpha electrons
         self.n_beta = (mol.nelectron - 2 * mol.spin) // 2  # Number of beta electrons
         self.e_nuc = self.mol.energy_nuc()

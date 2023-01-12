@@ -74,8 +74,6 @@ def get_det_index(csfobj: CSFConstructor, state):
 def build_1rdm(csfobj: CSFConstructor, n_dim, ref_state_idx: int, unchanged_idx: int = 0):
     r"""
     Build 1RDM naively
-    Unchanged_idx corresponds to index of the bra state
-    Ref_state_idx corresponds to index of the ket state
     :param unchanged_idx:
     :param csfobj:
     :param n_dim:
@@ -86,9 +84,9 @@ def build_1rdm(csfobj: CSFConstructor, n_dim, ref_state_idx: int, unchanged_idx:
     for r in range(n_dim):  # This is the creation index
         for p in range(n_dim):  # This is the annihilation index
             if r < (n_dim // 2) <= p:  # If creation and annihilation have different spins, it is zero
-                rdm1[r][p] = 0
+                rdm1[p][r] = 0
             elif r >= (n_dim // 2) > p:  # If creation and annihilation have different spins, it is zero
-                rdm1[r][p] = 0
+                rdm1[p][r] = 0
             else:
                 alpha_idxs = list(csfobj.dets_orbrep[ref_state_idx][0])
                 beta_idxs = list(csfobj.dets_orbrep[ref_state_idx][1])
@@ -101,13 +99,13 @@ def build_1rdm(csfobj: CSFConstructor, n_dim, ref_state_idx: int, unchanged_idx:
                         # Find the index that this state corresponds to
                         rep = tuple([tuple(state[0]), tuple(state[1])])
                         if rep not in csfobj.dets_orbrep:
-                            rdm1[r][p] = 0
+                            rdm1[p][r] = 0
                         else:
                             idx = csfobj.dets_orbrep.index(rep)
-                            rdm1[r][p] = get_det_overlap(csfobj.get_det(unchanged_idx), csfobj.get_det(idx),
+                            rdm1[p][r] = get_det_overlap(csfobj.get_det(unchanged_idx), csfobj.get_det(idx),
                                                          csfobj.overlap)
                     else:
-                        rdm1[r][p] = 0
+                        rdm1[p][r] = 0
                 else:  # Beta spin
                     p_mod = p - (n_dim // 2)
                     r_mod = r - (n_dim // 2)
@@ -118,13 +116,13 @@ def build_1rdm(csfobj: CSFConstructor, n_dim, ref_state_idx: int, unchanged_idx:
                         # Find the index that this state corresponds to
                         rep = tuple([tuple(state[0]), tuple(state[1])])
                         if rep not in csfobj.dets_orbrep:
-                            rdm1[r][p] = 0
+                            rdm1[p][r] = 0
                         else:
                             idx = csfobj.dets_orbrep.index(rep)
-                            rdm1[r][p] = get_det_overlap(csfobj.get_det(unchanged_idx), csfobj.get_det(idx),
+                            rdm1[p][r] = get_det_overlap(csfobj.get_det(unchanged_idx), csfobj.get_det(idx),
                                                          csfobj.overlap)
                     else:
-                        rdm1[r][p] = 0
+                        rdm1[p][r] = 0
     return rdm1
 
 
@@ -155,8 +153,8 @@ def build_2rdm(csfobj: CSFConstructor, n_dim, bra_state_idx: int, ket_state_idx:
     # Build 1e TDM
     etd1s_bra, etd1s_ket = build_1etd(csfobj, n_dim, bra_state_idx, ket_state_idx)
     # Bring it all together
-    rdm2 = np.einsum("vqp,vrs->pqrs", etd1s_bra, etd1s_ket) - \
-           np.einsum("ps,qr->pqrs", rdm1, np.identity(n_dim))
+    rdm2 = np.einsum("vrp,vqs->pqrs", etd1s_bra, etd1s_ket) - \
+           np.einsum("qr,ps->pqrs", rdm1, np.identity(n_dim))
     return rdm2
 
 
@@ -169,11 +167,16 @@ def build_generic_1rdm(csfobj: CSFConstructor, csf_idx):
     """
     # To avoid doing needless computation, we filter out CSF coefficients which are zero
     csf_coeff = csfobj.csf_coeffs[:, csf_idx]
-    nmos = csfobj.coeffs.shape[1] * 2
-    total_1rdm = np.zeros((csfobj.n_dets, csfobj.n_dets, nmos, nmos))
-    for det_i in range(csfobj.n_dets):
-        for det_j in range(csfobj.n_dets):
-            total_1rdm[det_i, det_j, :, :] = build_1rdm(csfobj, nmos, det_i, det_j)
+    dets = []
+    for idx, coeff in enumerate(csf_coeff):
+        if not np.isclose(coeff, 0, rtol=0, atol=1e-10):
+            dets.append(idx)
+    # Using these determinants, we form the RDM
+    n_dim = csfobj.overlap.shape[0] * 2
+    total_1rdm = np.zeros((n_dim, n_dim))
+    for _, det_i in enumerate(dets):
+        for _, det_j in enumerate(dets):
+            total_1rdm += build_1rdm(csfobj, n_dim, det_i, det_j) * csf_coeff[det_i] * csf_coeff[det_j]
     return total_1rdm
 
 
@@ -185,15 +188,17 @@ def build_generic_2rdm(csfobj: CSFConstructor, csf_idx):
     :return: 2RDM of the CSF
     """
     # To avoid doing needless computation, we filter out CSF coefficients which are zero
-    generic_1rdm = build_generic_1rdm(csfobj, csf_idx)
-    csf_coeffs = csfobj.csf_coeffs
-    nmos = csfobj.coeffs.shape[1] * 2
-    total_2rdm = np.einsum("klqp,kmrs,l,m,l,m->pqrs", generic_1rdm, generic_1rdm,
-                           csf_coeffs[:, csf_idx], csf_coeffs[:, csf_idx],
-                           csfobj.det_phase_factors, csfobj.det_phase_factors) - \
-                 np.einsum("lmps,qr,l,m,l,m->pqrs", generic_1rdm, np.identity(nmos),
-                           csf_coeffs[:, csf_idx], csf_coeffs[:, csf_idx],
-                           csfobj.det_phase_factors, csfobj.det_phase_factors)
+    csf_coeff = csfobj.csf_coeffs[:, csf_idx]
+    dets = []
+    for idx, coeff in enumerate(csf_coeff):
+        if not np.isclose(coeff, 0, rtol=0, atol=1e-10):
+            dets.append(idx)
+    # Using these determinants, we form the RDM
+    n_dim = csfobj.overlap.shape[0] * 2
+    total_2rdm = np.zeros((n_dim, n_dim, n_dim, n_dim))
+    for _, det_i in enumerate(dets):
+        for _, det_j in enumerate(dets):
+            total_2rdm += build_2rdm(csfobj, n_dim, det_i, det_j) * csf_coeff[det_i] * csf_coeff[det_j]
     return total_2rdm
 
 
@@ -219,15 +224,18 @@ def spin_to_spatial_2rdm(spin_2rdm):
     """
     n_dim = spin_2rdm.shape[0] // 2     # This should be an integer
     spatial_2rdm = np.zeros((n_dim, n_dim, n_dim, n_dim))
-    for p in range(n_dim):
-        for q in range(n_dim):
-            for r in range(n_dim):
-                for s in range(n_dim):
-                    spatial_2rdm[p][q][r][s] += spin_2rdm[p][q][r][s]
-                    spatial_2rdm[p][q][r][s] += spin_2rdm[p + n_dim][q + n_dim][r + n_dim][s + n_dim]
-                    # p and q have the same spin, r and s have the same spin
-                    spatial_2rdm[p][q][r][s] += spin_2rdm[p][q][r + n_dim][s + n_dim]
-                    spatial_2rdm[p][q][r][s] += spin_2rdm[p + n_dim][q + n_dim][r][s]
+    for i in range(n_dim):
+        for j in range(n_dim):
+            for k in range(n_dim):
+                for l in range(n_dim):
+                    spatial_2rdm[i][j][k][l] += spin_2rdm[i][j][k][l]
+                    spatial_2rdm[i][j][k][l] += spin_2rdm[i + n_dim][j + n_dim][k + n_dim][l + n_dim]
+                    # i and l have the same spin
+                    #spatial_2rdm[i][j][k][l] += spin_2rdm[i+n_dim][j][k][l+n_dim]
+                    #spatial_2rdm[i][j][k][l] += spin_2rdm[i][j+n_dim][k+n_dim][l]
+                    # i and k have the same spin
+                    spatial_2rdm[i][j][k][l] += spin_2rdm[i][j+n_dim][k][l+n_dim]
+                    spatial_2rdm[i][j][k][l] += spin_2rdm[i+n_dim][j][k+n_dim][l]
     return spatial_2rdm
 
 
@@ -238,6 +246,6 @@ def get_rdm12(csfobj: CSFConstructor, csf_idx):
     :param csf_idx: :int: The index of the CSF required
     :return: 2RDM of the CSF
     """
-    spatial_1rdm = spin_to_spatial_1rdm(build_generic_1rdm(csfobj, csf_idx)[csf_idx][csf_idx])
+    spatial_1rdm = spin_to_spatial_1rdm(build_generic_1rdm(csfobj, csf_idx))
     spatial_2rdm = spin_to_spatial_2rdm(build_generic_2rdm(csfobj, csf_idx))
-    return spatial_1rdm, spatial_2rdm
+    return spatial_1rdm, spatial_2rdm.transpose((3, 1, 0, 2))
