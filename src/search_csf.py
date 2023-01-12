@@ -82,8 +82,7 @@ if __name__ == '__main__':
     # myhf = mol.RHF().run()
 
     # Initialise CSF object
-    #mycas = ss_casscf(mol, cas[0], cas[1])
-    #mycsf = CSFConstructor(mol, s, permutation, mo_basis)
+
     mycsf = csf(mol, spin, cas[0], cas[1], csf_idx, permutation, mo_basis)
     mycsf.initialise()
 

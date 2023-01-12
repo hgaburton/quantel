@@ -2,14 +2,12 @@
 # Modified from ss_casscf code of Antoine Marie and Hugh G. A. Burton
 # This is code for a single CSF case -- just to understand what is going on here
 
-# TODO: LOOK AT uniq_var_indices + dimensionality of rotation problem
 import numpy as np
 import scipy
 from functools import reduce
 from typing import List
 from pyscf import scf, fci, __config__, ao2mo, lib, mcscf
-from csfs.CSFConstructor import CSFConstructor
-from csfs.RDM_Generic import get_rdm12
+from csfs.ConfigurationStateFunctions.CSF import ConfigurationStateFunction
 from utils import delta_kron, orthogonalise
 
 
@@ -46,7 +44,7 @@ class csf():
         self.get_ao_integrals()
 
         # Get information of CSFs
-        self.csf_info = CSFConstructor(self.mol, self.spin, self.permutation, mo_basis=self.mo_basis)
+        self.csf_info = ConfigurationStateFunction(self.mol, self.spin, self.permutation, mo_basis=self.mo_basis)
 
         # Get number of determinants (which is the dimension of the problem)
         self.nDet = self.csf_info.n_dets
@@ -58,8 +56,6 @@ class csf():
         self.nrot = np.sum(self.rot_idx)
 
         # Dimensions of problem
-        # TODO: Check the dimensions of this problem
-        # print("dim: ", self.nrot)
         self.dim = self.nrot
 
     def copy(self):
@@ -263,7 +259,8 @@ class csf():
         We first form a new CSFConstructor object with new coeffs
         :return:
         """
-        dm1_csf, dm2_csf = get_rdm12(csfobj, self.csf_idx)
+        dm1_csf = csfobj.get_csf_one_rdm(self.csf_idx)
+        dm2_csf = csfobj.get_csf_two_rdm(self.csf_idx)
         return dm1_csf, dm2_csf
 
     def get_fock_matrices(self):

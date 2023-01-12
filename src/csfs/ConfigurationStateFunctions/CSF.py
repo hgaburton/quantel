@@ -8,33 +8,30 @@ from math import comb
 from pyscf import gto, scf
 from typing import List
 from scipy import linalg
-from csfs.CouplingCoefficients import get_total_coupling_coefficient
-from csfs.Integrals import get_1e_int_gen, get_1e_core, get_2e
-from csfs.PermutationTools import get_phase_factor
+from Auxiliary.SpatialBasis import spatial_one_and_two_e_int
+from ConfigurationStateFunctions.CouplingCoefficients import get_total_coupling_coefficient
+from Operators.Operators import create
+from ConfigurationStateFunctions.PermutationTools import get_phase_factor
+from ReducedDensityMatrices.ReducedDensityMatrices import get_mc_one_rdm, get_ri_mc_two_rdm,\
+    get_spatial_one_rdm, get_spatial_two_rdm
+
 
 np.set_printoptions(precision=6, suppress=True)
 
 
-class CSFConstructor:
-    def __init__(self, mol: gto.Mole, s: float, permutation: List[int] = None,
-                 mo_basis="custom", mo_coeffs = None):
+class ConfigurationStateFunction:
+    def __init__(self, mol: gto.Mole, s: float, permutation: List[int] = None, mo_basis="site"):
         self.mol = mol
-        self.bas = "sph"
         self.mo_basis = mo_basis
         self.n_elec = mol.nelectron  # Number of electrons
         self.spin = mol.spin  # M_s value
         self.s = s
         self.n_alpha = (mol.nelectron + 2 * mol.spin) // 2  # Number of alpha electrons
         self.n_beta = (mol.nelectron - 2 * mol.spin) // 2  # Number of beta electrons
-        self.e_nuc = self.mol.energy_nuc()
-        self.overlap = get_1e_int_gen('int1e_ovlp_sph', self.mol)
-        self.hcore = get_1e_core(self.mol, self.bas)
-        self.rij_matrix = get_2e(self.mol, self.bas)
         self.permutation = permutation
-        if mo_basis == 'custom':
-            self.coeffs = mo_coeffs
-        else:
-            self.coeffs = self.get_coeffs(method=self.mo_basis)
+        self.coeffs = self.get_coeffs(method=self.mo_basis)
+        # Get MO integrals here
+        self.hcore, self.eri = spatial_one_and_two_e_int(self.mol, self.coeffs) 
         self.n_orbs = self.coeffs.shape[0]  # Number of spatial orbitals
         # Number of ways to arrange e in spatial orbs
         self.n_dets = comb(self.n_orbs, self.n_alpha) * comb(self.n_orbs, self.n_beta)
@@ -43,6 +40,7 @@ class CSFConstructor:
         self.unique_orb_config = []
         self.det_phase_factors = np.zeros(self.n_dets)
         self.det_dict = self.form_det_dict()
+        self.dets_sq = self.form_dets_sq()  # Determinants in Second Quantisation
         self.n_csfs = 0
         self.csfs = self.form_csfs()
         self.csf_coeffs = self.get_csf_coeffs()
@@ -53,14 +51,14 @@ class CSFConstructor:
         :param method: :str: Defines the basis used.
                         "site": Site basis
                         "hf": Hartree--Fock (HF) basis
-                        "hf_lc": Linear combination of HF orbitals
         :return: 2D np.ndarray corresponding to the coefficients (permuted based on self.permutation)
         """
         if method == 'site':
+            overlap = self.mol.intor('int1e_ovlp_sph')
             if self.permutation is None:
-                return linalg.sqrtm(np.linalg.inv(self.overlap))
+                return linalg.sqrtm(np.linalg.inv(overlap))
             else:
-                return linalg.sqrtm(np.linalg.inv(self.overlap))[:, self.permutation]
+                return linalg.sqrtm(np.linalg.inv(overlap))[:, self.permutation]
         if method == 'hf':
             # Runs RHF calculation
             mf = scf.rhf.RHF(self.mol)
@@ -69,21 +67,6 @@ class CSFConstructor:
                 return mf.mo_coeff
             else:
                 return mf.mo_coeff[:, self.permutation]
-
-    def update_coeffs(self, new_coeffs):
-        r"""
-        Get the coefficient matrices. Defaults to site basis (easier).
-        :param method: :str: Defines the basis used.
-                        "site": Site basis
-                        "hf": Hartree--Fock (HF) basis
-                        "hf_lc": Linear combination of HF orbitals
-        :return: 2D np.ndarray corresponding to the coefficients (permuted based on self.permutation)
-        """
-        if self.permutation is None:
-            return new_coeffs
-        else:
-            return new_coeffs[:, self.permutation]
-
 
     def form_dets_orbrep(self):
         r"""
@@ -143,9 +126,37 @@ class CSFConstructor:
             val.append(orb_idxs)
             val.append(coupling)
             det_dict[idx] = val
-            # While we are at it, let's find some phase factors
             self.det_phase_factors[idx] = get_phase_factor(alpha_idxs, beta_idxs)
         return det_dict
+
+    def create_det_sq(self, alpha_idxs, beta_idxs, idx):
+        r"""
+        From list of occupied alpha orbitals (alpha_idxs) and list of occupied beta orbitals (beta_idxs),
+        get the determinant in second quantisation
+        :param alpha_idxs:
+        :param beta idxs:
+        :return:
+        """
+        ket = [0] * (self.n_orbs * 2 + 1)
+        ket[0] = 1
+        for _, i in enumerate(beta_idxs):
+            create(i+1+self.n_orbs, ket)
+        for _, i in enumerate(alpha_idxs):
+            create(i+1, ket)
+        ket[0] = self.det_phase_factors[idx]
+        return ket
+
+    def form_dets_sq(self):
+        r"""
+        Create determinant strings in second quantisation
+        :return:
+        """
+        dets_sq = []
+        for idx in range(self.n_dets):
+            alpha_idxs = list(self.dets_orbrep[idx][0])
+            beta_idxs = list(self.dets_orbrep[idx][1])
+            dets_sq.append(self.create_det_sq(alpha_idxs, beta_idxs, idx))
+        return dets_sq
 
     def filter_csfs(self, all_csfs):
         r"""
@@ -225,20 +236,51 @@ class CSFConstructor:
             idx += len(c_vals[1])
         return csf_coeffs
 
-    def get_det(self, idx):
+    def update_coeffs(self, new_coeffs):
         r"""
-        Returns the orbitals in AO basis of Slater determinants
-        :param idx:
+        Updates MO coefficient matrices
         :return:
         """
-        state = []
-        alpha_idxs = list(self.det_dict[idx][0][0])
-        beta_idxs = list(self.det_dict[idx][0][1])
-        alpha = self.coeffs[:, alpha_idxs]
-        beta = self.coeffs[:, beta_idxs]
-        # We introduce a phase to the determinant. MOs are unique only up to a phase factor. We change the
-        # first to change the sign of the overall determinant.
-        alpha[:, 0] *= self.det_phase_factors[idx]
-        state.append(alpha)
-        state.append(beta)
-        return state
+        self.coeffs = new_coeffs
+
+    @staticmethod
+    def get_relevant_dets(dets, coeffs, thresh=1e-10):
+        r"""
+        Filters a list of determinants (in Second Quantised representation)
+        based on the coefficients. If coefficients are smaller than the given threshold, ignore
+        """
+        filtered_dets = []
+        filtered_coeffs = []
+        for i, coeff in enumerate(coeffs):
+            if np.isclose(coeff, 0, rtol=0, atol=thresh):
+                pass
+            else:
+                filtered_dets.append(dets[i])
+                filtered_coeffs.append(coeff)
+        return filtered_dets, filtered_coeffs
+
+    def get_csf_one_rdm(self, csf_idx, spinor=False):
+        r"""
+        Gets the 1-RDM (default to spatial MO basis, and NOT spin MO basis) for the CSF
+        :return:
+        """
+        dets, coeffs = self.get_relevant_dets(self.dets_sq, self.csf_coeffs[:, csf_idx])
+
+        spin_one_rdm = get_mc_one_rdm(dets, coeffs)
+        if spinor:
+            return spin_one_rdm
+        else:
+            return get_spatial_one_rdm(spin_one_rdm)
+
+    def get_csf_two_rdm(self, csf_idx, spinor=False):
+        r"""
+        Gets the 2-RDM (default to spatial MO basis, and NOT spin MO basis) for the CSF
+        :param spinor:
+        :return:
+        """
+        dets, coeffs = self.get_relevant_dets(self.dets_sq, self.csf_coeffs[:, csf_idx])
+        spin_two_rdm = get_ri_mc_two_rdm(dets, coeffs)
+        if spinor:
+            return spin_two_rdm
+        else:
+            return get_spatial_two_rdm(spin_two_rdm)
