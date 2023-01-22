@@ -251,7 +251,10 @@ class ConfigurationStateFunction:
         for d_key, d_val in self.det_dict.items():
             print("Det: ", d_val[2])
             print("CSF: ", self.csf)
-            csf_coeffs[d_key] = get_total_coupling_coefficient(d_val[2], self.csf)
+            if len(d_val[2]) != len(self.csf):
+                csf_coeffs[d_key] = 0
+            else:
+                csf_coeffs[d_key] = get_total_coupling_coefficient(d_val[2], self.csf)
         return csf_coeffs
 
     def get_csf_coeffs(self):
