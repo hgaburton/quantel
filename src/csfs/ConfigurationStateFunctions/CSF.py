@@ -38,7 +38,7 @@ class ConfigurationStateFunction:
         self.nact = len(act)
         self.core_orbs = self.coeffs[:, core]   # Core orbitals
         self.act_orbs = self.coeffs[:, act]     # Active orbitals
-        self.n_orbs = self.core_orbs + self.act_orbs  # Number of spatial orbitals used
+        self.n_orbs = self.ncore + self.nact  # Number of spatial orbitals used
         self.eff_coeffs = np.hstack([self.core_orbs, self.act_orbs])
 
         # Number of ways to arrange e in spatial orbs
@@ -51,7 +51,7 @@ class ConfigurationStateFunction:
         self.det_dict = self.form_det_dict()
         self.dets_sq = self.form_dets_sq()  # Determinants in Second Quantisation
         self.n_csfs = 0
-        self.csf = self.csf_from_g_coupling
+        self.csf = self.csf_from_g_coupling(g_coupling)
         self.csf_coeffs = self.get_specific_csf_coeffs()
 
     def get_coeffs(self, method):
@@ -186,7 +186,7 @@ class ConfigurationStateFunction:
                 csf.append(csf[i] + 0.5)
             else:   # rep == '-'
                 csf.append(csf[i] - 0.5)
-        assert np.allclose(csf[-1], mol.s, rtol=0, atol=1e-6)
+        assert np.allclose(csf[-1], self.s, rtol=0, atol=1e-6)
         return csf
 
     # def filter_csfs(self, all_csfs):
@@ -247,7 +247,10 @@ class ConfigurationStateFunction:
         :return:
         """
         csf_coeffs = np.zeros(self.n_dets)  # These are all the determinants possible (same orbital configurations)
+        print("Dict: ", self.det_dict)
         for d_key, d_val in self.det_dict.items():
+            print("Det: ", d_val[2])
+            print("CSF: ", self.csf)
             csf_coeffs[d_key] = get_total_coupling_coefficient(d_val[2], self.csf)
         return csf_coeffs
 
