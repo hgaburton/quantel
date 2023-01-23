@@ -32,13 +32,15 @@ class ConfigurationStateFunction:
         self.permutation = permutation
         self.coeffs = self.get_coeffs(method=self.mo_basis)
         self.hcore, self.eri = spatial_one_and_two_e_int(self.mol, self.coeffs)
+        self.enuc = mol.energy_nuc()
 
         # Get information about the orbitals used
         self.ncore = len(core)
         self.nact = len(act)
         self.core_orbs = self.coeffs[:, core]   # Core orbitals
         self.act_orbs = self.coeffs[:, act]     # Active orbitals
-        self.n_orbs = self.ncore + self.nact  # Number of spatial orbitals used
+        self.n_orbs = self.hcore.shape[0]  # Number of spatial orbitals
+        print(self.n_orbs)
         self.eff_coeffs = np.hstack([self.core_orbs, self.act_orbs])
 
         # Number of ways to arrange e in spatial orbs
@@ -83,8 +85,8 @@ class ConfigurationStateFunction:
         :return: List[Tuple, Tuple] of the alpha and beta electrons. e.g. [(0,1), (1,2)]
                  shows alpha electrons in 0th and 1st orbitals, beta electrons in 1st and 2nd orbitals
         """
-        alpha_act = list(itertools.combinations(np.arange(self.ncore, self.ncore + self.nact), self.n_alpha))
-        beta_act = list(itertools.combinations(np.arange(self.ncore, self.ncore + self.nact), self.n_beta))
+        alpha_act = list(itertools.combinations(np.arange(self.ncore, self.ncore + self.nact), self.n_alpha - self.ncore))
+        beta_act = list(itertools.combinations(np.arange(self.ncore, self.ncore + self.nact), self.n_beta - self.ncore))
         alpha_rep = []
         beta_rep = []
         for i, tup in enumerate(alpha_act):
@@ -247,10 +249,7 @@ class ConfigurationStateFunction:
         :return:
         """
         csf_coeffs = np.zeros(self.n_dets)  # These are all the determinants possible (same orbital configurations)
-        print("Dict: ", self.det_dict)
         for d_key, d_val in self.det_dict.items():
-            print("Det: ", d_val[2])
-            print("CSF: ", self.csf)
             if len(d_val[2]) != len(self.csf):
                 csf_coeffs[d_key] = 0
             else:
@@ -306,28 +305,34 @@ class ConfigurationStateFunction:
                 filtered_coeffs.append(coeff)
         return filtered_dets, filtered_coeffs
 
-    def get_csf_one_rdm(self, csf_idx, spinor=False):
+    def get_csf_one_rdm(self, spinor=False):
         r"""
         Gets the 1-RDM (default to spatial MO basis, and NOT spin MO basis) for the CSF
         :return:
         """
-        dets, coeffs = self.get_relevant_dets(self.dets_sq, self.csf_coeffs[:, csf_idx])
-
+        dets, coeffs = self.get_relevant_dets(self.dets_sq, self.csf_coeffs)
         spin_one_rdm = get_mc_one_rdm(dets, coeffs)
         if spinor:
             return spin_one_rdm
         else:
             return get_spatial_one_rdm(spin_one_rdm)
 
-    def get_csf_two_rdm(self, csf_idx, spinor=False):
+    def get_csf_two_rdm(self, spinor=False):
         r"""
         Gets the 2-RDM (default to spatial MO basis, and NOT spin MO basis) for the CSF
         :param spinor:
         :return:
         """
-        dets, coeffs = self.get_relevant_dets(self.dets_sq, self.csf_coeffs[:, csf_idx])
+        dets, coeffs = self.get_relevant_dets(self.dets_sq, self.csf_coeffs)
         spin_two_rdm = get_ri_mc_two_rdm(dets, coeffs)
         if spinor:
             return spin_two_rdm
         else:
             return get_spatial_two_rdm(spin_two_rdm)
+
+    def get_csf_energy(self):
+        rdm1 = self.get_csf_one_rdm()
+        rdm2 = self.get_csf_two_rdm()
+        e1 = np.einsum("pq,pq", self.hcore, rdm1)
+        e2 = 0.5 * np.einsum("pqrs,pqrs", self.eri, rdm2)
+        return e1 + e2 + self.enuc
