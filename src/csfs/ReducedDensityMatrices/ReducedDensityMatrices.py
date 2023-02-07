@@ -178,8 +178,8 @@ def get_ri_two_rdm(bra, ket):
     for k, ri_ket in enumerate(ri_kets):
         bra_one_rdm = get_one_rdm(copy.deepcopy(bra), copy.deepcopy(ri_ket))
         ket_one_rdm = get_one_rdm(copy.deepcopy(ri_ket), copy.deepcopy(ket))
-        two_rdm += np.einsum("pq,rs->pqrs", bra_one_rdm, ket_one_rdm)
-    two_rdm -= np.einsum("ps,qr->pqrs", get_one_rdm(bra, ket), np.identity(n_dim))
+        two_rdm += np.einsum("pq,rs->pqrs", bra_one_rdm, ket_one_rdm, optimize="optimal")
+    two_rdm -= np.einsum("ps,qr->pqrs", get_one_rdm(bra, ket), np.identity(n_dim), optimize="optimal")
     return two_rdm
 
 

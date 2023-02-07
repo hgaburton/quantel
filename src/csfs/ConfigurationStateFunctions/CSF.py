@@ -78,6 +78,14 @@ class ConfigurationStateFunction:
                 return mf.mo_coeff
             else:
                 return mf.mo_coeff[:, self.permutation]
+        if method == 'custom':
+            print("Using custom orbitals")
+            coeffs = np.load("custom_mo.npy")
+            print(coeffs)
+            if self.permutation is None:
+                return coeffs
+            else:
+                return coeffs[:, self.permutation]
 
     def form_dets_orbrep(self):
         r"""

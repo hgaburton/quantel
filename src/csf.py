@@ -12,11 +12,13 @@ from utils import delta_kron, orthogonalise
 
 
 class csf():
-    def __init__(self, mol, spin, ncas, nelecas, csf_idx: List[int],
+    def __init__(self, mol, spin, ncas, nelecas, core: List[int], act: List[int], g_coupling: str = None,
                  permutation: List[int] = None, mo_basis: 'str' = 'site', ncore=None):
         self.mol = mol
         self.spin = spin
-        self.csf_idx = csf_idx
+        self.core = core
+        self.act = act
+        self.g_coupling = g_coupling
         self.permutation = permutation
         self.mo_basis = mo_basis
         self.nelec = mol.nelec
@@ -44,7 +46,8 @@ class csf():
         self.get_ao_integrals()
 
         # Get information of CSFs
-        self.csf_info = ConfigurationStateFunction(self.mol, self.spin, self.permutation, mo_basis=self.mo_basis)
+        self.csf_info = ConfigurationStateFunction(self.mol, self.spin, self.core, self.act,
+                                                   self.g_coupling, self.permutation, mo_basis=self.mo_basis)
 
         # Get number of determinants (which is the dimension of the problem)
         self.nDet = self.csf_info.n_dets
@@ -52,7 +55,7 @@ class csf():
         # Save mapping indices for unique orbital rotations
         self.frozen = None
         self.rot_idx = self.uniq_var_indices(self.norb, self.frozen)
-        # print("rot_idx", self.rot_idx)
+        #print("rot_idx", self.rot_idx)
         self.nrot = np.sum(self.rot_idx)
 
         # Dimensions of problem
@@ -184,11 +187,9 @@ class csf():
         self.h1eff, self.energy_core = self.get_h1eff()
         self.h2eff = self.get_h2eff()
         self.h2eff = ao2mo.restore(1, self.h2eff, self.ncas)
-
         self.csf_info.update_coeffs(self.mo_coeff)
         # Reduced density matrices
         self.dm1_cas, self.dm2_cas = self.get_csfrdm_12(self.csf_info)
-
         # Transform 1e integrals
         self.h1e_mo = reduce(np.dot, (self.mo_coeff.T, self.hcore, self.mo_coeff))
 
@@ -259,8 +260,8 @@ class csf():
         We first form a new CSFConstructor object with new coeffs
         :return:
         """
-        dm1_csf = csfobj.get_csf_one_rdm(self.csf_idx)
-        dm2_csf = csfobj.get_csf_two_rdm(self.csf_idx)
+        dm1_csf = csfobj.get_csf_one_rdm()
+        dm2_csf = csfobj.get_csf_two_rdm()
         return dm1_csf, dm2_csf
 
     def get_fock_matrices(self):
@@ -271,6 +272,9 @@ class csf():
         vj = np.empty((self.nmo, self.nmo))
         vk = np.empty((self.nmo, self.nmo))
         for i in range(self.nmo):
+            #print("RDM1 shape: ", self.dm1_cas.shape)
+            #print("ppoo contracted shape: ", self.ppoo[i, :, ncore:, ncore:].shape)
+            #print("ppoo shape: ", self.ppoo.shape)
             vj[i] = np.einsum('ij,qij->q', self.dm1_cas, self.ppoo[i, :, ncore:, ncore:], optimize="optimal")
             vk[i] = np.einsum('ij,iqj->q', self.dm1_cas, self.popo[i, ncore:, :, ncore:], optimize="optimal")
         fock = self.h1e_mo + self.vhf_c + vj - vk * 0.5
@@ -595,12 +599,9 @@ class csf():
             A True element means that this rotation should be taken into
             account during the optimization. Taken from pySCF.mcscf.casscf '''
         nocc = self.ncore + self.ncas
-        print("nocc: ", nocc)
-        print("ncore: ", self.ncore)
-        print("ncas: ", self.ncas)
         mask = np.zeros((self.norb, self.norb), dtype=bool)
         # mask[self.ncore:nocc, :self.ncore] = True  # Active-Core rotations
-        mask[self.ncore:nocc, :nocc] = True  # Active-Core rotations
+        mask[self.ncore:nocc, :nocc] = True  # Active-Core and Active-Active rotations
         mask[nocc:, :nocc] = True  # Virtual-Core and Virtual-Active rotations
         if frozen is not None:
             if isinstance(frozen, (int, np.integer)):
