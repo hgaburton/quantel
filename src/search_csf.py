@@ -22,7 +22,7 @@ def random_rot(n, lmin, lmax):
 ##### Main #####
 if __name__ == '__main__':
 
-    np.set_printoptions(linewidth=10000)
+    np.set_printoptions(linewidth=10000, precision=10, suppress=True)
 
 
     def read_config(file):
@@ -94,7 +94,7 @@ if __name__ == '__main__':
     ndet = mycsf.nDet
 
     # Get inital coefficients and CI vectors
-    ref_mo = mycsf.mo_coeff.copy()
+    ref_mo = mycsf.csf_info.coeffs.copy()
     ref_ci = np.identity(ndet)
 
     cas_list = []
@@ -105,7 +105,10 @@ if __name__ == '__main__':
         mo_guess = ref_mo.dot(random_rot(nmo, -np.pi, np.pi))
         #ci_guess = ref_ci.dot(random_rot(ndet, -np.pi, np.pi))
         # Set orbital coefficients
+        del mycsf
+        mycsf = csf(mol, spin, cas[0], cas[1], core, active, g_coupling, permutation, mo_basis)
         mycsf.initialise(mo_guess)
+        print(mycsf.mo_coeff)
 
         # Test
         #num_hess = mycsf.get_numerical_hessian(eps=1e-4)
@@ -124,18 +127,32 @@ if __name__ == '__main__':
         if not opt.run(mycsf, thresh=thresh, maxit=500, index=Hind):
             continue
         hindices = mycsf.get_hessian_index()
+ 
+        #hess = mycsf.hessian
+        #e,v = np.linalg.eigh(hess)
+        #print(mycsf.mo_coeff)
+        #print(e)
+        #print(v)
+        #X = np.zeros((mycsf.ncas,mycsf.ncas))
+        #X[mycsf.rot_idx] = v[:,0]
+        #print(X) 
+        # 
+        print(np.linalg.eigvalsh(mycsf.hessian))
+
+
         pushoff = 0.01
         pushit = 0
-        while hindices[0] != Hind and pushit < 5:
+        while hindices[0] != Hind and pushit < 0:
             # Try to perturb along relevant number of downhill directions
             mycsf.pushoff(1, pushoff)
             opt.run(mycsf, thresh=thresh, maxit=500, index=Hind)
             hindices = mycsf.get_hessian_index()
             pushoff *= 2
             pushit += 1
+        continue
         np.savetxt('h4.mo_coeff', mycsf.mo_coeff, fmt="% 20.16f")
-        if hindices[0] != Hind:
-            continue
+        #if hindices[0] != Hind:
+        #    continue
         #mycsf.canonicalize_()
         print("This part of the code is reached")
         # Get the distances
@@ -148,10 +165,10 @@ if __name__ == '__main__':
             count += 1
             tag = "{:04d}".format(count)
             np.savetxt(tag + '.mo_coeff', mycsf.mo_coeff, fmt="% 20.16f")
-            np.savetxt(tag + '.mat_ci', mycsf.mat_ci, fmt="% 20.16f")
+            #np.savetxt(tag + '.mat_ci', mycsf.mat_ci, fmt="% 20.16f")
             np.savetxt(tag + '.energy', np.array([
-                [mycsf.energy, hindices[0], hindices[1], mycas.s2]]), fmt="% 18.12f % 5d % 5d % 12.6f")
+                [mycsf.energy, hindices[0], hindices[1], 0.0]]), fmt="% 18.12f % 5d % 5d % 12.6f")
 
             # Deallocate integrals to reduce memory footprint
-            #    mycas.deallocate()
+            #    mycsf.deallocate()
             cas_list.append(mycsf.copy())

@@ -55,7 +55,6 @@ class csf():
         # Save mapping indices for unique orbital rotations
         self.frozen = None
         self.rot_idx = self.uniq_var_indices(self.norb, self.frozen)
-        #print("rot_idx", self.rot_idx)
         self.nrot = np.sum(self.rot_idx)
 
         # Dimensions of problem
@@ -63,8 +62,9 @@ class csf():
 
     def copy(self):
         # Return a copy of the current object
-        newcsf = csf(self.mol, self.spin, self.ncas, self.nelecas, self.csf_idx,
-                     self.permutation, self.mo_basis, self.ncore)
+        newcsf = csf(self.mol, self.spin, self.ncas, self.nelecas, self.core, self.act, self.g_coupling, self.permutation, self.mo_basis)
+        #newcsf = csf(self.mol, self.spin, self.ncas, self.nelecas, self.csf_idx,
+        #             self.permutation, self.mo_basis, self.ncore)
         newcsf.initialise(self.mo_coeff, integrals=False)
         return newcsf
 
@@ -92,8 +92,10 @@ class csf():
 
     def initialise(self, mo_guess=None, integrals=True):
         # Save orbital coefficients
-        # mo_guess = orthogonalise(mo_guess, self.ovlp)
-        self.mo_coeff = self.csf_info.coeffs
+        if(not(mo_guess is not None)): mo_guess = self.csf_info.coeffs.copy()
+        mo_guess = orthogonalise(mo_guess, self.ovlp)
+        self.mo_coeff = mo_guess.copy()
+        #self.mo_coeff = self.csf_info.coeffs
         # print("MO coeff: ", self.mo_coeff)
         self.nmo = self.mo_coeff.shape[1]
 
@@ -117,12 +119,12 @@ class csf():
              one-el integrals, two-el integrals, 1- and 2-RDM '''
         E = self.energy_core
         Ecore = E
-        print("Ecore: ", Ecore)
+        #print("Ecore: ", Ecore)
         E += np.einsum('pq,pq', self.h1eff, self.dm1_cas, optimize="optimal")
         onee = E - Ecore
-        print("1e: ", onee)
+        #print("1e: ", onee)
         E += 0.5 * np.einsum('pqrs,pqrs', self.h2eff, self.dm2_cas, optimize="optimal")
-        print("2e: ", E - Ecore - onee)
+        #print("2e: ", E - Ecore - onee)
         return E
 
     @property
@@ -600,9 +602,11 @@ class csf():
             account during the optimization. Taken from pySCF.mcscf.casscf '''
         nocc = self.ncore + self.ncas
         mask = np.zeros((self.norb, self.norb), dtype=bool)
-        # mask[self.ncore:nocc, :self.ncore] = True  # Active-Core rotations
-        mask[self.ncore:nocc, :nocc] = True  # Active-Core and Active-Active rotations
-        mask[nocc:, :nocc] = True  # Virtual-Core and Virtual-Active rotations
+        mask[self.ncore:nocc, :self.ncore] = True  # Active-Core rotations
+        mask[nocc:, :nocc] = True                  # Virtual-Core and Virtual-Active rotations
+        mask[self.ncore:nocc, self.ncore:nocc] = np.tril(np.ones((self.ncas,self.ncas),dtype=bool),k=-1)  # Active-Core and Active-Active rotations
+        mask[1,0] = False
+        mask[3,2] = False
         if frozen is not None:
             if isinstance(frozen, (int, np.integer)):
                 mask[:frozen] = mask[:, :frozen] = False
