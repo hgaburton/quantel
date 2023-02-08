@@ -103,12 +103,10 @@ if __name__ == '__main__':
     for itest in range(nsample):
         # Randomly perturb CI and MO coefficients
         mo_guess = ref_mo.dot(random_rot(nmo, -np.pi, np.pi))
-        #ci_guess = ref_ci.dot(random_rot(ndet, -np.pi, np.pi))
         # Set orbital coefficients
         del mycsf
         mycsf = csf(mol, spin, cas[0], cas[1], core, active, g_coupling, permutation, mo_basis)
         mycsf.initialise(mo_guess)
-        print(mycsf.mo_coeff)
 
         # Test
         #num_hess = mycsf.get_numerical_hessian(eps=1e-4)
@@ -137,7 +135,7 @@ if __name__ == '__main__':
         #X[mycsf.rot_idx] = v[:,0]
         #print(X) 
         # 
-        print(np.linalg.eigvalsh(mycsf.hessian))
+        #print(np.linalg.eigvalsh(mycsf.hessian))
 
 
         pushoff = 0.01
@@ -149,26 +147,27 @@ if __name__ == '__main__':
             hindices = mycsf.get_hessian_index()
             pushoff *= 2
             pushit += 1
-        continue
-        np.savetxt('h4.mo_coeff', mycsf.mo_coeff, fmt="% 20.16f")
-        #if hindices[0] != Hind:
-        #    continue
-        #mycsf.canonicalize_()
-        print("This part of the code is reached")
+        #continue
+        if hindices[0] != Hind:
+            continue
         # Get the distances
         new = True
         for othercas in cas_list:
-            if 1.0 - abs(mycsf.overlap(othercas)) < 1e-8:
+            print("Overlap: ", abs(mycsf.overlap(othercas.csf_info)))
+            if 1.0 - abs(mycsf.overlap(othercas.csf_info)) < 1e-8:
                 new = False
                 break
         if new:
+            print("New CSF found")
             count += 1
             tag = "{:04d}".format(count)
             np.savetxt(tag + '.mo_coeff', mycsf.mo_coeff, fmt="% 20.16f")
-            #np.savetxt(tag + '.mat_ci', mycsf.mat_ci, fmt="% 20.16f")
             np.savetxt(tag + '.energy', np.array([
                 [mycsf.energy, hindices[0], hindices[1], 0.0]]), fmt="% 18.12f % 5d % 5d % 12.6f")
 
             # Deallocate integrals to reduce memory footprint
             #    mycsf.deallocate()
             cas_list.append(mycsf.copy())
+    for i, csf in enumerate(cas_list):
+        print(csf.csf_info.get_csf_one_rdm_aobas())
+

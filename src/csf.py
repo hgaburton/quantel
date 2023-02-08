@@ -8,6 +8,7 @@ from functools import reduce
 from typing import List
 from pyscf import scf, fci, __config__, ao2mo, lib, mcscf
 from csfs.ConfigurationStateFunctions.CSF import ConfigurationStateFunction
+from csfs.Operators.Operators import overlap_diffbas
 from utils import delta_kron, orthogonalise
 
 
@@ -63,10 +64,29 @@ class csf():
     def copy(self):
         # Return a copy of the current object
         newcsf = csf(self.mol, self.spin, self.ncas, self.nelecas, self.core, self.act, self.g_coupling, self.permutation, self.mo_basis)
-        #newcsf = csf(self.mol, self.spin, self.ncas, self.nelecas, self.csf_idx,
-        #             self.permutation, self.mo_basis, self.ncore)
         newcsf.initialise(self.mo_coeff, integrals=False)
         return newcsf
+
+    def overlap(self, ref: ConfigurationStateFunction):
+        r"""
+        Determines the overlap between the current CSF and a reference CSF.
+
+        :param ref: A ConfigurationStateFunction object which we are comparing to
+        """
+        csf_coeffs = self.csf_info.csf_coeffs
+        ref_coeffs = ref.csf_coeffs
+        cross_ovlp = np.einsum("ip,ij,jq->pq", self.csf_info.coeffs, self.ovlp, ref.coeffs)
+        cross_overlap_mat = np.hstack([np.vstack([cross_ovlp, np.zeros(cross_ovlp.shape)]),
+                                       np.vstack([np.zeros(cross_ovlp.shape), cross_ovlp])])
+        total_o = 0
+        for i, csf_coeff in enumerate(csf_coeffs):
+            for j, ref_coeff in enumerate(ref_coeffs):
+                if np.isclose(csf_coeff, 0, rtol=0, atol=1e-8) or np.isclose(ref_coeff, 0, rtol=0, atol=1e-8):
+                    pass    # We avoid doing needless computation
+                else:
+                    o = overlap_diffbas(self.csf_info.dets_sq[i], ref.dets_sq[j], cross_overlap_mat)
+                    total_o += o * csf_coeff * ref_coeff
+        return total_o
 
     def sanity_check(self):
         '''Need to be run at the start of the kernel to verify that the number of
@@ -95,8 +115,6 @@ class csf():
         if(not(mo_guess is not None)): mo_guess = self.csf_info.coeffs.copy()
         mo_guess = orthogonalise(mo_guess, self.ovlp)
         self.mo_coeff = mo_guess.copy()
-        #self.mo_coeff = self.csf_info.coeffs
-        # print("MO coeff: ", self.mo_coeff)
         self.nmo = self.mo_coeff.shape[1]
 
         # Initialise integrals
@@ -119,12 +137,9 @@ class csf():
              one-el integrals, two-el integrals, 1- and 2-RDM '''
         E = self.energy_core
         Ecore = E
-        #print("Ecore: ", Ecore)
         E += np.einsum('pq,pq', self.h1eff, self.dm1_cas, optimize="optimal")
         onee = E - Ecore
-        #print("1e: ", onee)
         E += 0.5 * np.einsum('pqrs,pqrs', self.h2eff, self.dm2_cas, optimize="optimal")
-        #print("2e: ", E - Ecore - onee)
         return E
 
     @property
@@ -224,7 +239,7 @@ class csf():
         self.mo_coeff = np.dot(self.mo_coeff, scipy.linalg.expm(orb_step - orb_step.T))
 
     def get_h1eff(self):
-        '''CAS sapce one-electron hamiltonian
+        '''CAS space one-electron hamiltonian
 
         Returns:
             A tuple, the first is the effective one-electron hamiltonian defined in CAS space,
@@ -605,8 +620,8 @@ class csf():
         mask[self.ncore:nocc, :self.ncore] = True  # Active-Core rotations
         mask[nocc:, :nocc] = True                  # Virtual-Core and Virtual-Active rotations
         mask[self.ncore:nocc, self.ncore:nocc] = np.tril(np.ones((self.ncas,self.ncas),dtype=bool),k=-1)  # Active-Core and Active-Active rotations
-        mask[1,0] = False
-        mask[3,2] = False
+        #mask[1,0] = False
+        #mask[3,2] = False
         if frozen is not None:
             if isinstance(frozen, (int, np.integer)):
                 mask[:frozen] = mask[:, :frozen] = False
@@ -726,70 +741,3 @@ class csf():
                 if (i != j): Hess[j, i] = Hess[i, j]
 
         return Hess
-
-
-##### Main #####
-if __name__ == '__main__':
-    import sys, re, os
-    from opt.newton_raphson import NewtonRaphson
-    from pyscf import gto
-
-    np.set_printoptions(linewidth=10000)
-
-
-    def read_config(file):
-        f = open(file, "r")
-        lines = f.read().splitlines()
-        basis, charge, spin, frozen, cas, grid_option, Hind, maxit, \
-        csf_idx, permutation, mo_basis = 'sto-3g', 0, 0, 0, (0, 0), 1000, None, 1000, None, None, None
-        for line in lines:
-            if re.match('basis', line) is not None:
-                basis = str(re.split(r'\s', line)[-1])
-            elif re.match('charge', line) is not None:
-                charge = int(re.split(r'\s', line)[-1])
-            elif re.match('spin', line) is not None:
-                spin = int(re.split(r'\s', line)[-1])
-            elif re.match('frozen', line) is not None:
-                frozen = int(re.split(r'\s', line)[-1])
-            elif re.match('seed', line) is not None:
-                np.random.seed(int(line.split()[-1]))
-            elif re.match('index', line) is not None:
-                Hind = int(line.split()[-1])
-            elif re.match('maxit', line) is not None:
-                maxit = int(line.split()[-1])
-            elif re.match('cas', line) is not None:
-                tmp = list(re.split(r'\s', line)[-1])
-                cas = (int(tmp[1]), int(tmp[3]))
-            elif re.match('grid', line) is not None:
-                if re.split(r'\s', line)[-1] == 'full':
-                    grid_option = re.split(r'\s', line)[-1]
-                else:
-                    grid_option = int(re.split(r'\s', line)[-1])
-            elif re.match('csf_idx', line) is not None:
-                csf_idx = [int(x) for x in re.split(r'\s', line)[1:]]
-            elif re.match('permutation', line) is not None:
-                permutation = [int(x) for x in re.split(r'\s', line)[1:]]
-            elif re.match('mo_basis', line) is not None:
-                mo_basis = re.split(r'\s', line)[-1]
-        return basis, charge, spin, frozen, cas, grid_option, Hind, maxit, csf_idx, permutation, mo_basis
-
-
-    mol = gto.Mole(symmetry=False, unit='A')
-    mol.atom = sys.argv[1]
-    basis, charge, spin, frozen, cas, grid_option, Hind, maxit, csf_idx, permutation, mo_basis = read_config(
-        sys.argv[2])
-    mol.basis = basis
-    mol.charge = charge
-    mol.spin = spin
-    mol.build()
-
-    # Initialise CSF object
-    mycsf = csf(mol, spin, cas[0], cas[1], csf_idx, permutation, mo_basis)
-
-    # Set orbital coefficients
-    mycsf.initialise()
-    print(mycsf.gradient)
-    # TODO: Check NewtonRaphson taking in arguments.
-    nr = NewtonRaphson()
-    nr.run(mycsf, index=Hind)
-    print("  Final energy = {: 16.10f}".format(mycsf.energy))

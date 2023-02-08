@@ -1,6 +1,7 @@
 r"""
 Operators are assembled here
 """
+import copy
 import numpy as np
 
 
@@ -77,3 +78,21 @@ def overlap(bra, ket):
         return 1
     else:
         return 0
+
+
+def overlap_diffbas(bra, ket, cross_overlap_mat):
+    r"""
+    Finds the overlap between bra and ket where the underlying MO representations
+    are DIFFERENT
+    :param bra:
+    :param ket:
+    """
+    if type(ket) == int:
+        if ket == 0:
+            return 0
+    if type(bra) == int:
+        if bra == 0:
+            return 0
+    arr_bra = copy.deepcopy(np.array(bra[1:]))
+    arr_ket = copy.deepcopy(np.array(ket[1:]))
+    return np.linalg.det(np.einsum("p,pq,q->pq", arr_bra, cross_overlap_mat, arr_ket))

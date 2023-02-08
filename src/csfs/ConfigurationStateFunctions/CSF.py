@@ -9,6 +9,7 @@ from pyscf import gto, scf
 from typing import List
 from scipy import linalg
 from csfs.Auxiliary.SpatialBasis import spatial_one_and_two_e_int
+from csfs.Auxiliary.SpinorBasis import spatial_to_spin_orbs
 from csfs.ConfigurationStateFunctions.CouplingCoefficients import get_total_coupling_coefficient
 from csfs.Operators.Operators import create
 from csfs.ConfigurationStateFunctions.PermutationTools import get_phase_factor
@@ -30,18 +31,22 @@ class ConfigurationStateFunction:
         self.n_alpha = (mol.nelectron + 2 * mol.spin) // 2  # Number of alpha electrons
         self.n_beta = (mol.nelectron - 2 * mol.spin) // 2  # Number of beta electrons
         self.permutation = permutation
-        self.coeffs = self.get_coeffs(method=self.mo_basis)
-        self.hcore, self.eri = spatial_one_and_two_e_int(self.mol, self.coeffs)
-        self.enuc = mol.energy_nuc()
+        coeffs = self.get_coeffs(method=self.mo_basis)
+        #self.hcore, self.eri = spatial_one_and_two_e_int(self.mol, self.coeffs)
+        #self.enuc = mol.energy_nuc()
 
         # Get information about the orbitals used
         self.ncore = len(core)
         self.nact = len(act)
-        self.core_orbs = self.coeffs[:, core]   # Core orbitals
-        self.act_orbs = self.coeffs[:, act]     # Active orbitals
-        self.n_orbs = self.hcore.shape[0]  # Number of spatial orbitals
-        print(self.n_orbs)
-        self.eff_coeffs = np.hstack([self.core_orbs, self.act_orbs])
+        self.core_orbs = coeffs[:, core]   # Core orbitals
+        self.act_orbs = coeffs[:, act]    # Active orbitals
+        if self.permutation is not None:
+            self.act_orbs = self.act_orbs[:, permutation]
+        self.n_orbs = self.ncore + self.nact  # Number of spatial orbitals
+        self.coeffs = np.hstack([self.core_orbs, self.act_orbs])
+
+        self.hcore, self.eri = spatial_one_and_two_e_int(self.mol, self.coeffs)
+        self.enuc = mol.energy_nuc()
 
         # Number of ways to arrange e in spatial orbs
         # self.n_dets = comb(self.n_orbs, self.n_alpha) * comb(self.n_orbs, self.n_beta)
@@ -66,26 +71,16 @@ class ConfigurationStateFunction:
         """
         if method == 'site':
             overlap = self.mol.intor('int1e_ovlp_sph')
-            if self.permutation is None:
-                return linalg.sqrtm(np.linalg.inv(overlap))
-            else:
-                return linalg.sqrtm(np.linalg.inv(overlap))[:, self.permutation]
+            return linalg.sqrtm(np.linalg.inv(overlap))
         if method == 'hf':
             # Runs RHF calculation
             mf = scf.rhf.RHF(self.mol)
             mf.scf()
-            if self.permutation is None:
-                return mf.mo_coeff
-            else:
-                return mf.mo_coeff[:, self.permutation]
+            return mf.mo_coeff
         if method == 'custom':
             print("Using custom orbitals")
             coeffs = np.load("custom_mo.npy")
-            print(coeffs)
-            if self.permutation is None:
-                return coeffs
-            else:
-                return coeffs[:, self.permutation]
+            return coeffs
 
     def form_dets_orbrep(self):
         r"""
@@ -344,3 +339,15 @@ class ConfigurationStateFunction:
         e1 = np.einsum("pq,pq", self.hcore, rdm1)
         e2 = 0.5 * np.einsum("pqrs,pqrs", self.eri, rdm2)
         return e1 + e2 + self.enuc
+
+
+    def get_csf_one_rdm_aobas(self, spinor=False):
+        r"""
+        Gets the 1-RDM in AO basis.
+        """
+        one_rdm = self.get_csf_one_rdm(spinor)
+        if spinor:
+            spin_coeffs = spatial_to_spin_orbs(self.coeffs, self.coeffs)
+            return np.einsum("ip,pq,jq->ij", spin_coeffs, one_rdm, spin_coeffs, optimize="optimal")
+        else:
+            return np.einsum("ip,pq,jq->ij", self.coeffs, one_rdm, self.coeffs, optimize="optimal")
