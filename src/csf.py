@@ -603,6 +603,24 @@ class csf():
         test = mcscf.casci.cas_natorb(self, mo_coeff, ci, eris, sort, casdm1, verbose, True)
         return test
 
+    def edit_mask_by_gcoupling(self, mask):
+        r"""
+        This function looks at the genealogical coupling scheme and modifies a given mask.
+        The mask restricts the number of free parameters.
+
+        The algorithm works by looking at each column and traversing downwards the columns.
+        """
+        n_dim = mask.shape[0]
+        g_coupling_arr = list(self.g_coupling)
+        for i, gfunc in enumerate(g_coupling_arr):    # This is for the columns
+            for j in range(i+1, n_dim):    # This is for the rows
+                if gfunc == g_coupling_arr[j]:
+                    mask[j,i] = False
+                else:
+                    break
+        return mask
+
+
     def uniq_var_indices(self, nmo, frozen):
         ''' This function creates a matrix of boolean of size (norb,norb).
             A True element means that this rotation should be taken into
@@ -614,6 +632,7 @@ class csf():
         mask[self.ncore:nocc, self.ncore:nocc] = np.tril(np.ones((self.ncas,self.ncas),dtype=bool),k=-1)  # Active-Core and Active-Active rotations
         #mask[1,0] = False
         #mask[3,2] = False
+        mask = self.edit_mask_by_gcoupling(mask)    # Make use of genealogical coupling to remove degrees of freedom
         if frozen is not None:
             if isinstance(frozen, (int, np.integer)):
                 mask[:frozen] = mask[:, :frozen] = False
