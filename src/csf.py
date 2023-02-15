@@ -8,7 +8,7 @@ from functools import reduce
 from typing import List
 from pyscf import scf, fci, __config__, ao2mo, lib, mcscf
 from csfs.ConfigurationStateFunctions.CSF import ConfigurationStateFunction
-from csfs.Operators.Operators import overlap_diffbas
+from csfs.Operators.Operators import get_generic_no_overlap
 from utils import delta_kron, orthogonalise
 
 
@@ -67,26 +67,18 @@ class csf():
         newcsf.initialise(self.mo_coeff, integrals=False)
         return newcsf
 
-    def overlap(self, ref: ConfigurationStateFunction):
+    def overlap(self, ref):
         r"""
         Determines the overlap between the current CSF and a reference CSF.
 
         :param ref: A ConfigurationStateFunction object which we are comparing to
         """
         csf_coeffs = self.csf_info.csf_coeffs
-        ref_coeffs = ref.csf_coeffs
-        cross_ovlp = np.einsum("ip,ij,jq->pq", self.csf_info.coeffs, self.ovlp, ref.coeffs)
-        cross_overlap_mat = np.hstack([np.vstack([cross_ovlp, np.zeros(cross_ovlp.shape)]),
-                                       np.vstack([np.zeros(cross_ovlp.shape), cross_ovlp])])
-        total_o = 0
-        for i, csf_coeff in enumerate(csf_coeffs):
-            for j, ref_coeff in enumerate(ref_coeffs):
-                if np.isclose(csf_coeff, 0, rtol=0, atol=1e-8) or np.isclose(ref_coeff, 0, rtol=0, atol=1e-8):
-                    pass    # We avoid doing needless computation
-                else:
-                    o = overlap_diffbas(self.csf_info.dets_sq[i], ref.dets_sq[j], cross_overlap_mat)
-                    total_o += o * csf_coeff * ref_coeff
-        return total_o
+        ref_coeffs = ref.csf_info.csf_coeffs
+        smo = np.einsum("ip,ij,jq->pq", self.mo_coeff, self.ovlp, ref.mo_coeff)
+        cross_overlap_mat = scipy.linalg.block_diag(smo, smo)
+        return get_generic_no_overlap(self.csf_info.dets_sq, ref.csf_info.dets_sq, csf_coeffs, ref_coeffs,
+                                      cross_overlap_mat)
 
     def sanity_check(self):
         '''Need to be run at the start of the kernel to verify that the number of

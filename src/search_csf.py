@@ -153,8 +153,9 @@ if __name__ == '__main__':
         # Get the distances
         new = True
         for othercas in cas_list:
-            print("Overlap: ", abs(mycsf.overlap(othercas.csf_info)))
-            if 1.0 - abs(mycsf.overlap(othercas.csf_info)) < 1e-8:
+            o = abs(mycsf.overlap(othercas))
+            print("Overlap: ", o)
+            if abs(1.0 - o) < 1e-8:
                 new = False
                 break
         if new:
@@ -170,4 +171,4 @@ if __name__ == '__main__':
             cas_list.append(mycsf.copy())
     for i, csf in enumerate(cas_list):
         print(csf.csf_info.get_csf_one_rdm_aobas())
-
+        

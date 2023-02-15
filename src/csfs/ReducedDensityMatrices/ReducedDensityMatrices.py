@@ -49,7 +49,7 @@ def get_one_rdm(bra, ket):
                 assert (mod_ket == 0 or bra == 0) #  Just to be safe, we assert it
                 one_rdm[p][q] = 0
             else:
-                one_rdm[p][q] = overlap(bra, mod_ket) * mod_ket[0] * bra[0]
+                one_rdm[p][q] = overlap(bra, mod_ket)
     return one_rdm
 
 
@@ -79,7 +79,7 @@ def get_two_rdm(bra, ket):
                         assert mod_ket == 0
                         two_rdm[p][q][r][s] = 0
                     else:
-                        two_rdm[p][q][r][s] = overlap(bra, mod_ket) * mod_ket[0] * bra[0]
+                        two_rdm[p][q][r][s] = overlap(bra, mod_ket)
     return two_rdm
 
 

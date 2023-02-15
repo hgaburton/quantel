@@ -1,7 +1,6 @@
 r"""
 Operators are assembled here
 """
-import copy
 import numpy as np
 
 
@@ -75,17 +74,36 @@ def overlap(bra, ket):
         if bra == 0:
             return 0
     if all(x == y for x, y in zip(bra[1:], ket[1:])):
-        return 1
+        return 1 * bra[0] * ket[0]
     else:
         return 0
 
 
-def overlap_diffbas(bra, ket, cross_overlap_mat):
+def get_generic_overlap(bras, kets, bra_coeffs, ket_coeffs):
     r"""
-    Finds the overlap between bra and ket where the underlying MO representations
-    are DIFFERENT
-    :param bra:
-    :param ket:
+    Get generic overlap between two linear combinations
+    :param bras:
+    :param kets:
+    :param bra_coeffs:
+    :param ket_coeffs: 
+    :return:
+    """
+    o = 0
+    for i, bra_coeff in enumerate(bra_coeffs):
+        if np.isclose(bra_coeff, 0, rtol=0, atol=1e-8):
+            pass
+        else:
+            for j, ket_coeff in enumerate(ket_coeffs):
+                if np.isclose(ket_coeff, 0, rtol=0, atol=1e-8):
+                    pass
+                else:
+                    o += bra_coeff * ket_coeff * overlap(bras[i], kets[j])
+    return o
+
+
+def get_no_overlap(bra, ket, cross_overlap_matrix):
+    r"""
+    Calculates the non-orthogonal overlap of a bra and ket
     """
     if type(ket) == int:
         if ket == 0:
@@ -93,6 +111,33 @@ def overlap_diffbas(bra, ket, cross_overlap_mat):
     if type(bra) == int:
         if bra == 0:
             return 0
-    arr_bra = copy.deepcopy(np.array(bra[1:]))
-    arr_ket = copy.deepcopy(np.array(ket[1:]))
-    return np.linalg.det(np.einsum("p,pq,q->pq", arr_bra, cross_overlap_mat, arr_ket))
+    if sum(bra[1:]) != sum(ket[1:]):  # Different electron numbers
+        return 0
+    bra_idx = np.nonzero(bra[1:])[0]
+    ket_idx = np.nonzero(ket[1:])[0]
+    overlap_matrix = cross_overlap_matrix[bra_idx, :][:, ket_idx]
+    return np.linalg.det(overlap_matrix) * bra[0] * ket[0]
+
+
+def get_generic_no_overlap(bras, kets, bra_coeffs, ket_coeffs, cross_overlap_matrix):
+    r"""
+    Get generic non-orthogonal overlap between two linear combinations
+    :param bras:
+    :param kets:
+    :param bra_coeffs:
+    :param ket_coeffs:
+    :return:
+    """
+    o = 0
+    for i, bra_coeff in enumerate(bra_coeffs):
+        if np.isclose(bra_coeff, 0, rtol=0, atol=1e-8):
+            pass
+        else:
+            for j, ket_coeff in enumerate(ket_coeffs):
+                if np.isclose(ket_coeff, 0, rtol=0, atol=1e-8):
+                    pass
+                else:
+                    o += bra_coeff * ket_coeff * get_no_overlap(bras[i], kets[j],
+                                                                cross_overlap_matrix)
+    return o
+
