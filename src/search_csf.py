@@ -87,7 +87,7 @@ if __name__ == '__main__':
 
     # Initialise CSF object
 
-    mycsf = csf(mol, spin, cas[0], cas[1], core, active, g_coupling, permutation, mo_basis)
+    mycsf = csf(mol, spin, cas[0], cas[1], frozen, core, active, g_coupling, permutation, mo_basis)
     mycsf.initialise()
 
     nmo = mycsf.mo_coeff.shape[1]
@@ -105,7 +105,7 @@ if __name__ == '__main__':
         mo_guess = ref_mo.dot(random_rot(nmo, -np.pi, np.pi))
         # Set orbital coefficients
         del mycsf
-        mycsf = csf(mol, spin, cas[0], cas[1], core, active, g_coupling, permutation, mo_basis)
+        mycsf = csf(mol, spin, cas[0], cas[1], frozen, core, active, g_coupling, permutation, mo_basis)
         mycsf.initialise(mo_guess)
 
         # Test

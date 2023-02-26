@@ -13,7 +13,7 @@ from utils import delta_kron, orthogonalise
 
 
 class csf():
-    def __init__(self, mol, spin, ncas, nelecas, core: List[int], act: List[int], g_coupling: str = None,
+    def __init__(self, mol, spin, ncas, nelecas, frozen: int, core: List[int], act: List[int], g_coupling: str = None,
                  permutation: List[int] = None, mo_basis: 'str' = 'site', ncore=None):
         self.mol = mol
         self.spin = spin
@@ -54,7 +54,7 @@ class csf():
         self.nDet = self.csf_info.n_dets
 
         # Save mapping indices for unique orbital rotations
-        self.frozen = None
+        self.frozen = frozen
         self.rot_idx = self.uniq_var_indices(self.norb, self.frozen)
         self.nrot = np.sum(self.rot_idx)
 
@@ -63,7 +63,7 @@ class csf():
 
     def copy(self):
         # Return a copy of the current object
-        newcsf = csf(self.mol, self.spin, self.ncas, self.nelecas, self.core, self.act, self.g_coupling, self.permutation, self.mo_basis)
+        newcsf = csf(self.mol, self.spin, self.ncas, self.nelecas, self.frozen, self.core, self.act, self.g_coupling, self.permutation, self.mo_basis)
         newcsf.initialise(self.mo_coeff, integrals=False)
         return newcsf
 
@@ -271,7 +271,10 @@ class csf():
         """
         dm1_csf = csfobj.get_csf_one_rdm()
         dm2_csf = csfobj.get_csf_two_rdm()
-        return dm1_csf, dm2_csf
+        # Since we only want the active orbitals:
+        nocc = self.ncore + self.ncas
+        return dm1_csf[self.ncore:nocc, :][:, self.ncore:nocc],\
+                dm2_csf[self.ncore:nocc, :, :, :][:, self.ncore:nocc, :, :][:, :, self.ncore:nocc, :][:, :, :, self.ncore:nocc]
 
     def get_fock_matrices(self):
         ''' Compute the core part of the generalized Fock matrix '''
@@ -520,6 +523,8 @@ class csf():
         # active-active active-core H_{xy,ti}
         if ncore > 0:
             gxvit = self.ppoo[ncore:nocc, ncore:nocc, :ncore, ncore:nocc]
+            gxivt = self.popo[ncore:nocc, :ncore, ncore:nocc, ncore:nocc]
+            gxtiv = self.ppoo[ncore:nocc, ncore:nocc, :ncore, ncore:nocc]
             xyti = 2 * np.einsum("xt,yi->xyti", self.dm1_cas, self.F_core[ncore:nocc, :ncore], optimize="optimal") + \
                    2 * np.einsum("xvtw,yvwi->xyti", self.dm2_cas, self.popo[ncore:nocc, ncore:nocc, ncore:nocc, :ncore],
                              optimize="optimal") + \
@@ -528,7 +533,7 @@ class csf():
                    2 * np.einsum("xtvw,yivw->xyti", self.dm2_cas, self.popo[ncore:nocc, :ncore, ncore:nocc, ncore:nocc],
                              optimize="optimal") + \
                    2 * np.einsum("yv,xvit->xyti", self.dm1_cas,
-                             4 * gxvit - gxvit.transpose((0, 2, 1, 3)) - gxvit.transpose((0, 3, 1, 2)),
+                             4 * gxvit - gxivt.transpose((0, 2, 1, 3)) - gxtiv.transpose((0, 3, 2, 1)),
                              optimize="optimal") + \
                    np.einsum("yt,xw,iw->xyti", id_cas, self.dm1_cas, self.F_core[:ncore, ncore:nocc],
                              optimize="optimal") + \
@@ -546,8 +551,10 @@ class csf():
         # active-active virtual-core H_{xy,ai}, as well as virtual-core active-active H_{ai,xy}
         if ncore > 0 and nvir > 0:
             gyvai = self.popo[ncore:nocc, ncore:nocc, nocc:, :ncore]
+            gyiav = self.popo[ncore:nocc, :ncore, nocc:, ncore:nocc]
+            gayiv = self.popo[nocc:, ncore:nocc, :ncore, ncore:nocc]
             Yxyia = 2 * np.einsum("xv,yvai->xyai", self.dm1_cas,
-                                  4 * gyvai - gyvai.transpose((0, 3, 2, 1)) - gyvai.transpose((2, 0, 3, 1)),
+                                  4 * gyvai - gyiav.transpose((0, 3, 2, 1)) - gayiv.transpose((1, 3, 0, 2)),
                                   optimize="optimal")
             Htmp[ncore:nocc, ncore:nocc, nocc:, :ncore] = Yxyia + np.einsum("xyai->yxai", Yxyia)
 
@@ -629,10 +636,8 @@ class csf():
         mask = np.zeros((self.norb, self.norb), dtype=bool)
         mask[self.ncore:nocc, :self.ncore] = True  # Active-Core rotations
         mask[nocc:, :nocc] = True                  # Virtual-Core and Virtual-Active rotations
-        mask[self.ncore:nocc, self.ncore:nocc] = np.tril(np.ones((self.ncas,self.ncas),dtype=bool),k=-1)  # Active-Core and Active-Active rotations
-        #mask[1,0] = False
-        #mask[3,2] = False
-        mask = self.edit_mask_by_gcoupling(mask)    # Make use of genealogical coupling to remove degrees of freedom
+        mask[self.ncore:nocc, self.ncore:nocc] = np.tril(np.ones((self.ncas,self.ncas),dtype=bool),k=-1)  # Active-Active rotations
+        mask[self.ncore:nocc, self.ncore:nocc] = self.edit_mask_by_gcoupling(mask[self.ncore:nocc, self.ncore:nocc])    # Make use of genealogical coupling to remove degrees of freedom
         if frozen is not None:
             if isinstance(frozen, (int, np.integer)):
                 mask[:frozen] = mask[:, :frozen] = False
