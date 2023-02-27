@@ -540,7 +540,7 @@ class csf():
                    np.einsum("yt,xuwz,iuwz->xyti", id_cas, self.dm2_cas,
                              self.popo[:ncore, ncore:nocc, ncore:nocc, ncore:nocc],
                              optimize="optimal") + \
-                   np.einsum("yt,ix", id_cas, F_tot[:ncore, ncore:nocc], optimize="optimal")
+                   np.einsum("yt,ix->xyti", id_cas, F_tot[:ncore, ncore:nocc], optimize="optimal")
             Htmp[ncore:nocc, ncore:nocc, ncore:nocc, :ncore] = xyti - np.einsum("xyti->yxti", xyti)
         # active-core active-active H_{ti, xy}
         if ncore > 0:

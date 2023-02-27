@@ -1,0 +1,13 @@
+basis 6-31g
+charge 0
+spin 0
+cas (2,2)
+seed 50
+grid 5000
+core 0 1 3 4 9 10 12 13
+active 5 14
+g_coupling +-
+permutation 0 1
+mo_basis site
+index 0
+nsample 6
