@@ -13,6 +13,7 @@ from csfs.Auxiliary.SpinorBasis import spatial_to_spin_orbs
 from csfs.ConfigurationStateFunctions.CouplingCoefficients import get_total_coupling_coefficient
 from csfs.Operators.Operators import create
 from csfs.ConfigurationStateFunctions.PermutationTools import get_phase_factor
+from csfs.ReducedDensityMatrices.RDMapper import get_dm12
 from csfs.ReducedDensityMatrices.ReducedDensityMatrices import get_mc_one_rdm, get_ri_mc_two_rdm,\
     get_spatial_one_rdm, get_spatial_two_rdm
 
@@ -60,7 +61,7 @@ class ConfigurationStateFunction:
         self.n_csfs = 0
         self.csf = self.csf_from_g_coupling(g_coupling)
         self.csf_coeffs = self.get_specific_csf_coeffs()
-
+    
     def get_coeffs(self, method):
         r"""
         Get the coefficient matrices. Defaults to site basis (easier).
@@ -332,6 +333,14 @@ class ConfigurationStateFunction:
             return spin_two_rdm
         else:
             return get_spatial_two_rdm(spin_two_rdm)
+
+    def get_pyscf_rdms(self):
+        r"""
+        Gets the spatial 1-RDM and 2-RDM from PySCF
+        """
+        dets, coeffs = self.get_relevant_dets(self.dets_sq, self.csf_coeffs)
+        dm1, dm2 = get_dm12(dets, coeffs)
+        return dm1, dm2
 
     def get_csf_energy(self):
         rdm1 = self.get_csf_one_rdm()

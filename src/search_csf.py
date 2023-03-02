@@ -165,7 +165,6 @@ if __name__ == '__main__':
             np.savetxt(tag + '.mo_coeff', mycsf.mo_coeff, fmt="% 20.16f")
             np.savetxt(tag + '.energy', np.array([
                 [mycsf.energy, hindices[0], hindices[1], 0.0]]), fmt="% 18.12f % 5d % 5d % 12.6f")
-
             # Deallocate integrals to reduce memory footprint
             #    mycsf.deallocate()
             cas_list.append(mycsf.copy())

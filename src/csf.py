@@ -269,8 +269,10 @@ class csf():
         We first form a new CSFConstructor object with new coeffs
         :return:
         """
-        dm1_csf = csfobj.get_csf_one_rdm()
-        dm2_csf = csfobj.get_csf_two_rdm()
+        # Nick 2 March 2023: Commented below two lines. Using PySCF to construct RDMs instead
+        #dm1_csf = csfobj.get_csf_one_rdm()
+        #dm2_csf = csfobj.get_csf_two_rdm()
+        dm1_csf, dm2_csf = csfobj.get_pyscf_rdms()
         # Since we only want the active orbitals:
         nocc = self.ncore + self.ncas
         return dm1_csf[self.ncore:nocc, :][:, self.ncore:nocc],\
