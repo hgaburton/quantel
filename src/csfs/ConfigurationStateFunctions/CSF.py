@@ -184,6 +184,8 @@ class ConfigurationStateFunction:
         Forms CSF from a genealogical coupling pattern
         :return: CSF in the format [0, 0.5, ..., ]
         """
+        if g_coupling is None:
+            return None
         csf = [0.0]
         g_coupling_rep = list(g_coupling)
         assert (g_coupling_rep[0] == '+')
@@ -253,6 +255,10 @@ class ConfigurationStateFunction:
         :return:
         """
         csf_coeffs = np.zeros(self.n_dets)  # These are all the determinants possible (same orbital configurations)
+        if self.csf is None:
+            assert self.n_dets == 1
+            csf_coeffs[0] = 1
+            return csf_coeffs
         for d_key, d_val in self.det_dict.items():
             if len(d_val[2]) != len(self.csf):
                 csf_coeffs[d_key] = 0

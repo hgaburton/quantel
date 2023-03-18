@@ -42,7 +42,6 @@ class csf():
             self.ncore = ncorelec // 2
         else:
             self.ncore = ncore
-
         # Get AO integrals
         self.get_ao_integrals()
 
@@ -352,9 +351,21 @@ class csf():
         F[nocc:, :ncore] += V_a[nocc:, :ncore] + (V_a[:ncore, nocc:]).T
         return F
 
+    def get_generalised_fock(self, dm1_cas, dm2_cas):
+        ''' This method finds the generalised Fock matrix with a different method '''
+        ncore = self.ncore
+        nocc = self.ncore + self.ncas
+        F = np.zeros((self.nmo, self.nmo))
+        F[:ncore, :] = 2 * (self.F_core[:, :ncore] + self.F_cas[:, :ncore]).T
+        F[ncore:nocc, :] = np.einsum("nw,vw->vn", self.F_core[:, ncore:nocc], dm1_cas) + \
+                np.einsum("vwxy,nwxy->vn", dm2_cas, self.popo[:, ncore:nocc, ncore:nocc, ncore:nocc])
+        return 2 * F.T
+
+
     def get_orbital_gradient(self):
         ''' This method builds the orbital part of the gradient '''
-        g_orb = self.get_gen_fock(self.dm1_cas, self.dm2_cas, False)
+        #g_orb = self.get_gen_fock(self.dm1_cas, self.dm2_cas, False)
+        g_orb = self.get_generalised_fock(self.dm1_cas, self.dm2_cas)
         return (g_orb - g_orb.T)[self.rot_idx]
 
     def get_hessianOrbOrb(self):
@@ -417,13 +428,13 @@ class csf():
                                                                      4 * aivj - avji.transpose(
                                                                          (0, 3, 1, 2)) - ajvi.transpose((0, 3, 2, 1)),
                                                                      optimize="optimal")
-                                                       - 2 * np.einsum('ji,tvxy,avxy -> aitj', id_cor,
-                                                                       0.5 * self.dm2_cas,
+                                                       - np.einsum('ji,tvxy,avxy -> aitj', id_cor,
+                                                                       self.dm2_cas,
                                                                        self.ppoo[nocc:, ncore:nocc, ncore:nocc,
                                                                        ncore:nocc], optimize="optimal")
                                                        + 4 * np.einsum('ij,at-> aitj', id_cor, F_tot[nocc:, ncore:nocc],
                                                                        optimize="optimal")
-                                                       - 1 * np.einsum('ij,tv,av-> aitj', id_cor, self.dm1_cas,
+                                                       - np.einsum('ij,tv,av-> aitj', id_cor, self.dm1_cas,
                                                                        self.F_core[nocc:, ncore:nocc],
                                                                        optimize="optimal"))
 
@@ -485,42 +496,66 @@ class csf():
                                                                     Htmp[ncore:nocc, :ncore, nocc:, ncore:nocc],
                                                                     optimize="optimal")
 
-        # active-core active-core H_{ti,uj}
+        # active-core active-core H_{ti,uj} Nick 18 Mar
         if ncore > 0:
-            viuj = self.ppoo[ncore:nocc, :ncore, ncore:nocc, :ncore]
-            uvij = self.ppoo[ncore:nocc, ncore:nocc, :ncore, :ncore]
+            gixyj = self.popo[:ncore, ncore:nocc, ncore:nocc, :ncore]
+            gtijx = self.popo[ncore:nocc, :ncore, :ncore, ncore:nocc]
+            gtxji = self.popo[ncore:nocc, ncore:nocc, :ncore, :ncore]
+            gtwxy = self.popo[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc]
+            tiuj = 2 * np.einsum("tu,ij->tiuj", self.dm1_cas, self.F_core[:ncore, :ncore]) + \
+                   4 * np.einsum("ij,tu->tiuj", id_cor, F_tot[ncore:nocc, ncore:nocc]) - \
+                   np.einsum("ij,tw,uw->tiuj", id_cor, self.dm1_cas, self.F_core[ncore:nocc, ncore:nocc]) - \
+                   np.einsum("ij,twxy,uwxy->tiuj", id_cor, self.dm2_cas, gtwxy) - \
+                   np.einsum("ij,uw,tw->tiuj", id_cor, self.dm1_cas, self.F_core[ncore:nocc, ncore:nocc]) - \
+                   np.einsum("ij,uwxy,twxy->tiuj", id_cor, self.dm2_cas, gtwxy) - \
+                   2 * np.einsum("tu,ji->tiuj", id_cas, F_tot[:ncore, :ncore]) - \
+                   2 * np.einsum("tu,ij->tiuj", id_cas, F_tot[:ncore, :ncore]) + \
+                   2 * np.einsum("xu,tijx->tiuj", id_cas - self.dm1_cas,
+                                4 * gtijx - gtijx.transpose((0,2,1,3)) - gtxji.transpose((0,3,2,1))) + \
+                   2 * np.einsum("xt,xiju->tiuj", id_cas - self.dm1_cas,
+                                4 * gtijx - gtijx.transpose((0,2,1,3)) - gtxji.transpose((0,3,2,1))) + \
+                   2 * np.einsum("txuy,ixyj->tiuj", self.dm2_cas, gixyj) + \
+                   2 * np.einsum("txyu,ixyj->tiuj", self.dm2_cas, gixyj) + \
+                   2 * np.einsum("tuxy,ijxy->tiuj", self.dm2_cas, gtxji.transpose((3,2,1,0)))
+            Htmp[ncore:nocc, :ncore, ncore:nocc, :ncore] = tiuj
+            Htmp[ncore:nocc, :ncore, ncore:nocc, :ncore] = np.einsum("tiuj->ujti", tiuj)
 
-            Htmp[ncore:nocc, :ncore, ncore:nocc, :ncore] = 2 * np.einsum('tv,viuj->tiuj', id_cas - self.dm1_cas,
-                                                                         4 * viuj - viuj.transpose(
-                                                                             (2, 1, 0, 3)) - uvij.transpose(
-                                                                             (1, 2, 0, 3)), optimize="optimal")
-            Htmp[ncore:nocc, :ncore, ncore:nocc, :ncore] += np.einsum('tiuj->uitj',
-                                                                      Htmp[ncore:nocc, :ncore, ncore:nocc, :ncore],
-                                                                      optimize="optimal")
-            Htmp[ncore:nocc, :ncore, ncore:nocc, :ncore] += (4 * np.einsum('utvx,vxij->tiuj', 0.5 * self.dm2_cas,
-                                                                           self.ppoo[ncore:nocc, ncore:nocc, :ncore,
-                                                                           :ncore], optimize="optimal")
-                                                             + 4 * np.einsum('uxvt,vixj->tiuj', 0.5 * self.dm2_cas,
-                                                                             self.ppoo[ncore:nocc, :ncore, ncore:nocc,
-                                                                             :ncore], optimize="optimal")
-                                                             + 4 * np.einsum('uxtv,vixj->tiuj', 0.5 * self.dm2_cas,
-                                                                             self.ppoo[ncore:nocc, :ncore, ncore:nocc,
-                                                                             :ncore], optimize="optimal"))
-            Htmp[ncore:nocc, :ncore, ncore:nocc, :ncore] += (
-                    2 * np.einsum('tu,ij->tiuj', self.dm1_cas, self.F_core[:ncore, :ncore], optimize="optimal")
-                    - 4 * np.einsum('ij,tvxy,uvxy->tiuj', id_cor, 0.5 * self.dm2_cas,
-                                    self.ppoo[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc], optimize="optimal")
-                    - 2 * np.einsum('ij,uv,tv->tiuj', id_cor, self.dm1_cas, self.F_core[ncore:nocc, ncore:nocc],
-                                    optimize="optimal"))
-            Htmp[ncore:nocc, :ncore, ncore:nocc, :ncore] += (
-                    4 * np.einsum('ij,tu->tiuj', id_cor, F_tot[ncore:nocc, ncore:nocc], optimize="optimal")
-                    - 4 * np.einsum('tu,ij->tiuj', id_cas, F_tot[:ncore, :ncore], optimize="optimal"))
-
-            # AM: I need to think about this
-            Htmp[ncore:nocc, :ncore, ncore:nocc, :ncore] = 0.5 * (
-                    Htmp[ncore:nocc, :ncore, ncore:nocc, :ncore] + np.einsum('tiuj->ujti',
-                                                                             Htmp[ncore:nocc, :ncore, ncore:nocc,
-                                                                             :ncore], optimize="optimal"))
+#        # active-core active-core H_{ti,uj}
+#        if ncore > 0:
+#            viuj = self.ppoo[ncore:nocc, :ncore, ncore:nocc, :ncore]
+#            uvij = self.ppoo[ncore:nocc, ncore:nocc, :ncore, :ncore]
+#
+#            Htmp[ncore:nocc, :ncore, ncore:nocc, :ncore] = 2 * np.einsum('tv,viuj->tiuj', id_cas - self.dm1_cas,
+#                                                                         4 * viuj - viuj.transpose(
+#                                                                             (2, 1, 0, 3)) - uvij.transpose(
+#                                                                             (1, 2, 0, 3)), optimize="optimal")
+#            Htmp[ncore:nocc, :ncore, ncore:nocc, :ncore] += np.einsum('tiuj->uitj',
+#                                                                      Htmp[ncore:nocc, :ncore, ncore:nocc, :ncore],
+#                                                                      optimize="optimal")
+#            Htmp[ncore:nocc, :ncore, ncore:nocc, :ncore] += (4 * np.einsum('utvx,vxij->tiuj', 0.5 * self.dm2_cas,
+#                                                                           self.ppoo[ncore:nocc, ncore:nocc, :ncore,
+#                                                                           :ncore], optimize="optimal")
+#                                                             + 4 * np.einsum('uxvt,vixj->tiuj', 0.5 * self.dm2_cas,
+#                                                                             self.ppoo[ncore:nocc, :ncore, ncore:nocc,
+#                                                                             :ncore], optimize="optimal")
+#                                                             + 4 * np.einsum('uxtv,vixj->tiuj', 0.5 * self.dm2_cas,
+#                                                                             self.ppoo[ncore:nocc, :ncore, ncore:nocc,
+#                                                                             :ncore], optimize="optimal"))
+#            Htmp[ncore:nocc, :ncore, ncore:nocc, :ncore] += (
+#                    2 * np.einsum('tu,ij->tiuj', self.dm1_cas, self.F_core[:ncore, :ncore], optimize="optimal")
+#                    - 4 * np.einsum('ij,tvxy,uvxy->tiuj', id_cor, 0.5 * self.dm2_cas,
+#                                    self.ppoo[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc], optimize="optimal")
+#                    - 2 * np.einsum('ij,uv,tv->tiuj', id_cor, self.dm1_cas, self.F_core[ncore:nocc, ncore:nocc],
+#                                    optimize="optimal"))
+#            Htmp[ncore:nocc, :ncore, ncore:nocc, :ncore] += (
+#                    4 * np.einsum('ij,tu->tiuj', id_cor, F_tot[ncore:nocc, ncore:nocc], optimize="optimal")
+#                    - 4 * np.einsum('tu,ij->tiuj', id_cas, F_tot[:ncore, :ncore], optimize="optimal"))
+#
+#            # AM: I need to think about this
+#            Htmp[ncore:nocc, :ncore, ncore:nocc, :ncore] = 0.5 * (
+#                    Htmp[ncore:nocc, :ncore, ncore:nocc, :ncore] + np.einsum('tiuj->ujti',
+#                                                                             Htmp[ncore:nocc, :ncore, ncore:nocc,
+#                                                                             :ncore], optimize="optimal"))
         # Nick: Active-active Hessian contributions
         # active-active active-core H_{xy,ti}
         if ncore > 0:
@@ -542,7 +577,7 @@ class csf():
                    np.einsum("yt,xuwz,iuwz->xyti", id_cas, self.dm2_cas,
                              self.popo[:ncore, ncore:nocc, ncore:nocc, ncore:nocc],
                              optimize="optimal") + \
-                   np.einsum("yt,ix->xyti", id_cas, F_tot[:ncore, ncore:nocc], optimize="optimal")
+                   2 * np.einsum("xi,yt->xyti", F_tot[ncore:nocc, :ncore], id_cas, optimize="optimal")
             Htmp[ncore:nocc, ncore:nocc, ncore:nocc, :ncore] = xyti - np.einsum("xyti->yxti", xyti)
         # active-core active-active H_{ti, xy}
         if ncore > 0:
@@ -558,12 +593,14 @@ class csf():
             Yxyia = 2 * np.einsum("xv,yvai->xyai", self.dm1_cas,
                                   4 * gyvai - gyiav.transpose((0, 3, 2, 1)) - gayiv.transpose((1, 3, 0, 2)),
                                   optimize="optimal")
-            Htmp[ncore:nocc, ncore:nocc, nocc:, :ncore] = Yxyia + np.einsum("xyai->yxai", Yxyia)
+            Htmp[ncore:nocc, ncore:nocc, nocc:, :ncore] = -Yxyia + np.einsum("xyai->yxai", Yxyia)
+            Htmp[nocc:, :ncore, ncore:nocc, ncore:nocc] = np.einsum("xyai->aixy",Htmp[ncore:nocc, ncore:nocc, nocc:, :ncore])
 
         # active-active virtual-active H_{xy,at}
         if nvir > 0:
             xyat = 2 * np.einsum("yt,xa->xyat", self.dm1_cas, self.F_core[ncore:nocc, nocc:], optimize="optimal") + \
-                   np.einsum("xt,ya->xyat", id_cas, F_tot[ncore:nocc, nocc:], optimize="optimal") + \
+                   np.einsum("xt,aw,yw->xyat", id_cas, self.F_core[nocc:, ncore:nocc], self.dm1_cas, optimize="optimal") + \
+                   np.einsum("xt,yuwz,auwz->xyat", id_cas, self.dm2_cas,self.popo[nocc:, ncore:nocc, ncore:nocc, ncore:nocc], optimize="optimal") + \
                    2 * np.einsum("yvtw,xvaw->xyat", self.dm2_cas, self.popo[ncore:nocc, ncore:nocc, nocc:, ncore:nocc], optimize="optimal") + \
                    2 * np.einsum("yvwt,xvaw->xyat", self.dm2_cas, self.popo[ncore:nocc, ncore:nocc, nocc:,ncore:nocc], optimize="optimal") + \
                    2 * np.einsum("ytvw,axvw->xyat", self.dm2_cas, self.popo[nocc:, ncore:nocc, ncore:nocc, ncore:nocc], optimize="optimal")
@@ -619,8 +656,9 @@ class csf():
 
         The algorithm works by looking at each column and traversing downwards the columns.
         """
-        n_dim = mask.shape[0]
+        #n_dim = mask.shape[0]
         g_coupling_arr = list(self.g_coupling)
+        n_dim = len(g_coupling_arr)
         for i, gfunc in enumerate(g_coupling_arr):    # This is for the columns
             for j in range(i+1, n_dim):    # This is for the rows
                 if gfunc == g_coupling_arr[j]:
@@ -639,7 +677,8 @@ class csf():
         mask[self.ncore:nocc, :self.ncore] = True  # Active-Core rotations
         mask[nocc:, :nocc] = True                  # Virtual-Core and Virtual-Active rotations
         mask[self.ncore:nocc, self.ncore:nocc] = np.tril(np.ones((self.ncas,self.ncas),dtype=bool),k=-1)  # Active-Active rotations
-        mask[self.ncore:nocc, self.ncore:nocc] = self.edit_mask_by_gcoupling(mask[self.ncore:nocc, self.ncore:nocc])    # Make use of genealogical coupling to remove degrees of freedom
+        if self.g_coupling is not None:
+            mask[self.ncore:nocc, self.ncore:nocc] = self.edit_mask_by_gcoupling(mask[self.ncore:nocc, self.ncore:nocc])    # Make use of genealogical coupling to remove degrees of freedom
         if frozen is not None:
             if isinstance(frozen, (int, np.integer)):
                 mask[:frozen] = mask[:, :frozen] = False
