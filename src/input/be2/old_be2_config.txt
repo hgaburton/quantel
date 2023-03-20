@@ -1,0 +1,13 @@
+basis sto-3g
+charge 0
+spin 0
+cas (4,4)
+seed 50
+grid 5000
+core 0 5
+active 1 2 6 7
+g_coupling ++--
+permutation 0 1
+mo_basis site
+index 1
+nsample 100
