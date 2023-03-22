@@ -273,9 +273,10 @@ class csf():
         #dm2_csf = csfobj.get_csf_two_rdm()
         dm1_csf, dm2_csf = csfobj.get_pyscf_rdms()
         # Since we only want the active orbitals:
-        nocc = self.ncore + self.ncas
-        return dm1_csf[self.ncore:nocc, :][:, self.ncore:nocc],\
-                dm2_csf[self.ncore:nocc, :, :, :][:, self.ncore:nocc, :, :][:, :, self.ncore:nocc, :][:, :, :, self.ncore:nocc]
+        #nocc = self.ncore + self.ncas
+        #return dm1_csf[self.ncore:nocc, :][:, self.ncore:nocc],\
+        #        dm2_csf[self.ncore:nocc, :, :, :][:, self.ncore:nocc, :, :][:, :, self.ncore:nocc, :][:, :, :, self.ncore:nocc]
+        return dm1_csf, dm2_csf
 
     def get_fock_matrices(self):
         ''' Compute the core part of the generalized Fock matrix '''

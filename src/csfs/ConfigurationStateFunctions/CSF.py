@@ -33,8 +33,6 @@ class ConfigurationStateFunction:
         self.n_beta = (mol.nelectron - 2 * mol.spin) // 2  # Number of beta electrons
         self.permutation = permutation
         coeffs = self.get_coeffs(method=self.mo_basis)
-        #self.hcore, self.eri = spatial_one_and_two_e_int(self.mol, self.coeffs)
-        #self.enuc = mol.energy_nuc()
 
         # Get information about the orbitals used
         self.ncore = len(core)
@@ -46,8 +44,8 @@ class ConfigurationStateFunction:
         self.n_orbs = self.ncore + self.nact  # Number of spatial orbitals
         self.coeffs = np.hstack([self.core_orbs, self.act_orbs])
 
-        self.hcore, self.eri = spatial_one_and_two_e_int(self.mol, self.coeffs)
-        self.enuc = mol.energy_nuc()
+        #self.hcore, self.eri = spatial_one_and_two_e_int(self.mol, self.coeffs)
+        #self.enuc = mol.energy_nuc()
 
         # Number of ways to arrange e in spatial orbs
         # self.n_dets = comb(self.n_orbs, self.n_alpha) * comb(self.n_orbs, self.n_beta)
@@ -89,14 +87,14 @@ class ConfigurationStateFunction:
         :return: List[Tuple, Tuple] of the alpha and beta electrons. e.g. [(0,1), (1,2)]
                  shows alpha electrons in 0th and 1st orbitals, beta electrons in 1st and 2nd orbitals
         """
-        alpha_act = list(itertools.combinations(np.arange(self.ncore, self.ncore + self.nact), self.n_alpha - self.ncore))
-        beta_act = list(itertools.combinations(np.arange(self.ncore, self.ncore + self.nact), self.n_beta - self.ncore))
+        alpha_act = list(itertools.combinations(np.arange(self.nact), self.n_alpha - self.ncore))
+        beta_act = list(itertools.combinations(np.arange(self.nact), self.n_beta - self.ncore))
         alpha_rep = []
         beta_rep = []
         for i, tup in enumerate(alpha_act):
-            alpha_rep.append(tuple(np.arange(self.ncore)) + tup)
+            alpha_rep.append(tup)
         for i, tup in enumerate(beta_act):
-            beta_rep.append(tuple(np.arange(self.ncore)) + tup)
+            beta_rep.append(tup)
         return list(itertools.product(alpha_rep, beta_rep))
 
     @staticmethod
@@ -158,10 +156,10 @@ class ConfigurationStateFunction:
         :param beta idxs:
         :return:
         """
-        ket = [0] * (self.n_orbs * 2 + 1)
+        ket = [0] * (self.nact * 2 + 1)
         ket[0] = 1
         for _, i in enumerate(beta_idxs):
-            create(i+1+self.n_orbs, ket)
+            create(i+1+self.nact, ket)
         for _, i in enumerate(alpha_idxs):
             create(i+1, ket)
         ket[0] = self.det_phase_factors[idx]
@@ -196,58 +194,6 @@ class ConfigurationStateFunction:
                 csf.append(csf[i] - 0.5)
         assert np.allclose(csf[-1], self.s, rtol=0, atol=1e-6)
         return csf
-
-    # def filter_csfs(self, all_csfs):
-    #     r"""
-    #     Filter out CSFs which do not have the same spin symmetry as what was requested.
-    #     :param all_csfs: List of CSFs in S representation
-    #     :return: List of CSFs in S representation, filtered for the spin symmetry defined in the CSFConstructor object
-    #     """
-    #     filtered_csfs = []
-    #     for _, csf in enumerate(all_csfs):
-    #         if np.isclose(csf[-1], self.s, rtol=0, atol=1e-10):
-    #             filtered_csfs.append(csf)
-    #     return filtered_csfs
-    #
-    # def form_csfs_orb_config(self, singly_occ):
-    #     r"""
-    #     Construct CSFs for each unique combination of singly occupied orbitals
-    #
-    #     :param singly occ:
-    #     :return:
-    #     """
-    #     all_csfs = [[0.0]]
-    #     for i in range(len(singly_occ)):  # For loop to add one more entry for each orbital
-    #         cur_csfs = []
-    #         for csf in all_csfs:  # In each addition step, we loop over all CSFs already formed
-    #             prev_entry = csf[-1]
-    #             if prev_entry == 0:
-    #                 csf.append(0.5)
-    #                 cur_csfs.append(csf)
-    #             else:
-    #                 csfplus = copy.deepcopy(csf)
-    #                 csfminus = copy.deepcopy(csf)
-    #                 csfplus.append(prev_entry + 0.5)
-    #                 csfminus.append(prev_entry - 0.5)
-    #                 cur_csfs.append(csfplus)
-    #                 cur_csfs.append(csfminus)
-    #         all_csfs = cur_csfs
-    #     return self.filter_csfs(all_csfs)
-    #
-    # def form_csfs(self):
-    #     r"""
-    #     For each orbital configuration, produce CSF
-    #     :return:
-    #     """
-    #     all_csfs = []
-    #     for orb_config in self.unique_orb_config:
-    #         if not orb_config[0]:  # No singly occupied orbitals
-    #             self.n_csfs += 1  # This is already a CSF
-    #         else:  # Singly occupied orbitals exists
-    #             orb_config_csfs = self.form_csfs_orb_config(orb_config[0])
-    #             all_csfs.append([orb_config, orb_config_csfs])
-    #             self.n_csfs += len(orb_config_csfs)
-    #     return all_csfs
 
     def get_specific_csf_coeffs(self):
         r"""
