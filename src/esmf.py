@@ -23,8 +23,6 @@ class esmf():
         self.na         = self.nelec[0]
         self.nb         = self.nelec[1]
         assert(self.na == self.nb)
-        print(self.na, self.nb, self.norb)
-
 
         # Get number of determinants
         self.nDet      = self.na * (self.norb - self.na) + 1
@@ -33,13 +31,9 @@ class esmf():
         self.frozen     = None
         self.rot_idx    = self.uniq_var_indices(self.norb, self.frozen)
         self.nrot       = np.sum(self.rot_idx)
-        print(self.rot_idx)
 
         # Dimensions of problem 
         self.dim        = self.nrot + self.nDet - 1
-
-#        # Define the FCI solver
-#        self.fcisolver = fci.direct_spin1.FCISolver(mol)
 
     def copy(self):
         # Return a copy of the current object
@@ -138,6 +132,57 @@ class esmf():
 
         return dm1, dm2
 
+    def get_trdm12(self, v1, v2):
+        '''Compute the total 1RDM and 2RDM for the current state'''
+        ne = self.na
+        c1_0   = v1[0]
+        c2_0   = v2[0]
+        t1     = 1/np.sqrt(2) * np.reshape(v1[1:], (self.na, self.nmo - self.na))
+        t2     = 1/np.sqrt(2) * np.reshape(v2[1:], (self.na, self.nmo - self.na))
+        kron = np.identity(self.nmo)
+        dij  = np.identity(ne)
+        dab  = np.identity(self.nmo-ne)
+
+        # Derive temporary matrices        
+        ttOcc = t1.dot(t2.T) # (tt)_{ij}
+        ttVir = t2.T.dot(t1) # (tt)_{ab}
+
+        # Compute the 1RDM
+        dm1 = np.zeros((self.nmo,self.nmo))
+        dm1[:self.na,:self.na] = - ttOcc
+        dm1[:self.na,self.na:] = c2_0 * t1
+        dm1[self.na:,:self.na] = c1_0 * t2.T
+        dm1[self.na:,self.na:] = ttVir
+        dm1 *= 2
+
+        # Dompute the 2RDM
+        dm2 = np.zeros((self.nmo,self.nmo,self.nmo,self.nmo))
+        # ijkl block
+        #dm2[:ne,:ne,:ne,:ne] += 4 * np.einsum('ij,kl->ijkl', kron[:ne,:ne], kron[:ne,:ne])
+        dm2[:ne,:ne,:ne,:ne] -= 4 * np.einsum('ij,kl->ijkl', kron[:ne,:ne], ttOcc)
+        dm2[:ne,:ne,:ne,:ne] -= 4 * np.einsum('ij,kl->ijkl', ttOcc, kron[:ne,:ne])
+        #dm2[:ne,:ne,:ne,:ne] -= 2 * np.einsum('il,kj->ijkl', kron[:ne,:ne], kron[:ne,:ne])
+        dm2[:ne,:ne,:ne,:ne] += 2 * np.einsum('il,kj->ijkl', kron[:ne,:ne], ttOcc)
+        dm2[:ne,:ne,:ne,:ne] += 2 * np.einsum('il,kj->ijkl', ttOcc, kron[:ne,:ne])
+        # ijka block
+        dm2[:ne,:ne,:ne,ne:] += 4 * c2_0 * np.einsum('ij,ka->ijka', kron[:ne,:ne], t1)
+        dm2[:ne,:ne,:ne,ne:] -= 2 * c2_0 * np.einsum('kj,ia->ijka', kron[:ne,:ne], t1)
+        dm2[:ne,ne:,:ne,:ne] = np.einsum('ijka->kaij',dm2[:ne,:ne,:ne,ne:])
+        # ijak block
+        dm2[:ne,:ne,ne:,:ne] += 4 * c1_0 * np.einsum('ij,ak->ijak', kron[:ne,:ne], t2.T)
+        dm2[:ne,:ne,ne:,:ne] -= 2 * c1_0 * np.einsum('ik,aj->ijak', kron[:ne,:ne], t2.T)
+        dm2[ne:,:ne,:ne,:ne] = np.einsum('ijak->akij',dm2[:ne,:ne,ne:,:ne])
+        # ijab block
+        dm2[:ne,:ne,ne:,ne:] += 4 * np.einsum('ij,ab->ijab', kron[:ne,:ne], ttVir)
+        dm2[:ne,:ne,ne:,ne:] -= 2 * np.einsum('ib,ja->ijab', t1, t2)
+        dm2[ne:,ne:,:ne,:ne] = np.einsum('ijab->abij', dm2[:ne,:ne,ne:,ne:])
+        # iabj block
+        dm2[:ne,ne:,ne:,:ne] += 4 * np.einsum('ia,jb->iabj', t1, t2)
+        dm2[:ne,ne:,ne:,:ne] -= 2 * np.einsum('ij,ba->iabj', kron[:ne,:ne], ttVir)
+        dm2[ne:,:ne,:ne,ne:] = np.einsum('iabj->bjia', dm2[:ne,ne:,ne:,:ne])
+
+        return dm1, dm2
+
 #    def deallocate(self):
 #        # Reduce the memory footprint for storing 
 #        self._eri   = None
@@ -171,16 +216,16 @@ class esmf():
         # Unpack matrices/vectors accordingly
         return np.concatenate((g_orb, g_ci))
 
-#    @property
-#    def hessian(self):
-#        ''' This method concatenate the orb-orb, orb-CI and CI-CI part of the Hessian '''
-#        H_OrbOrb = (self.get_hessianOrbOrb()[:,:,self.rot_idx])[self.rot_idx,:]
-#        H_CICI   = self.get_hessianCICI()
-#        H_OrbCI  = self.get_hessianOrbCI()[self.rot_idx,:]
-#
-#        return np.block([[H_OrbOrb, H_OrbCI],
-#                         [H_OrbCI.T, H_CICI]])
-#
+    @property
+    def hessian(self):
+        ''' This method concatenate the orb-orb, orb-CI and CI-CI part of the Hessian '''
+        H_OrbOrb = (self.get_hessianOrbOrb()[:,:,self.rot_idx])[self.rot_idx,:]
+        H_CICI   = self.get_hessianCICI()
+        H_OrbCI  = self.get_hessianOrbCI()[self.rot_idx,:]
+
+        return np.block([[H_OrbOrb, H_OrbCI],
+                         [H_OrbCI.T, H_CICI]])
+
 #    def get_hessian_index(self, tol=1e-16):
 #        eigs = scipy.linalg.eigvalsh(self.hessian)
 #        ndown = 0
@@ -284,8 +329,8 @@ class esmf():
     def rotate_ci(self,step): 
         S       = np.zeros((self.nDet,self.nDet))
         S[1:,0] = step
-        self.mat_ci = np.dot(scipy.linalg.expm(S - S.T),self.mat_ci)
-#        self.mat_ci = np.dot(self.mat_ci, scipy.linalg.expm(S - S.T))
+        #self.mat_ci = np.dot(scipy.linalg.expm(S - S.T),self.mat_ci)
+        self.mat_ci = np.dot(self.mat_ci, scipy.linalg.expm(S - S.T))
 #
 #    def get_h1eff(self):
 #        '''CAS sapce one-electron hamiltonian
@@ -316,19 +361,6 @@ class esmf():
 #        return h1eff, np.asscalar(energy_core)
 #
 #
-#    def get_h2eff(self):
-#        '''Compute the active space two-particle Hamiltonian. '''
-#        nocc  = self.ncore + self.ncas
-#        ncore = self.ncore
-#        return self.ppoo[ncore:nocc,ncore:nocc,ncore:,ncore:]
-#
-#
-#    def get_casrdm_12(self):
-#        civec = np.reshape(self.mat_ci[:,0],(self.nDeta,self.nDetb))
-#        dm1_cas, dm2_cas = self.fcisolver.make_rdm12(civec, self.ncas, self.nelecas)
-#        return dm1_cas, dm2_cas
-#
-#
 #    def get_spin_dm1(self):
 #        # Reformat the CI vector
 #        civec = np.reshape(self.mat_ci[:,0],(self.nDeta,self.nDetb))
@@ -342,28 +374,6 @@ class esmf():
 #        ao_spin_dens  = np.dot(mo_cas, np.dot(spin_dens_cas, mo_cas.T))
 #        return ao_spin_dens
 #
-#
-#    def get_fock_matrices(self):
-#        ''' Compute the core part of the generalized Fock matrix '''
-#        ncore = self.ncore
-#        nocc  = self.ncore + self.ncas
-#       
-#        # Full Fock
-#        vj = np.empty((self.nmo,self.nmo))
-#        vk = np.empty((self.nmo,self.nmo))
-#        for i in range(self.nmo):
-#            vj[i] = np.einsum('ij,qij->q', self.dm1_cas, self.ppoo[i,:,ncore:,ncore:],optimize="optimal")
-#            vk[i] = np.einsum('ij,iqj->q', self.dm1_cas, self.popo[i,ncore:,:,ncore:],optimize="optimal")
-#        fock = self.h1e_mo +  self.vhf_c + vj - vk*0.5
-#
-#        # Core contribution
-#        self.F_core = self.h1e + self.vhf_c
-#
-#        # Active space contribution
-#        self.F_cas = fock - self.F_core
-#
-#        return
-#
     def get_gen_fock(self, dm1, dm2, transition=False):
         """Build generalised Fock matrix"""
         # Initialise matrix
@@ -375,153 +385,88 @@ class esmf():
         # Two-body contribution
         F += np.einsum('mqrs,nqrs->mn', dm2, self.h2e, optimize='optimal')
 
-        return 2 * F
+        return F
 
     def get_orbital_gradient(self):
         ''' This method builds the orbital part of the gradient '''
-        g_orb = self.get_gen_fock(self.dm1, self.dm2, False)
-        print(g_orb)
+        g_orb = 2 * self.get_gen_fock(self.dm1, self.dm2, False)
         return (g_orb.T - g_orb)[self.rot_idx]
 
 
-    def get_old_ci_gradient(self):
+    def get_ci_gradient(self):
         if(self.nDet > 1):
             return 2.0 * np.einsum('i,ij,jk->k', np.asarray(self.mat_ci)[:,0], self.ham, self.mat_ci[:,1:],optimize="optimal")
         else:
             return np.zeros((0))
 
-    def get_ci_gradient(self):
+    def get_old_ci_gradient(self):
         sigma = self.ham.dot(self.mat_ci)[:,0]
         vec   = self.mat_ci[:,0]
         return 2 * (sigma[1:] * vec[0] - sigma[0] * vec[1:])
        
     
-#    def get_hessianOrbCI(self):
-#        '''This method build the orb-CI part of the hessian'''
-#        H_OCI = np.zeros((self.norb,self.norb,self.nDet-1))
-#        for k in range(1,self.nDet):
-#
-#            # Get transition density matrices
-#            dm1_cas, dm2_cas = self.get_tCASRDM12(self.mat_ci[:,0], self.mat_ci[:,k])
-#
-#            # Get transition generalised Fock matrix
-#            F = self.get_gen_fock(dm1_cas, dm2_cas, True)
-#
-#            # Save component
-#            H_OCI[:,:,k-1] = 2*(F - F.T)
-#
-#        return H_OCI
-#
-#
-#    def get_hessianOrbOrb(self):
-#        ''' This method build the orb-orb part of the hessian '''
-#        norb = self.norb; ncore = self.ncore; ncas = self.ncas
-#        nocc = ncore + ncas; nvir = norb - nocc
-#
-#        Htmp = np.zeros((norb,norb,norb,norb))
-#        F_tot = self.F_core + self.F_cas
-#
-#        # Temporary identity matrices 
-#        id_cor = np.identity(ncore)
-#        id_vir = np.identity(nvir)
-#        id_cas = np.identity(ncas)
-#
-#        #virtual-core virtual-core H_{ai,bj}
-#        if ncore>0 and nvir>0:
-#            aibj = self.popo[nocc:,:ncore,nocc:,:ncore]
-#            abij = self.ppoo[nocc:,nocc:,:ncore,:ncore]
-#
-#            Htmp[nocc:,:ncore,nocc:,:ncore] = ( 4 * (4 * aibj - abij.transpose((0,2,1,3)) - aibj.transpose((0,3,2,1)))  
-#                                              + 4 * np.einsum('ij,ab->aibj', id_cor, F_tot[nocc:,nocc:],optimize="optimal") 
-#                                              - 4 * np.einsum('ab,ij->aibj', id_vir, F_tot[:ncore,:ncore],optimize="optimal") )
-#
-#        #virtual-core virtual-active H_{ai,bt}
-#        if ncore>0 and nvir>0:
-#            aibv = self.popo[nocc:,:ncore,nocc:,ncore:nocc]
-#            avbi = self.popo[nocc:,ncore:nocc,nocc:,:ncore]
-#            abvi = self.ppoo[nocc:,nocc:,ncore:nocc,:ncore]
-#
-#            Htmp[nocc:,:ncore,nocc:,ncore:nocc] = ( 2 * np.einsum('tv,aibv->aibt', self.dm1_cas, 4 * aibv - avbi.transpose((0,3,2,1)) - abvi.transpose((0,3,1,2)),optimize="optimal") 
-#                                                  - 1 * np.einsum('ab,tvxy,vixy ->aibt', id_vir, self.dm2_cas, self.ppoo[ncore:nocc, :ncore, ncore:nocc, ncore:nocc],optimize="optimal") 
-#                                                  - 2 * np.einsum('ab,ti->aibt', id_vir, F_tot[ncore:nocc, :ncore],optimize="optimal") 
-#                                                  - 1 * np.einsum('ab,tv,vi->aibt', id_vir, self.dm1_cas, self.F_core[ncore:nocc, :ncore],optimize="optimal") )
-#
-#        #virtual-active virtual-core H_{bt,ai}
-#        if ncore>0 and nvir>0:
-#             Htmp[nocc:, ncore:nocc, nocc:, :ncore] = np.einsum('aibt->btai', Htmp[nocc:, :ncore, nocc:, ncore:nocc],optimize="optimal")
-#
-#        #virtual-core active-core H_{ai,tj}
-#        if ncore>0 and nvir>0:
-#            aivj = self.ppoo[nocc:,:ncore,ncore:nocc,:ncore]
-#            avji = self.ppoo[nocc:,ncore:nocc,:ncore,:ncore]
-#            ajvi = self.ppoo[nocc:,:ncore,ncore:nocc,:ncore]
-#
-#            Htmp[nocc:,:ncore,ncore:nocc,:ncore] = ( 2 * np.einsum('tv,aivj->aitj', (2 * id_cas - self.dm1_cas), 4 * aivj - avji.transpose((0,3,1,2)) - ajvi.transpose((0,3,2,1)),optimize="optimal") 
-#                                                   - 1 * np.einsum('ji,tvxy,avxy -> aitj', id_cor, self.dm2_cas, self.ppoo[nocc:,ncore:nocc,ncore:nocc,ncore:nocc],optimize="optimal") 
-#                                                   + 4 * np.einsum('ij,at-> aitj', id_cor, F_tot[nocc:, ncore:nocc],optimize="optimal") 
-#                                                   - 1 * np.einsum('ij,tv,av-> aitj', id_cor, self.dm1_cas, self.F_core[nocc:, ncore:nocc],optimize="optimal"))
-#
-#        #active-core virtual-core H_{tj,ai}
-#        if ncore>0 and nvir>0:
-#            Htmp[ncore:nocc, :ncore, nocc:, :ncore] = np.einsum('aitj->tjai',Htmp[nocc:,:ncore,ncore:nocc,:ncore],optimize="optimal")
-#
-#        #virtual-active virtual-active H_{at,bu}
-#        if nvir>0:
-#            Htmp[nocc:, ncore:nocc, nocc:, ncore:nocc]  = ( 2 * np.einsum('tuvx,abvx->atbu', self.dm2_cas, self.ppoo[nocc:,nocc:,ncore:nocc,ncore:nocc],optimize="optimal") 
-#                                                          + 2 * np.einsum('txvu,axbv->atbu', self.dm2_cas, self.popo[nocc:,ncore:nocc,nocc:,ncore:nocc],optimize="optimal") 
-#                                                          + 2 * np.einsum('txuv,axbv->atbu', self.dm2_cas, self.popo[nocc:,ncore:nocc,nocc:,ncore:nocc],optimize="optimal") )
-#            Htmp[nocc:, ncore:nocc, nocc:, ncore:nocc] -= ( 1 * np.einsum('ab,tvxy,uvxy->atbu', id_vir, self.dm2_cas, self.ppoo[ncore:nocc,ncore:nocc,ncore:nocc,ncore:nocc],optimize="optimal") 
-#                                                          + 1 * np.einsum('ab,tv,uv->atbu', id_vir, self.dm1_cas, self.F_core[ncore:nocc,ncore:nocc],optimize="optimal"))
-#            Htmp[nocc:, ncore:nocc, nocc:, ncore:nocc] -= ( 1 * np.einsum('ab,uvxy,tvxy->atbu', id_vir, self.dm2_cas, self.ppoo[ncore:nocc,ncore:nocc,ncore:nocc,ncore:nocc],optimize="optimal") 
-#                                                          + 1 * np.einsum('ab,uv,tv->atbu', id_vir, self.dm1_cas, self.F_core[ncore:nocc,ncore:nocc],optimize="optimal"))
-#            Htmp[nocc:, ncore:nocc, nocc:, ncore:nocc] +=   2 * np.einsum('tu,ab->atbu', self.dm1_cas, self.F_core[nocc:, nocc:],optimize="optimal")
-#
-#        #active-core virtual-active H_{ti,au}
-#        if ncore>0 and nvir>0:
-#            avti = self.ppoo[nocc:, ncore:nocc, ncore:nocc, :ncore]
-#            aitv = self.ppoo[nocc:, :ncore, ncore:nocc, ncore:nocc]
-#
-#            Htmp[ncore:nocc,:ncore,nocc:,ncore:nocc]  = (- 2 * np.einsum('tuvx,aivx->tiau', self.dm2_cas, self.ppoo[nocc:,:ncore,ncore:nocc,ncore:nocc],optimize="optimal") 
-#                                                         - 2 * np.einsum('tvux,axvi->tiau', self.dm2_cas, self.ppoo[nocc:,ncore:nocc,ncore:nocc,:ncore],optimize="optimal") 
-#                                                         - 2 * np.einsum('tvxu,axvi->tiau', self.dm2_cas, self.ppoo[nocc:,ncore:nocc,ncore:nocc,:ncore],optimize="optimal") )
-#            Htmp[ncore:nocc,:ncore,nocc:,ncore:nocc] += ( 2 * np.einsum('uv,avti->tiau', self.dm1_cas, 4 * avti - aitv.transpose((0,3,2,1)) - avti.transpose((0,2,1,3)),optimize="optimal" ) 
-#                                                        - 2 * np.einsum('tu,ai->tiau', self.dm1_cas, self.F_core[nocc:,:ncore],optimize="optimal") 
-#                                                        + 2 * np.einsum('tu,ai->tiau', id_cas, F_tot[nocc:,:ncore],optimize="optimal"))
-#
-#            #virtual-active active-core  H_{au,ti}
-#            Htmp[nocc:,ncore:nocc,ncore:nocc,:ncore]  = np.einsum('auti->tiau', Htmp[ncore:nocc,:ncore,nocc:,ncore:nocc],optimize="optimal")
-#
-#        #active-core active-core H_{ti,uj}
-#        if ncore>0:
-#            viuj = self.ppoo[ncore:nocc,:ncore,ncore:nocc,:ncore]
-#            uvij = self.ppoo[ncore:nocc,ncore:nocc,:ncore,:ncore]
-#
-#            Htmp[ncore:nocc,:ncore,ncore:nocc,:ncore]  = 4 * np.einsum('tv,viuj->tiuj', id_cas - self.dm1_cas, 4 * viuj - viuj.transpose((2,1,0,3)) - uvij.transpose((1,2,0,3)),optimize="optimal" )
-#            Htmp[ncore:nocc,:ncore,ncore:nocc,:ncore] += ( 2 * np.einsum('utvx,vxij->tiuj', self.dm2_cas, self.ppoo[ncore:nocc,ncore:nocc,:ncore,:ncore],optimize="optimal") 
-#                                                         + 2 * np.einsum('uxvt,vixj->tiuj', self.dm2_cas, self.ppoo[ncore:nocc,:ncore,ncore:nocc,:ncore],optimize="optimal") 
-#                                                         + 2  *np.einsum('uxtv,vixj->tiuj', self.dm2_cas, self.ppoo[ncore:nocc,:ncore,ncore:nocc,:ncore],optimize="optimal") )
-#            Htmp[ncore:nocc,:ncore,ncore:nocc,:ncore] += ( 2 * np.einsum('tu,ij->tiuj', self.dm1_cas, self.F_core[:ncore, :ncore],optimize="optimal") 
-#                                                         - 2 * np.einsum('ij,tvxy,uvxy->tiuj', id_cor, self.dm2_cas, self.ppoo[ncore:nocc,ncore:nocc,ncore:nocc,ncore:nocc],optimize="optimal") 
-#                                                         - 2 * np.einsum('ij,uv,tv->tiuj', id_cor, self.dm1_cas, self.F_core[ncore:nocc, ncore:nocc],optimize="optimal"))
-#            Htmp[ncore:nocc,:ncore,ncore:nocc,:ncore] += ( 4 * np.einsum('ij,tu->tiuj', id_cor, F_tot[ncore:nocc, ncore:nocc],optimize="optimal") 
-#                                                         - 4 * np.einsum('tu,ij->tiuj', id_cas, F_tot[:ncore, :ncore],optimize="optimal"))
-#
-#            #AM: I need to think about this
-#            Htmp[ncore:nocc,:ncore,ncore:nocc,:ncore] = 0.5 * (Htmp[ncore:nocc,:ncore,ncore:nocc,:ncore] + np.einsum('tiuj->ujti', Htmp[ncore:nocc,:ncore,ncore:nocc,:ncore],optimize="optimal"))
-#
-#        return(Htmp)
-#
-#
-#    def get_hessianCICI(self):
-#        ''' This method build the CI-CI part of the hessian '''
-#        if(self.nDet > 1):
-#            e0 = np.einsum('i,ij,j', np.asarray(self.mat_ci)[:,0], self.ham, np.asarray(self.mat_ci)[:,0],optimize="optimal")
-#            return 2.0 * np.einsum('ki,kl,lj->ij', 
-#                    self.mat_ci[:,1:], self.ham - e0 * np.identity(self.nDet), self.mat_ci[:,1:],optimize="optimal")
-#        else: 
-#            return np.zeros((0,0))
-#
-#
+    def get_hessianOrbCI(self):
+        '''This method build the orb-CI part of the hessian'''
+        H_OCI = np.zeros((self.norb,self.norb,self.nDet-1))
+        for k in range(1,self.nDet):
+
+            # Get transition density matrices
+            dm1_ok, dm2_ok = self.get_trdm12(self.mat_ci[:,0], self.mat_ci[:,k])
+            # Get transition density matrices
+            dm1_ko, dm2_ko = self.get_trdm12(self.mat_ci[:,k], self.mat_ci[:,0])
+            # Get transition generalised Fock matrix
+            F = self.get_gen_fock(dm1_ok + dm1_ko, dm2_ok + dm2_ko)
+
+            # Save component
+            H_OCI[:,:,k-1] = 2*(F.T - F)
+
+        return H_OCI
+
+
+    def get_hessianOrbOrb(self):
+        ''' This method build the orb-orb part of the hessian '''
+        F = self.get_gen_fock(self.dm1, self.dm2) 
+        dqs = np.identity(self.nmo)
+
+        # Build Y intermediate from Helgaker Eq. 10.8.50
+        Y  = np.einsum('prmn,qsmn->pqrs', self.dm2, self.h2e)
+        Y += np.einsum('pmrn,qmns->pqrs', self.dm2, self.h2e)
+        Y += np.einsum('pmnr,qmns->pqrs', self.dm2, self.h2e)
+
+        # Build last part of Eq 10.8.53
+        tmp   = 2 * np.einsum('pr,qs->pqrs', self.dm1, self.h1e)
+        tmp  -=  np.einsum('pr,qs->pqrs',F + F.T, dqs) 
+        tmp  += 2 * Y
+
+        # Apply the permutation operators and return result
+        return tmp - np.einsum('qprs->pqrs', tmp) - np.einsum('pqsr->pqrs', tmp) + np.einsum('qpsr->pqrs', tmp)
+
+    def get_hessianCICI(self):
+        ''' This method build the CI-CI part of the hessian '''
+        if(self.nDet > 1):
+            e0 = np.einsum('i,ij,j', np.asarray(self.mat_ci)[:,0], self.ham, np.asarray(self.mat_ci)[:,0],optimize="optimal")
+            return 2.0 * np.einsum('ki,kl,lj->ij', 
+                    self.mat_ci[:,1:], self.ham - e0 * np.identity(self.nDet), self.mat_ci[:,1:],optimize="optimal")
+        else: 
+            return np.zeros((0,0))
+
+
+    def get_front_hessianCICI(self):
+        ''' This method build the CI-CI part of the hessian '''
+        sigma = self.ham.dot(self.mat_ci)[:,0]
+        vec   = self.mat_ci[:,0]
+        c0 = vec[0]
+
+        tmp  = 2 * c0 * c0 * self.ham[1:,1:]
+        tmp -= 2 * c0 * np.einsum('i,j->ij', vec[1:], self.ham[0,1:])
+        tmp -= 2 * c0 * np.einsum('j,i->ij', vec[1:], self.ham[0,1:])
+        tmp += 2 * self.ham[0,0] * np.einsum('i,j->ij', vec[1:], vec[1:])
+        tmp -= 1 * np.einsum('i,j->ij', sigma[1:], vec[1:])
+        tmp -= 1 * np.einsum('j,i->ij', sigma[1:], vec[1:])
+        tmp -= 2 *  c0 * sigma[0] * np.identity(self.nDet-1)
+        return tmp
+
+
 #    def _eig(self, h, *args):
 #        return scf.hf.eig(h, None)
 #    def get_hcore(self, mol=None):
@@ -634,41 +579,40 @@ class esmf():
 
         return grad
 
-#    def get_numerical_hessian(self,eps=1e-3):
-#        Hess = np.zeros((self.dim, self.dim))
-#        for i in range(self.dim):
-#            print(i, self.dim)
-#            for j in range(i,self.dim):
-#                x1 = np.zeros(self.dim)
-#                x2 = np.zeros(self.dim)
-#                x3 = np.zeros(self.dim)
-#                x4 = np.zeros(self.dim)
-#                
-#                x1[i] += eps; x1[j] += eps
-#                x2[i] += eps; x2[j] -= eps
-#                x3[i] -= eps; x3[j] += eps
-#                x4[i] -= eps; x4[j] -= eps
-#                
-#                self.take_step(x1)
-#                E1 = self.energy
-#                self.restore_last_step()
-#
-#                self.take_step(x2)
-#                E2 = self.energy
-#                self.restore_last_step()
-#
-#                self.take_step(x3)
-#                E3 = self.energy
-#                self.restore_last_step()
-#
-#                self.take_step(x4)
-#                E4 = self.energy
-#                self.restore_last_step()
-#
-#                Hess[i,j] = ((E1 - E2) - (E3 - E4)) / (4 * eps * eps)
-#                if(i!=j): Hess[j,i] = Hess[i,j]
-#
-#        return Hess
+    def get_numerical_hessian(self,eps=1e-3):
+        Hess = np.zeros((self.dim, self.dim))
+        for i in range(self.dim):
+            for j in range(i,self.dim):
+                x1 = np.zeros(self.dim)
+                x2 = np.zeros(self.dim)
+                x3 = np.zeros(self.dim)
+                x4 = np.zeros(self.dim)
+                
+                x1[i] += eps; x1[j] += eps
+                x2[i] += eps; x2[j] -= eps
+                x3[i] -= eps; x3[j] += eps
+                x4[i] -= eps; x4[j] -= eps
+                
+                self.take_step(x1)
+                E1 = self.energy
+                self.restore_last_step()
+
+                self.take_step(x2)
+                E2 = self.energy
+                self.restore_last_step()
+
+                self.take_step(x3)
+                E3 = self.energy
+                self.restore_last_step()
+
+                self.take_step(x4)
+                E4 = self.energy
+                self.restore_last_step()
+
+                Hess[i,j] = ((E1 - E2) - (E3 - E4)) / (4 * eps * eps)
+                if(i!=j): Hess[j,i] = Hess[i,j]
+
+        return Hess
 
 
 ##### Main #####
@@ -725,23 +669,32 @@ if __name__ == '__main__':
     print("Actual reference energy", myhf.energy_tot())
     
 
-    # Set orbital coefficients
-    np.set_printoptions(precision=4,suppress=True)
-    ci_guess = np.identity(myesmf.nDet)
-    #ci_guess[:,[0,2]] = ci_guess[:,[0,2]].dot(scipy.linalg.expm(np.matrix([[0,0.2],[-0.2,0]])))
-
     np.random.seed(7)
-    ci_guess = np.random.rand(myesmf.nDet,myesmf.nDet)
-    myesmf.initialise(myhf.mo_coeff, ci_guess)
-    print("Energy = ", myesmf.energy)
-    grad = myesmf.gradient
-    num_grad = myesmf.get_numerical_gradient()
-    print("Analytic gradient = ")
-    print(grad)
-    print(num_grad)
-    print(myhf.energy_tot())
-    #NewtonRaphson(mycas,index=0)
-    #mycas.canonicalize_()
+    for nsample in range(10):
+        del myesmf
+        myesmf = esmf(mol)
+        # Set orbital coefficients
+        np.set_printoptions(precision=4,suppress=True)
+        ci_guess = np.random.rand(myesmf.nDet,myesmf.nDet)
+
+        myesmf.initialise(myhf.mo_coeff, ci_guess)
+        #print("Energy = ", myesmf.energy)
+        #hess = myesmf.hessian
+        #num_hess = myesmf.get_numerical_hessian()
+        #grad = myesmf.gradient
+        #num_grad = myesmf.get_numerical_gradient()
+        #print("Analytic Hessian = ")
+        #print(hess)
+        #print(num_hess)
+        #print("Analytic gradient = ")
+        #print(grad)
+        #print(num_grad)
+        #quit()
+        #print(myhf.energy_tot())
+#    quit()
+        opt = EigenFollow(minstep=0.0,rtrust=0.15)
+        opt.run(myesmf, thresh=1e-8, maxit=500, index=0)
+        #mycas.canonicalize_()
 
     print()
     print("  Final energy = {: 16.10f}".format(myesmf.energy))
