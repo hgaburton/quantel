@@ -4,12 +4,11 @@
 import numpy as np
 import scipy.linalg
 from functools import reduce
-from pyscf import scf, fci, __config__, ao2mo, lib, mcscf, ci
-from pyscf.mcscf import mc_ao2mo
-from gnme.cas_noci import cas_proj
-from utils import delta_kron, orthogonalise
+from pyscf import scf, __config__, ao2mo
+from xesla.utils.linalg import delta_kron, orthogonalise
+from .wavefunction import Wavefunction
 
-class pcid():
+class PCID(Wavefunction):
     def __init__(self, mol):
         self.mol        = mol
         self.nelec      = mol.nelec
@@ -32,21 +31,24 @@ class pcid():
         self.rot_idx    = self.uniq_var_indices(self.norb, self.frozen)
         self.nrot       = np.sum(self.rot_idx)
 
-        # Dimensions of problem 
-        self.dim        = self.nrot + self.nDet - 1
+    @property
+    def dim(self):
+        return self.nrot + self.nDet - 1
+
 
     def copy(self):
         # Return a copy of the current object
         newcas = pcid(self.mol)
         newcas.initialise(self.mo_coeff, self.mat_ci, integrals=False)
         return newcas
-#
-#    def overlap(self, them):
-#        # Represent the alternative CAS state in the current CI space
-#        vec2 = cas_proj(self, them, self.ovlp) 
-#        # Compute the overlap and return
-#        return np.dot(np.asarray(self.mat_ci)[:,0].conj(), vec2)
-#
+
+    def overlap(self, them):
+        # Represent the alternative CAS state in the current CI space
+        return None
+        vec2 = cas_proj(self, them, self.ovlp) 
+        # Compute the overlap and return
+        return np.dot(np.asarray(self.mat_ci)[:,0].conj(), vec2)
+
 #    def sanity_check(self):
 #        '''Need to be run at the start of the kernel to verify that the number of 
 #           orbitals and electrons in the CAS are consistent with the system '''
@@ -62,9 +64,9 @@ class pcid():
 #
 #
     def get_ao_integrals(self):
-        self.enuc       = self._scf.energy_nuc()
-        self.v1e        = self.mol.intor('int1e_nuc')  # Nuclear repulsion matrix elements
-        self.t1e        = self.mol.intor('int1e_kin')  # Kinetic energy matrix elements
+        self.enuc       = 0.0 * self._scf.energy_nuc()
+        self.v1e        = 0.0 * self.mol.intor('int1e_nuc')  # Nuclear repulsion matrix elements
+        self.t1e        = 0.0 * self.mol.intor('int1e_kin')  # Kinetic energy matrix elements
         self.hcore      = self.t1e + self.v1e          # 1-electron matrix elements in the AO basis
         self.norb       = self.hcore.shape[0]
         self.ovlp       = self.mol.intor('int1e_ovlp') # Overlap matrix
@@ -117,35 +119,32 @@ class pcid():
 
         # Compute the 1RDM
         dm1 = np.zeros((self.nmo,self.nmo))
-        dm1[:self.na,:self.na] = (np.identity(self.na) - ttOcc)
-        dm1[self.na:,self.na:] = ttVir
+        dm1[:self.na,:self.na] = (np.identity(self.na) - np.diag(np.diag(ttOcc)))
+        dm1[self.na:,self.na:] = np.diag(np.diag(ttVir))
         dm1 *= 2
 
         # Dompute the 2RDM
         dm2 = np.zeros((self.nmo,self.nmo,self.nmo,self.nmo))
         # ijkl block
         dm2[:ne,:ne,:ne,:ne] += 4 * np.einsum('ij,kl->ijkl', kron[:ne,:ne], kron[:ne,:ne])
-        dm2[:ne,:ne,:ne,:ne] -= 4 * np.einsum('ij,kl->ijkl', kron[:ne,:ne], ttOcc)
-        dm2[:ne,:ne,:ne,:ne] -= 4 * np.einsum('ij,kl->ijkl', ttOcc, kron[:ne,:ne])
+        dm2[:ne,:ne,:ne,:ne] -= 4 * np.einsum('ij,kl->ijkl', kron[:ne,:ne], np.diag(np.diag(ttOcc)))
+        dm2[:ne,:ne,:ne,:ne] -= 4 * np.einsum('ij,kl->ijkl', np.diag(np.diag(ttOcc)), kron[:ne,:ne])
         dm2[:ne,:ne,:ne,:ne] -= 2 * np.einsum('il,kj->ijkl', kron[:ne,:ne], kron[:ne,:ne])
-        dm2[:ne,:ne,:ne,:ne] += 2 * np.einsum('il,kj->ijkl', kron[:ne,:ne], ttOcc)
-        dm2[:ne,:ne,:ne,:ne] += 2 * np.einsum('il,kj->ijkl', ttOcc, kron[:ne,:ne])
-        # ijka block
-        dm2[:ne,:ne,:ne,ne:] += 4 * c0 * np.einsum('ij,ka->ijka', kron[:ne,:ne], t)
-        dm2[:ne,:ne,:ne,ne:] -= 2 * c0 * np.einsum('kj,ia->ijka', kron[:ne,:ne], t)
-        dm2[:ne,ne:,:ne,:ne] = np.einsum('ijka->kaij',dm2[:ne,:ne,:ne,ne:])
-        # ijak block
-        dm2[:ne,:ne,ne:,:ne] += 4 * c0 * np.einsum('ij,ak->ijak', kron[:ne,:ne], t.T)
-        dm2[:ne,:ne,ne:,:ne] -= 2 * c0 * np.einsum('ik,aj->ijak', kron[:ne,:ne], t.T)
-        dm2[ne:,:ne,:ne,:ne] = np.einsum('ijak->akij',dm2[:ne,:ne,ne:,:ne])
+        dm2[:ne,:ne,:ne,:ne] += 2 * np.einsum('ik,kl,lj->ijkl', kron[:ne,:ne], ttOcc, kron[:ne,:ne])
+        # ijka block = 0
+        # ijak block = 0
         # ijab block
-        dm2[:ne,:ne,ne:,ne:] += 4 * np.einsum('ij,ab->ijab', kron[:ne,:ne], ttVir)
-        dm2[:ne,:ne,ne:,ne:] -= 2 * np.einsum('ib,ja->ijab', t, t)
+        dm2[:ne,:ne,ne:,ne:] += 4 * np.einsum('ij,ab->ijab', kron[:ne,:ne], np.diag(np.diag(ttVir)))
+        dm2[:ne,:ne,ne:,ne:] -= 4 * np.einsum('ij,ja,ab->ijab', kron[:ne,:ne], np.power(t,2), kron[ne:,ne:])
         dm2[ne:,ne:,:ne,:ne] = np.einsum('ijab->abij', dm2[:ne,:ne,ne:,ne:])
         # iabj block
-        dm2[:ne,ne:,ne:,:ne] += 4 * np.einsum('ia,jb->iabj', t, t)
-        dm2[:ne,ne:,ne:,:ne] -= 2 * np.einsum('ij,ba->iabj', kron[:ne,:ne], ttVir)
+        dm2[:ne,ne:,ne:,:ne] -= 2 * np.einsum('ij,ab->iabj', kron[:ne,:ne], np.diag(np.diag(ttVir)))
+        dm2[:ne,ne:,ne:,:ne] += 2 * np.einsum('ij,ja,ab->iabj', kron[:ne,:ne], np.power(t,2), kron[ne:,ne:])
         dm2[ne:,:ne,:ne,ne:] = np.einsum('iabj->bjia', dm2[:ne,ne:,ne:,:ne])
+        # iajb block
+        dm2[:ne,ne:,:ne,ne:] += 2 * np.einsum('ij,ja,ab->iajb',kron[:ne,:ne], t, kron[ne:,ne:]) * c0
+        # aibj block
+        dm2[ne:,:ne,ne:,:ne] += 2 * np.einsum('ij,ja,ab->aibj',kron[:ne,:ne], t, kron[ne:,ne:]) * c0
 
         return dm1, dm2
 
@@ -215,6 +214,7 @@ class pcid():
         E  = self.enuc
         E += np.einsum('pq,pq', self.h1e, self.dm1, optimize="optimal")
         E += 0.5 * np.einsum('pqrs,pqrs', self.h2e, self.dm2, optimize="optimal")
+        print(E, np.linalg.multi_dot((self.mat_ci[:,0],self.ham,self.mat_ci[:,0])))
         return E
 #
 #    @property
@@ -250,15 +250,6 @@ class pcid():
             else:         nzero +=1 
         return ndown, nzero, nuphl
 
-    def pushoff(self, n, angle=np.pi/2, evec=None):
-        """Perturb along n Hessian directions"""
-        if evec is None:
-            eigval, eigvec = np.linalg.eigh(self.hessian)
-        else:
-            eigvec = evec
-        step = sum(eigvec[:,i] * angle for i in range(n))
-        self.take_step(step)
-
 #    def guess_casci(self, n):
 #        self.mat_ci = np.linalg.eigh(self.ham)[1]
 #        self.mat_ci[:,[0,n]] = self.mat_ci[:,[n,0]]
@@ -293,16 +284,19 @@ class pcid():
         dij = np.identity(self.na)
         dab = np.identity(self.nmo - self.na)
 
+        JK = np.einsum('pqpq->pq',self.h2e)
+
         ham = np.zeros((self.nDet, self.nDet))
         ham[0,0]   = self.eref
-        ham[0,1:]  = np.sqrt(2) * np.reshape(self.ref_fock[:self.na,self.na:], (nov))
-        ham[1:,0]  = np.sqrt(2) * np.reshape(self.ref_fock[:self.na,self.na:], (nov))
+        ham[0,1:]  = np.reshape(JK[:self.na,self.na:], (nov))
+        ham[1:,0]  = np.reshape(JK[:self.na,self.na:], (nov))
 
         hiajb = ( self.eref * np.einsum('ij,ab->iajb',dij,dab) 
-                 + np.einsum('ab,ij->iajb',self.ref_fock[ne:,ne:],dij)
-                 - np.einsum('ij,ab->iajb',self.ref_fock[:ne,:ne],dab) 
-                 + 2 * np.einsum('aijb->iajb',self.h2e[ne:,:ne,:ne,ne:]) 
-                     - np.einsum('abji->iajb',self.h2e[ne:,ne:,:ne,:ne])) 
+                 + 2 * np.einsum('ab,ij->iajb',np.diag(np.diag(self.ref_fock[ne:,ne:])),dij)
+                 - 2 * np.einsum('ij,ab->iajb',np.diag(np.diag(self.ref_fock[:ne,:ne])),dab) 
+                 + 2 * 0.5 * np.einsum('ab,ij->iajb',JK[ne:,ne:],dij) 
+                 + 2 * 0.5 * np.einsum('ab,ji->iajb',dab,JK[:ne,:ne])
+                ) 
         ham[1:,1:] = np.reshape(np.reshape(hiajb,(ne,self.nmo-self.na,-1)),(self.nDet-1,-1))
         return ham
 
@@ -408,11 +402,6 @@ class pcid():
         else:
             return np.zeros((0))
 
-    def get_old_ci_gradient(self):
-        sigma = self.ham.dot(self.mat_ci)[:,0]
-        vec   = self.mat_ci[:,0]
-        return 2 * (sigma[1:] * vec[0] - sigma[0] * vec[1:])
-       
     
     def get_hessianOrbCI(self):
         '''This method build the orb-CI part of the hessian'''
@@ -460,22 +449,6 @@ class pcid():
             return np.zeros((0,0))
 
 
-    def get_front_hessianCICI(self):
-        ''' This method build the CI-CI part of the hessian '''
-        sigma = self.ham.dot(self.mat_ci)[:,0]
-        vec   = self.mat_ci[:,0]
-        c0 = vec[0]
-
-        tmp  = 2 * c0 * c0 * self.ham[1:,1:]
-        tmp -= 2 * c0 * np.einsum('i,j->ij', vec[1:], self.ham[0,1:])
-        tmp -= 2 * c0 * np.einsum('j,i->ij', vec[1:], self.ham[0,1:])
-        tmp += 2 * self.ham[0,0] * np.einsum('i,j->ij', vec[1:], vec[1:])
-        tmp -= 1 * np.einsum('i,j->ij', sigma[1:], vec[1:])
-        tmp -= 1 * np.einsum('j,i->ij', sigma[1:], vec[1:])
-        tmp -= 2 *  c0 * sigma[0] * np.identity(self.nDet-1)
-        return tmp
-
-
 #    def _eig(self, h, *args):
 #        return scf.hf.eig(h, None)
 #    def get_hcore(self, mol=None):
@@ -514,154 +487,3 @@ class pcid():
                 frozen = np.asarray(frozen)
                 mask[frozen] = mask[:,frozen] = False
         return mask
-
-    def get_numerical_gradient(self,eps=1e-3):
-        grad = np.zeros((self.dim))
-        for i in range(self.dim):
-            x1 = np.zeros(self.dim)
-            x2 = np.zeros(self.dim)
-                
-            x1[i] += eps
-            x2[i] -= eps
-                
-            self.take_step(x1)
-            E1 = self.energy
-            self.restore_last_step()
-
-            self.take_step(x2)
-            E2 = self.energy
-            self.restore_last_step()
-
-            grad[i] = (E1 - E2) / (2 * eps)
-
-        return grad
-
-    def get_numerical_hessian(self,eps=1e-3):
-        Hess = np.zeros((self.dim, self.dim))
-        for i in range(self.dim):
-            for j in range(i,self.dim):
-                x1 = np.zeros(self.dim)
-                x2 = np.zeros(self.dim)
-                x3 = np.zeros(self.dim)
-                x4 = np.zeros(self.dim)
-                
-                x1[i] += eps; x1[j] += eps
-                x2[i] += eps; x2[j] -= eps
-                x3[i] -= eps; x3[j] += eps
-                x4[i] -= eps; x4[j] -= eps
-                
-                self.take_step(x1)
-                E1 = self.energy
-                self.restore_last_step()
-
-                self.take_step(x2)
-                E2 = self.energy
-                self.restore_last_step()
-
-                self.take_step(x3)
-                E3 = self.energy
-                self.restore_last_step()
-
-                self.take_step(x4)
-                E4 = self.energy
-                self.restore_last_step()
-
-                Hess[i,j] = ((E1 - E2) - (E3 - E4)) / (4 * eps * eps)
-                if(i!=j): Hess[j,i] = Hess[i,j]
-
-        return Hess
-
-
-##### Main #####
-if __name__ == '__main__':
-    import sys, re, os
-    from opt.eigenvector_following import EigenFollow
-    from pyscf import gto
-
-    np.set_printoptions(linewidth=10000)
-
-    def read_config(file):
-        f = open(file,"r")
-        lines = f.read().splitlines()
-        basis, charge, spin, frozen, cas, grid_option, Hind, maxit = 'sto-3g', 0, 0, 0, (0,0), 1000, None, 1000
-        for line in lines:
-            if re.match('basis', line) is not None:
-                basis = str(re.split(r'\s', line)[-1])
-            elif re.match('charge', line) is not None:
-                charge = int(re.split(r'\s', line)[-1])
-            elif re.match('spin', line) is not None:
-                spin = int(re.split(r'\s', line)[-1])
-            elif re.match('frozen', line) is not None:
-                frozen = int(re.split(r'\s', line)[-1])
-            elif re.match('seed', line) is not None:
-                np.random.seed(int(line.split()[-1]))
-            elif re.match('index', line) is not None:
-                Hind = int(line.split()[-1])
-            elif re.match('maxit', line) is not None:
-                maxit = int(line.split()[-1])
-            elif re.match('cas', line) is not None:
-                tmp = list(re.split(r'\s', line)[-1])
-                cas = (int(tmp[1]), int(tmp[3]))
-            elif re.match('grid', line) is not None:
-                if re.split(r'\s', line)[-1] == 'full':
-                    grid_option = re.split(r'\s', line)[-1]
-                else:
-                    grid_option = int(re.split(r'\s', line)[-1])
-        return basis, charge, spin, frozen, cas, grid_option, Hind, maxit
-
-    mol = gto.Mole(symmetry=False,unit='bohr')
-    mol.atom = sys.argv[1]
-    basis, charge, spin, frozen, cas, grid_option, Hind, maxit = read_config(sys.argv[2])
-    mol.basis = basis
-    mol.charge = charge
-    mol.spin = spin
-    mol.build()
-    myhf = mol.RHF().run()
-
-    # Initialise CAS object
-    myfun = pcid(mol)
-
-    myhf.mo_coeff[:,[0,-1]] = myhf.mo_coeff[:,[0,-1]].dot(scipy.linalg.expm(np.matrix([[0,0.2],[-0.2,0]])))
-    print(myhf.mo_occ)
-    print("Actual reference energy", myhf.energy_tot())
-    
-
-    np.random.seed(7)
-    for nsample in range(1):
-        del myfun
-        myfun = pcid(mol)
-        # Set orbital coefficients
-        np.set_printoptions(precision=4,suppress=True)
-        ci_guess = np.random.rand(myfun.nDet,myfun.nDet)
-
-        myfun.initialise(myhf.mo_coeff, ci_guess)
-        #print("Energy = ", myfun.energy)
-        #hess = myfun.hessian
-        #num_hess = myfun.get_numerical_hessian()
-        #grad = myfun.gradient
-        #num_grad = myfun.get_numerical_gradient()
-        #print("Analytic Hessian = ")
-        #print(hess)
-        #print(num_hess)
-        #print("Analytic gradient = ")
-        #print(grad)
-        #print(num_grad)
-        #quit()
-        #print(myhf.energy_tot())
-#    quit()
-        opt = EigenFollow(minstep=0.0,rtrust=0.15)
-        opt.run(myfun, thresh=1e-8, maxit=500, index=Hind)
-        #mycas.canonicalize_()
-        print("  Final energy = {: 16.10f}".format(myfun.energy))
-
-    print()
-#    print("         <S^2> = {: 16.10f}".format(mycas.s2))
-
-    print()
-    print("  Canonical natural orbitals:      ")
-    print("  ---------------------------------")
-    print(" {:^5s}  {:^10s}  {:^10s}".format("  Orb","Occ.","Energy"))
-    print("  ---------------------------------")
-    for i in range(mycas.ncore + mycas.ncas):
-        print(" {:5d}  {: 10.6f}  {: 10.6f}".format(i+1, mycas.mo_occ[i], mycas.mo_energy[i]))
-    print("  ---------------------------------")

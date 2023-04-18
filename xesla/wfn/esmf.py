@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Author: Antoine Marie, Hugh G. A. Burton
+# Author: Hugh G. A. Burton
 
 import numpy as np
 import scipy.linalg
