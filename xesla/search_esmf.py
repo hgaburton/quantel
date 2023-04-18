@@ -5,8 +5,8 @@ import numpy as np
 from scipy.linalg import expm as scipy_expm
 from scipy.linalg import eigvalsh as scipy_eigvalsh
 from pyscf import gto
-from wfn.ss_casscf import SS_CASSCF
-from opt.eigenvector_following import EigenFollow
+from xesla.wfn.esmf import ESMF
+from xesla.opt.eigenvector_following import EigenFollow
 
 def random_rot(n, lmin, lmax):
     X = lmin + np.random.rand(n,n) * (lmax - lmin)
@@ -61,77 +61,79 @@ if __name__ == '__main__':
     mol.spin = spin
     mol.build()
 
-    # Get overlap matrix
-    g = mol.intor('int1e_ovlp')
-
     # Get an initial HF solution
     myhf = mol.RHF().run()
 
-    # Initialise CAS object
-    mycas = SS_CASSCF(mol, cas[0], cas[1])
-
+    # Initialise wfn object
+    myfun = ESMF(mol)
     nmo = myhf.mo_coeff.shape[1]
-    ndet = mycas.nDet
+    ndet = myfun.nDet
 
     # Get inital coefficients and CI vectors
     ref_mo = myhf.mo_coeff.copy()
     ref_ci = np.identity(ndet)
+    
+    half_rot = scipy_expm(0.25*np.pi*np.matrix([[0,-1],[1,0]]))
 
-    cas_list = []
+    sol_list = []
 
     count = 0
     for itest in range(nsample):
         # Randomly perturb CI and MO coefficients
-        mo_guess = ref_mo.dot(random_rot(nmo,  -np.pi, np.pi))
+        mo_guess = ref_mo.copy()
+        mo_guess[:,[7,8]] = mo_guess[:,[7,8]].dot(half_rot)
+        print(mo_guess)
+#        mo_guess = ref_mo.dot(random_rot(nmo,  -np.pi, np.pi))
         ci_guess = ref_ci.dot(random_rot(ndet, -np.pi, np.pi))
 
         # Set orbital coefficients
-        mycas.initialise(mo_guess, ci_guess)
-        #num_hess = mycas.get_numerical_hessian(eps=1e-4)
-        #hess = mycas.hessian
-        #print("Numerical Hessian")
-        #print(num_hess)
-        #print("Hessian")
-        #print(hess)
+        del myfun
+        myfun = ESMF(mol)
+        myfun.initialise(mo_guess, ci_guess)
+        num_hess = myfun.get_numerical_hessian(eps=1e-4)
+        hess = myfun.hessian
+        print("Numerical Hessian")
+        print(num_hess)
+        print("Hessian")
+        print(hess)
         #print("Hessian")
         #print(np.linalg.eigvalsh(num_hess))
         #print(np.linalg.eigvalsh(hess))
-        #quit()
+        quit()
 
-        mycas.canonicalize_()
+        #mycas.canonicalize_()
 
         opt = EigenFollow(minstep=0.0,rtrust=0.15)
-        if not opt.run(mycas, thresh=thresh, maxit=500, index=Hind):
+        if not opt.run(myfun, thresh=thresh, maxit=500, index=Hind):
             continue
-        hindices = mycas.get_hessian_index()
-        pushoff = 0.01
-        pushit  = 0
-        while hindices[0] != Hind and pushit < 5: 
-            # Try to perturb along relevant number of downhill directions
-            mycas.pushoff(1,pushoff)
-            opt.run(mycas, thresh=thresh, maxit=500, index=Hind)
-            hindices = mycas.get_hessian_index()
-            pushoff *= 2
-            pushit  += 1
+        hindices = myfun.get_hessian_index()
+        myfun.update_integrals()
+        #pushoff = 0.01
+        #pushit  = 0
+        #while hindices[0] != Hind and pushit < 5: 
+        #    # Try to perturb along relevant number of downhill directions
+        #    mycas.pushoff(1,pushoff)
+        #    opt.run(mycas, thresh=thresh, maxit=500, index=Hind)
+        #    hindices = mycas.get_hessian_index()
+        #    pushoff *= 2
+        #    pushit  += 1
 
         if hindices[0] != Hind: continue
-
-        mycas.canonicalize_()
-
+        
         # Get the distances
         new = True
-        for othercas in cas_list:
-            if 1.0 - abs(mycas.overlap(othercas)) < 1e-8:
-                new = False
-                break
+        #for othercas in cas_list:
+        #    if 1.0 - abs(mycas.overlap(othercas)) < 1e-8:
+        #        new = False
+        #        break
         if new: 
             count += 1
             tag = "{:04d}".format(count)
-            np.savetxt(tag+'.mo_coeff', mycas.mo_coeff, fmt="% 20.16f")
-            np.savetxt(tag+'.mat_ci', mycas.mat_ci, fmt="% 20.16f")
+            np.savetxt(tag+'.mo_coeff', myfun.mo_coeff, fmt="% 20.16f")
+            np.savetxt(tag+'.mat_ci', myfun.mat_ci[:,0], fmt="% 20.16f")
             np.savetxt(tag+'.energy', np.array([
-                  [mycas.energy, hindices[0], hindices[1], mycas.s2]]), fmt="% 18.12f % 5d % 5d % 12.6f")
+                  [myfun.energy, hindices[0], hindices[1], 0.0]]), fmt="% 18.12f % 5d % 5d % 12.6f")
             
             # Deallocate integrals to reduce memory footprint
-        #    mycas.deallocate()
-            cas_list.append(mycas.copy())
+            myfun.deallocate()
+            sol_list.append(myfun.copy())

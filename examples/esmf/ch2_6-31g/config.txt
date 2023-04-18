@@ -1,0 +1,8 @@
+basis 6-31g
+charge 0
+spin 0
+index 0
+cas (2,2)
+seed 7
+units B
+nsample 10

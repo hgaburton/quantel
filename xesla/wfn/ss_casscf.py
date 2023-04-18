@@ -10,7 +10,7 @@ from xesla.utils.linalg import delta_kron, orthogonalise
 from xesla.gnme.cas_noci import cas_proj
 from .wavefunction import Wavefunction
 
-class ss_casscf(Wavefunction):
+class SS_CASSCF(Wavefunction):
     """
         State-specific CASSCF object
 
@@ -65,17 +65,52 @@ class ss_casscf(Wavefunction):
         self.rot_idx    = self.uniq_var_indices(self.norb, self.frozen)
         self.nrot       = np.sum(self.rot_idx)
 
-        # Dimensions of problem 
-        self.dim        = self.nrot + self.nDet - 1
-
         # Define the FCI solver
         self.fcisolver = fci.direct_spin1.FCISolver(mol)
 
+    @property
+    def dim(self):
+        return self.nrot + self.nDet - 1
+
+    @property
+    def energy(self):
+        ''' Compute the energy corresponding to a given set of
+             one-el integrals, two-el integrals, 1- and 2-RDM '''
+        E  = self.energy_core
+        E += np.einsum('pq,pq', self.h1eff, self.dm1_cas,optimize="optimal")
+        E += 0.5 * np.einsum('pqrs,pqrs', self.h2eff, self.dm2_cas,optimize="optimal")
+        return E
+
+    @property
+    def s2(self):
+        ''' Compute the spin of a given FCI vector '''
+        return self.fcisolver.spin_square(self.mat_ci[:,0], self.ncas, self.nelecas)[0]
+
+    @property
+    def gradient(self):
+        g_orb = self.get_orbital_gradient()
+        g_ci  = self.get_ci_gradient()  
+
+        # Unpack matrices/vectors accordingly
+        return np.concatenate((g_orb, g_ci))
+
+    @property
+    def hessian(self):
+        ''' This method concatenate the orb-orb, orb-CI and CI-CI part of the Hessian '''
+        H_OrbOrb = (self.get_hessianOrbOrb()[:,:,self.rot_idx])[self.rot_idx,:]
+        H_CICI   = self.get_hessianCICI()
+        H_OrbCI  = self.get_hessianOrbCI()[self.rot_idx,:]
+
+        return np.block([[H_OrbOrb, H_OrbCI],
+                         [H_OrbCI.T, H_CICI]])
+
+
     def copy(self):
         # Return a copy of the current object
-        newcas = ss_casscf(self.mol, self.ncas, self.nelecas)
+        newcas = SS_CASSCF(self.mol, self.ncas, self.nelecas)
         newcas.initialise(self.mo_coeff, self.mat_ci, integrals=False)
         return newcas
+
 
     def overlap(self, them):
         """Compute the many-body overlap with another CAS waveunction (them)"""
@@ -83,6 +118,7 @@ class ss_casscf(Wavefunction):
         vec2 = cas_proj(self, them, self.ovlp) 
         # Compute the overlap and return
         return np.dot(np.asarray(self.mat_ci)[:,0].conj(), vec2)
+
 
     def sanity_check(self):
         '''Need to be run at the start of the kernel to verify that the number of 
@@ -136,62 +172,11 @@ class ss_casscf(Wavefunction):
         self.F_cas  = None
         self.ham    = None
 
-    @property
-    def energy(self):
-        ''' Compute the energy corresponding to a given set of
-             one-el integrals, two-el integrals, 1- and 2-RDM '''
-        E  = self.energy_core
-        E += np.einsum('pq,pq', self.h1eff, self.dm1_cas,optimize="optimal")
-        E += 0.5 * np.einsum('pqrs,pqrs', self.h2eff, self.dm2_cas,optimize="optimal")
-        return E
 
-    @property
-    def s2(self):
-        ''' Compute the spin of a given FCI vector '''
-        return self.fcisolver.spin_square(self.mat_ci[:,0], self.ncas, self.nelecas)[0]
-
-    @property
-    def gradient(self):
-        g_orb = self.get_orbital_gradient()
-        g_ci  = self.get_ci_gradient()  
-
-        # Unpack matrices/vectors accordingly
-        return np.concatenate((g_orb, g_ci))
-
-    @property
-    def hessian(self):
-        ''' This method concatenate the orb-orb, orb-CI and CI-CI part of the Hessian '''
-        H_OrbOrb = (self.get_hessianOrbOrb()[:,:,self.rot_idx])[self.rot_idx,:]
-        H_CICI   = self.get_hessianCICI()
-        H_OrbCI  = self.get_hessianOrbCI()[self.rot_idx,:]
-
-        return np.block([[H_OrbOrb, H_OrbCI],
-                         [H_OrbCI.T, H_CICI]])
-
-    def get_hessian_index(self, tol=1e-16):
-        """Compute the Hessian index
-               tol : Threshold for determining a zero eigenvalue
-        """
-        eigs = scipy.linalg.eigvalsh(self.hessian)
-        ndown = 0
-        nzero = 0
-        nuphl = 0
-        for i in eigs:
-            if i < -tol:  ndown += 1
-            elif i > tol: nuphl +=1
-            else:         nzero +=1 
-        return ndown, nzero, nuphl
-
-
-    def pushoff(self, n, angle=np.pi/2):
-        """Perturb along n Hessian directions"""
-        eigval, eigvec = np.linalg.eigh(self.hessian)
-        step = sum(eigvec[:,i] * angle for i in range(n))
-        self.take_step(step)
-    
     def guess_casci(self, n):
         self.mat_ci = np.linalg.eigh(self.ham)[1]
         self.mat_ci[:,[0,n]] = self.mat_ci[:,[n,0]]
+
 
     def update_integrals(self):
         # One-electron Hamiltonian
@@ -228,38 +213,41 @@ class ss_casscf(Wavefunction):
         # Hamiltonian in active space
         self.ham = self.fcisolver.pspace(self.h1eff, self.h2eff, self.ncas, self.nelecas, np=1000000)[1]
 
+
     def restore_last_step(self):
         # Restore coefficients
         self.mo_coeff = self.mo_coeff_save.copy()
         self.mat_ci   = self.mat_ci_save.copy()
-
         # Finally, update our integrals for the new coefficients
         self.update_integrals()
+
 
     def save_last_step(self):
         self.mo_coeff_save = self.mo_coeff.copy()
         self.mat_ci_save   = self.mat_ci.copy()
 
+
     def take_step(self,step):
         # Save our last position
         self.save_last_step()
-
         # Take steps in orbital and CI space
         self.rotate_orb(step[:self.nrot])
         self.rotate_ci(step[self.nrot:])
-
         # Finally, update our integrals for the new coefficients
         self.update_integrals()
+
 
     def rotate_orb(self,step): 
         orb_step = np.zeros((self.norb,self.norb))
         orb_step[self.rot_idx] = step
         self.mo_coeff = np.dot(self.mo_coeff, scipy.linalg.expm(orb_step - orb_step.T))
 
+
     def rotate_ci(self,step): 
         S       = np.zeros((self.nDet,self.nDet))
         S[1:,0] = step
         self.mat_ci = np.dot(self.mat_ci, scipy.linalg.expm(S - S.T))
+
 
     def get_h1eff(self):
         '''CAS sapce one-electron hamiltonian
@@ -338,6 +326,7 @@ class ss_casscf(Wavefunction):
 
         return
 
+
     def get_gen_fock(self,dm1_cas,dm2_cas,transition=False):
         """Build generalised Fock matrix"""
         ncore = self.ncore
@@ -415,23 +404,6 @@ class ss_casscf(Wavefunction):
         t_dm1_cas, t_dm2_cas = self.fcisolver.trans_rdm12(ci1,ci2,ncas,nelecas)
 
         return t_dm1_cas.T, t_dm2_cas
-
-    def get_tCASRDM1(self,ci1,ci2):
-        ''' This method compute the 1-electrons transition density matrix between the ci vectors ci1 and ci2 '''
-        ncas = self.ncas
-        nelecas = self.nelecas
-        if len(ci1.shape)==1:
-            nDeta = scipy.special.comb(ncas,nelecas[0]).astype(int)
-            nDetb = scipy.special.comb(ncas,nelecas[1]).astype(int)
-            ci1 = ci1.reshape((nDeta,nDetb))
-        if len(ci2.shape)==1:
-            nDeta = scipy.special.comb(ncas,nelecas[0]).astype(int)
-            nDetb = scipy.special.comb(ncas,nelecas[1]).astype(int)
-            ci2 = ci2.reshape((nDeta,nDetb))
-
-        t_dm1_cas = self.fcisolver.trans_rdm1(ci1,ci2,ncas,nelecas)
-
-        return t_dm1_cas.T
 
 
     def get_hessianOrbCI(self):
@@ -601,115 +573,6 @@ class ss_casscf(Wavefunction):
                 frozen = np.asarray(frozen)
                 mask[frozen] = mask[:,frozen] = False
         return mask
-
-    def CASRDM1_to_RDM1(self, dm1_cas, transition=False):
-        ''' Transform 1-RDM from CAS space into full MO space'''
-        ncore = self.ncore
-        ncas = self.ncas
-        dm1 = np.zeros((self.norb,self.norb))
-        if transition is False and self.ncore > 0:
-            dm1[:ncore,:ncore] = 2 * np.identity(self.ncore, dtype="int") 
-        dm1[ncore:ncore+ncas,ncore:ncore+ncas] = dm1_cas
-        return dm1
-
-    def CASRDM2_to_RDM2(self, dm1_cas, dm2_cas, transition=False):
-        ''' This method takes a 2-RDM in the CAS space and transform it to the full MO space '''
-        ncore = self.ncore
-        ncas = self.ncas
-        norb = self.norb
-        nocc = ncore + ncas
-
-        dm1 = self.CASRDM1_to_RDM1(dm1_cas,transition)
-        dm2 = np.zeros((norb,norb,norb,norb))
-        if transition is False:
-            # Core contributions
-            for i in range(ncore):
-                for j in range(ncore):
-                    for k in range(ncore):
-                        for l in range(ncore):
-                            dm2[i,j,k,l]  = 4 * delta_kron(i,j) * delta_kron(k,l) 
-                            dm2[i,j,k,l] -= 2 * delta_kron(i,l) * delta_kron(k,j)
-
-                    for p in range(ncore,nocc):
-                        for q in range(ncore,nocc):
-                            dm2[i,j,p,q] = 2 * delta_kron(i,j) * dm1[q,p]
-                            dm2[p,q,i,j] = dm2[i,j,p,q]
-
-                            dm2[i,q,p,j] = - delta_kron(i,j) * dm1[q,p]
-                            dm2[p,j,i,q] = dm2[i,q,p,j]
-
-        else:
-            for i in range(ncore):
-                for j in range(ncore):
-                    for p in range(ncore,ncore+ncas):
-                        for q in range(ncore,ncore+ncas):
-                            dm2[i,j,p,q] = 2 * delta_kron(i,j) * dm1[q,p]
-                            dm2[p,q,i,j] = dm2[i,j,p,q]
-
-                            dm2[i,q,p,j] = - delta_kron(i,j) * dm1[q,p]
-                            dm2[p,j,i,q] = dm2[i,q,p,j]
-
-        # Insert the active-active sector
-        dm2[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc] = dm2_cas 
-        return dm2
-
-
-    def get_numerical_gradient(self,eps=1e-3):
-        grad = np.zeros((self.dim))
-        for i in range(self.dim):
-            x1 = np.zeros(self.dim)
-            x2 = np.zeros(self.dim)
-                
-            x1[i] += eps
-            x2[i] -= eps
-                
-            self.take_step(x1)
-            E1 = self.energy
-            self.restore_last_step()
-
-            self.take_step(x2)
-            E2 = self.energy
-            self.restore_last_step()
-
-            grad[i] = (E1 - E2) / (2 * eps)
-
-        return grad
-
-    def get_numerical_hessian(self,eps=1e-3):
-        Hess = np.zeros((self.dim, self.dim))
-        for i in range(self.dim):
-            print(i, self.dim)
-            for j in range(i,self.dim):
-                x1 = np.zeros(self.dim)
-                x2 = np.zeros(self.dim)
-                x3 = np.zeros(self.dim)
-                x4 = np.zeros(self.dim)
-                
-                x1[i] += eps; x1[j] += eps
-                x2[i] += eps; x2[j] -= eps
-                x3[i] -= eps; x3[j] += eps
-                x4[i] -= eps; x4[j] -= eps
-                
-                self.take_step(x1)
-                E1 = self.energy
-                self.restore_last_step()
-
-                self.take_step(x2)
-                E2 = self.energy
-                self.restore_last_step()
-
-                self.take_step(x3)
-                E3 = self.energy
-                self.restore_last_step()
-
-                self.take_step(x4)
-                E4 = self.energy
-                self.restore_last_step()
-
-                Hess[i,j] = ((E1 - E2) - (E3 - E4)) / (4 * eps * eps)
-                if(i!=j): Hess[j,i] = Hess[i,j]
-
-        return Hess
 
 
 ##### Main #####
