@@ -9,7 +9,7 @@ from pyscf.mcscf import mc_ao2mo
 from gnme.cas_noci import cas_proj
 from utils import delta_kron, orthogonalise
 
-class esmf():
+class pcid():
     def __init__(self, mol):
         self.mol        = mol
         self.nelec      = mol.nelec
@@ -37,7 +37,7 @@ class esmf():
 
     def copy(self):
         # Return a copy of the current object
-        newcas = esmf(self.mol)
+        newcas = pcid(self.mol)
         newcas.initialise(self.mo_coeff, self.mat_ci, integrals=False)
         return newcas
 #
@@ -87,7 +87,7 @@ class esmf():
         '''Compute the total 1RDM for the current state'''
         ne = self.na
         c0   = self.mat_ci[0,0]
-        t    = 1/np.sqrt(2) * np.reshape(self.mat_ci[1:,0],(self.na, self.nmo - self.na))
+        t    = np.reshape(self.mat_ci[1:,0],(self.na, self.nmo - self.na))
         kron = np.identity(self.nmo)
         dij  = np.identity(ne)
         dab  = np.identity(self.nmo-ne)
@@ -99,8 +99,6 @@ class esmf():
         # Compute the 1RDM
         dm1 = np.zeros((self.nmo,self.nmo))
         dm1[:self.na,:self.na] = (np.identity(self.na) - ttOcc)
-        dm1[:self.na,self.na:] = c0 * t
-        dm1[self.na:,:self.na] = c0 * t.T
         dm1[self.na:,self.na:] = ttVir
         return 2*dm1
 
@@ -108,7 +106,7 @@ class esmf():
         '''Compute the total 1RDM and 2RDM for the current state'''
         ne = self.na
         c0   = self.mat_ci[0,0]
-        t    = 1/np.sqrt(2) * np.reshape(self.mat_ci[1:,0],(self.na, self.nmo - self.na))
+        t    = np.reshape(self.mat_ci[1:,0],(self.na, self.nmo - self.na))
         kron = np.identity(self.nmo)
         dij  = np.identity(ne)
         dab  = np.identity(self.nmo-ne)
@@ -120,8 +118,6 @@ class esmf():
         # Compute the 1RDM
         dm1 = np.zeros((self.nmo,self.nmo))
         dm1[:self.na,:self.na] = (np.identity(self.na) - ttOcc)
-        dm1[:self.na,self.na:] = c0 * t
-        dm1[self.na:,:self.na] = c0 * t.T
         dm1[self.na:,self.na:] = ttVir
         dm1 *= 2
 
@@ -158,8 +154,8 @@ class esmf():
         ne = self.na
         c1_0   = v1[0]
         c2_0   = v2[0]
-        t1     = 1/np.sqrt(2) * np.reshape(v1[1:], (self.na, self.nmo - self.na))
-        t2     = 1/np.sqrt(2) * np.reshape(v2[1:], (self.na, self.nmo - self.na))
+        t1     = np.reshape(v1[1:], (self.na, self.nmo - self.na))
+        t2     = np.reshape(v2[1:], (self.na, self.nmo - self.na))
         kron = np.identity(self.nmo)
         dij  = np.identity(ne)
         dab  = np.identity(self.nmo-ne)
@@ -171,8 +167,6 @@ class esmf():
         # Compute the 1RDM
         dm1 = np.zeros((self.nmo,self.nmo))
         dm1[:self.na,:self.na] = - ttOcc
-        dm1[:self.na,self.na:] = c2_0 * t1
-        dm1[self.na:,:self.na] = c1_0 * t2.T
         dm1[self.na:,self.na:] = ttVir
         dm1 *= 2
 
@@ -625,7 +619,7 @@ if __name__ == '__main__':
     myhf = mol.RHF().run()
 
     # Initialise CAS object
-    myesmf = esmf(mol)
+    myfun = pcid(mol)
 
     myhf.mo_coeff[:,[0,-1]] = myhf.mo_coeff[:,[0,-1]].dot(scipy.linalg.expm(np.matrix([[0,0.2],[-0.2,0]])))
     print(myhf.mo_occ)
@@ -634,18 +628,18 @@ if __name__ == '__main__':
 
     np.random.seed(7)
     for nsample in range(1):
-        del myesmf
-        myesmf = esmf(mol)
+        del myfun
+        myfun = pcid(mol)
         # Set orbital coefficients
         np.set_printoptions(precision=4,suppress=True)
-        ci_guess = np.random.rand(myesmf.nDet,myesmf.nDet)
+        ci_guess = np.random.rand(myfun.nDet,myfun.nDet)
 
-        myesmf.initialise(myhf.mo_coeff, ci_guess)
-        #print("Energy = ", myesmf.energy)
-        #hess = myesmf.hessian
-        #num_hess = myesmf.get_numerical_hessian()
-        #grad = myesmf.gradient
-        #num_grad = myesmf.get_numerical_gradient()
+        myfun.initialise(myhf.mo_coeff, ci_guess)
+        #print("Energy = ", myfun.energy)
+        #hess = myfun.hessian
+        #num_hess = myfun.get_numerical_hessian()
+        #grad = myfun.gradient
+        #num_grad = myfun.get_numerical_gradient()
         #print("Analytic Hessian = ")
         #print(hess)
         #print(num_hess)
@@ -656,9 +650,9 @@ if __name__ == '__main__':
         #print(myhf.energy_tot())
 #    quit()
         opt = EigenFollow(minstep=0.0,rtrust=0.15)
-        opt.run(myesmf, thresh=1e-8, maxit=500, index=Hind)
+        opt.run(myfun, thresh=1e-8, maxit=500, index=Hind)
         #mycas.canonicalize_()
-        print("  Final energy = {: 16.10f}".format(myesmf.energy))
+        print("  Final energy = {: 16.10f}".format(myfun.energy))
 
     print()
 #    print("         <S^2> = {: 16.10f}".format(mycas.s2))

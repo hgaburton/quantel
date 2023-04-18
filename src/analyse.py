@@ -79,7 +79,9 @@ if __name__ == '__main__':
     mycas.initialise(mo_guess, ci_guess)
     mycas.canonicalize_()
 
-    for i in range(mycas.ncore,mycas.ncore+mycas.ncas):
+    #for i in range(mycas.ncore,mycas.ncore+mycas.ncas):
+    for i in range(mycas.ncore+mycas.ncas):
+    #for i in range(mycas.norb):
         cubegen.orbital(mol, 'mo.{:d}.cube'.format(i), mycas.mo_coeff[:,i])
 
     s2 = mycas.s2
@@ -109,6 +111,17 @@ if __name__ == '__main__':
         vec_ci  = eigvec[nrot:,i]
         print(" {:5d}  {: 10.6f}  {: 10.6f} {: 10.6f}".format(
               i, eigval, np.linalg.norm(vec_scf), np.linalg.norm(vec_ci)))
+    print("  ----------------------------------------")
+
+     
+    ci_eig = 0.5 * np.linalg.eigvalsh(hess[nrot:,nrot:]) + mycas.energy
+    print("\n  ----------------------------------------")
+    print("  CI eigenvalues:")
+    print("     n      Eval")
+    print("  ----------------------------------------")
+    for i in range(ci_eig.size+1):
+        if(i==0): print(" {:5d}  {: 10.6f}".format(i, mycas.energy))
+        else: print(" {:5d}  {: 10.6f}".format(i, ci_eig[i-1]))
     print("  ----------------------------------------")
 
     spin_dens = mycas.get_spin_dm1()
