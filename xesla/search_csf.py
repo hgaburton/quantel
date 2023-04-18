@@ -9,8 +9,8 @@ from scipy.linalg import expm as scipy_expm
 from scipy.linalg import eigvalsh as scipy_eigvalsh
 from pyscf import gto
 #from ss_casscf import ss_casscf
-from csf import csf # This is the csf object we interface with
-from opt.eigenvector_following import EigenFollow
+from xesla.wfn.csf import csf # This is the csf object we interface with
+from xesla.opt.eigenvector_following import EigenFollow
 
 
 def random_rot(n, lmin, lmax):

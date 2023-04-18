@@ -6,11 +6,30 @@ import scipy.linalg
 from functools import reduce
 from pyscf import scf, fci, __config__, ao2mo, lib, mcscf
 from pyscf.mcscf import mc_ao2mo
-from gnme.cas_noci import cas_proj
-from utils import delta_kron, orthogonalise
+from xesla.utils.linalg import delta_kron, orthogonalise
+from xesla.gnme.cas_noci import cas_proj
+from .wavefunction import Wavefunction
 
-class ss_casscf():
+class ss_casscf(Wavefunction):
+    """
+        State-specific CASSCF object
+
+        Inherits from the Wavefunction abstract base class with the pure virtual 
+        properties:
+           - energy
+           - gradient
+           - hessian
+           - take_step
+           - save_last_step
+           - restore_step
+    """
     def __init__(self, mol, ncas, nelecas, ncore=None):
+        """Initialise a state-specific CASSCF object
+               mol      PySCF molecule object
+               ncas     Number of active orbitals
+               nelecas  Number of active electrons, either total or (Na,Nb)
+               ncore    Number of core (doubly-occupied) orbitals
+        """
         self.mol        = mol
         self.nelec      = mol.nelec
         self._scf       = scf.RHF(mol)
@@ -59,6 +78,7 @@ class ss_casscf():
         return newcas
 
     def overlap(self, them):
+        """Compute the many-body overlap with another CAS waveunction (them)"""
         # Represent the alternative CAS state in the current CI space
         vec2 = cas_proj(self, them, self.ovlp) 
         # Compute the overlap and return
@@ -79,6 +99,7 @@ class ss_casscf():
 
 
     def get_ao_integrals(self):
+        """Compute the required AO integrals"""
         self.enuc       = self._scf.energy_nuc()
         self.v1e        = self.mol.intor('int1e_nuc')  # Nuclear repulsion matrix elements
         self.t1e        = self.mol.intor('int1e_kin')  # Kinetic energy matrix elements
@@ -103,6 +124,7 @@ class ss_casscf():
 
 
     def deallocate(self):
+        """Deallocate member variables to save memory"""
         # Reduce the memory footprint for storing 
         self._eri   = None
         self.ppoo   = None
@@ -147,6 +169,9 @@ class ss_casscf():
                          [H_OrbCI.T, H_CICI]])
 
     def get_hessian_index(self, tol=1e-16):
+        """Compute the Hessian index
+               tol : Threshold for determining a zero eigenvalue
+        """
         eigs = scipy.linalg.eigvalsh(self.hessian)
         ndown = 0
         nzero = 0

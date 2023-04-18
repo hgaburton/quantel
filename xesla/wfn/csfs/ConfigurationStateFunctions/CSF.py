@@ -8,13 +8,12 @@ from math import comb
 from pyscf import gto, scf, fci
 from typing import List
 from scipy import linalg
-from csfs.Auxiliary.SpatialBasis import spatial_one_and_two_e_int
-from csfs.Auxiliary.SpinorBasis import spatial_to_spin_orbs
-from csfs.ConfigurationStateFunctions.CouplingCoefficients import get_total_coupling_coefficient
-from csfs.Operators.Operators import create
-from csfs.ConfigurationStateFunctions.PermutationTools import get_phase_factor
-from csfs.ReducedDensityMatrices.RDMapper import mapper, get_dm12
-from csfs.ReducedDensityMatrices.ReducedDensityMatrices import get_mc_one_rdm, get_ri_mc_two_rdm,\
+from xesla.wfn.csfs.Auxiliary.SpinorBasis import spatial_to_spin_orbs
+from xesla.wfn.csfs.ConfigurationStateFunctions.CouplingCoefficients import get_total_coupling_coefficient
+from xesla.wfn.csfs.Operators.Operators import create
+from xesla.wfn.csfs.ConfigurationStateFunctions.PermutationTools import get_phase_factor
+from xesla.wfn.csfs.ReducedDensityMatrices.RDMapper import mapper, get_dm12
+from xesla.wfn.csfs.ReducedDensityMatrices.ReducedDensityMatrices import get_mc_one_rdm, get_ri_mc_two_rdm,\
     get_spatial_one_rdm, get_spatial_two_rdm
 
 
@@ -46,9 +45,6 @@ class ConfigurationStateFunction:
             self.act_orbs = self.act_orbs[:, permutation]
         self.n_orbs = self.ncore + self.nact  # Number of spatial orbitals
         self.coeffs = np.hstack([self.core_orbs, self.act_orbs])
-
-        #self.hcore, self.eri = spatial_one_and_two_e_int(self.mol, self.coeffs)
-        #self.enuc = mol.energy_nuc()
 
         # Number of ways to arrange e in spatial orbs
         # self.n_dets = comb(self.n_orbs, self.n_alpha) * comb(self.n_orbs, self.n_beta)

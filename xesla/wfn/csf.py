@@ -7,12 +7,13 @@ import scipy
 from functools import reduce
 from typing import List
 from pyscf import scf, fci, __config__, ao2mo, lib, mcscf
-from csfs.ConfigurationStateFunctions.CSF import ConfigurationStateFunction
-from csfs.Operators.Operators import get_generic_no_overlap
-from utils import delta_kron, orthogonalise
+from xesla.wfn.csfs.ConfigurationStateFunctions.CSF import ConfigurationStateFunction
+from xesla.wfn.csfs.Operators.Operators import get_generic_no_overlap
+from xesla.utils.linalg import delta_kron, orthogonalise
+from .wavefunction import Wavefunction
 
 
-class csf():
+class csf(Wavefunction):
     def __init__(self, mol, spin, ncas, nelecas, frozen: int, core: List[int], act: List[int], g_coupling: str = None,
                  permutation: List[int] = None, mo_basis: 'str' = 'site', ncore=None):
         self.mol = mol

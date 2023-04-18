@@ -5,7 +5,7 @@ import numpy as np
 from scipy.linalg import expm as scipy_expm
 from scipy.linalg import eigvalsh as scipy_eigvalsh
 from pyscf import gto
-from ss_casscf import ss_casscf
+from wfn.ss_casscf import ss_casscf
 from opt.eigenvector_following import EigenFollow
 
 def random_rot(n, lmin, lmax):
