@@ -7,7 +7,7 @@ from functools import reduce
 from pyscf import scf, fci, __config__, ao2mo, lib, mcscf
 from pyscf.mcscf import mc_ao2mo
 from xesla.utils.linalg import delta_kron, orthogonalise
-from xesla.gnme.cas_noci import cas_proj
+from xesla.gnme.cas_noci import cas_proj, cas_overlap, cas_hamiltonian
 from .wavefunction import Wavefunction
 
 class SS_CASSCF(Wavefunction):
@@ -114,10 +114,7 @@ class SS_CASSCF(Wavefunction):
 
     def overlap(self, them):
         """Compute the many-body overlap with another CAS waveunction (them)"""
-        # Represent the alternative CAS state in the current CI space
-        vec2 = cas_proj(self, them, self.ovlp) 
-        # Compute the overlap and return
-        return np.dot(np.asarray(self.mat_ci)[:,0].conj(), vec2)
+        return cas_overlap(self, them, self.ovlp)
 
 
     def sanity_check(self):
@@ -573,72 +570,3 @@ class SS_CASSCF(Wavefunction):
                 frozen = np.asarray(frozen)
                 mask[frozen] = mask[:,frozen] = False
         return mask
-
-
-##### Main #####
-if __name__ == '__main__':
-    import sys, re, os
-    from opt.newton_raphson import NewtonRaphson
-    from pyscf import gto
-
-    np.set_printoptions(linewidth=10000)
-
-    def read_config(file):
-        f = open(file,"r")
-        lines = f.read().splitlines()
-        basis, charge, spin, frozen, cas, grid_option, Hind, maxit = 'sto-3g', 0, 0, 0, (0,0), 1000, None, 1000
-        for line in lines:
-            if re.match('basis', line) is not None:
-                basis = str(re.split(r'\s', line)[-1])
-            elif re.match('charge', line) is not None:
-                charge = int(re.split(r'\s', line)[-1])
-            elif re.match('spin', line) is not None:
-                spin = int(re.split(r'\s', line)[-1])
-            elif re.match('frozen', line) is not None:
-                frozen = int(re.split(r'\s', line)[-1])
-            elif re.match('seed', line) is not None:
-                np.random.seed(int(line.split()[-1]))
-            elif re.match('index', line) is not None:
-                Hind = int(line.split()[-1])
-            elif re.match('maxit', line) is not None:
-                maxit = int(line.split()[-1])
-            elif re.match('cas', line) is not None:
-                tmp = list(re.split(r'\s', line)[-1])
-                cas = (int(tmp[1]), int(tmp[3]))
-            elif re.match('grid', line) is not None:
-                if re.split(r'\s', line)[-1] == 'full':
-                    grid_option = re.split(r'\s', line)[-1]
-                else:
-                    grid_option = int(re.split(r'\s', line)[-1])
-        return basis, charge, spin, frozen, cas, grid_option, Hind, maxit
-
-    mol = gto.Mole(symmetry=False,unit='B')
-    mol.atom = sys.argv[1]
-    basis, charge, spin, frozen, cas, grid_option, Hind, maxit = read_config(sys.argv[2])
-    mol.basis = basis
-    mol.charge = charge
-    mol.spin = spin
-    mol.build()
-    myhf = mol.RHF().run()
-
-    # Initialise CAS object
-    mycas = ss_casscf(mol, cas[0], cas[1])
-
-    # Set orbital coefficients
-    ci_guess = np.identity(4)
-    mycas.initialise(myhf.mo_coeff, ci_guess)
-    NewtonRaphson(mycas,index=0)
-    mycas.canonicalize_()
-
-    print()
-    print("  Final energy = {: 16.10f}".format(mycas.energy))
-    print("         <S^2> = {: 16.10f}".format(mycas.s2))
-
-    print()
-    print("  Canonical natural orbitals:      ")
-    print("  ---------------------------------")
-    print(" {:^5s}  {:^10s}  {:^10s}".format("  Orb","Occ.","Energy"))
-    print("  ---------------------------------")
-    for i in range(mycas.ncore + mycas.ncas):
-        print(" {:5d}  {: 10.6f}  {: 10.6f}".format(i+1, mycas.mo_occ[i], mycas.mo_energy[i]))
-    print("  ---------------------------------")
