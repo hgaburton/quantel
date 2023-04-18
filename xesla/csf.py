@@ -136,7 +136,7 @@ class csf():
     @property
     def s2(self):
         ''' Compute the spin of a given FCI vector '''
-        return None
+        return self.csf_info.get_s2()
 
     @property
     def gradient(self):
@@ -687,6 +687,68 @@ class csf():
                 frozen = np.asarray(frozen)
                 mask[frozen] = mask[:, frozen] = False
         return mask
+
+    def get_gcoupling_partition(self):
+        r"""
+        Partition a genealogical coupling scheme.
+        e.g. ++-- -> [2, 2]
+             +-+++--+ -> [1, 1, 3, 2, 1]
+        For ease of use, we will convert the integer array (A) into another array of equal dimension (B),
+        such that B[n] = A[0] + A[1] + ... +  A[n-1]
+        """
+        arr = []
+        g_coupling_arr = list(self.g_coupling)
+        count = 1
+        ref = g_coupling_arr[0]
+        for i, gfunc in enumerate(g_coupling_arr[1:]):
+            if gfunc == ref:
+                count += 1
+            else:
+                arr.append(count)
+                ref = gfunc
+                count = 1
+        remainder = len(g_coupling_arr) - np.sum(arr)
+        arr.append(remainder)
+        partition_instructions = [0]
+        for i, dim in enumerate(arr):
+            partition_instructions.append(dim + partition_instructions[-1])
+        return partition_instructions
+
+    @property
+    def orbital_energies(self):
+        r"""
+        Gets the orbital energies (This is found by diagonalising the Fock matrix)
+        """
+        evals, evecs = np.linalg.eigh(self.F_core + self.F_cas)
+        return evals
+
+    def canonicalise(self):
+        r"""
+        Forms the canonicalised MO coefficients by diagonalising invariant subblocks of the Fock matrix
+        """
+        #print("Canonicalising orbitals")
+        # Build Fock matrix
+        F_tot = self.F_core + self.F_cas
+        # Get Core-Core, Active-Active (if exists from g-coupling pattern), and Virtual-Virtual
+        nocc = self.ncore + self.ncas
+        F_cc = F_tot[:self.ncore, :self.ncore]
+        F_vv = F_tot[nocc:, nocc:]
+        F_aa = np.identity(F_tot[self.ncore:nocc, self.ncore:nocc].shape)
+        # Add Fock matrix subblocks into a list
+        Fs = [F_cc]
+        #active_partition = self.get_gcoupling_partition()
+        #for i in range(len(active_partition)-1):
+        #    Ftemp = F_aa[active_partition[i]:active_partition[i+1], active_partition[i]:active_partition[i+1]]
+        #    Fs.append(Ftemp)
+        Fs.append(F_vv)
+        # Diagonalise each matrix and build transformation matrix
+        Us = []
+        for i, f in enumerate(Fs):
+            evals, evecs = np.linalg.eigh(f)
+            Us.append(evecs)
+        U = scipy.linalg.block_diag(*Us)
+        # Transform coefficients
+        self.mo_coeff = self.mo_coeff @ U
 
     def CASRDM1_to_RDM1(self, dm1_cas, transition=False):
         ''' Transform 1-RDM from CAS space into full MO space'''

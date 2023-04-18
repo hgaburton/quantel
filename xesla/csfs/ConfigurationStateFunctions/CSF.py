@@ -5,7 +5,7 @@ import copy
 import itertools
 import numpy as np
 from math import comb
-from pyscf import gto, scf
+from pyscf import gto, scf, fci
 from typing import List
 from scipy import linalg
 from csfs.Auxiliary.SpatialBasis import spatial_one_and_two_e_int
@@ -13,7 +13,7 @@ from csfs.Auxiliary.SpinorBasis import spatial_to_spin_orbs
 from csfs.ConfigurationStateFunctions.CouplingCoefficients import get_total_coupling_coefficient
 from csfs.Operators.Operators import create
 from csfs.ConfigurationStateFunctions.PermutationTools import get_phase_factor
-from csfs.ReducedDensityMatrices.RDMapper import get_dm12
+from csfs.ReducedDensityMatrices.RDMapper import mapper, get_dm12
 from csfs.ReducedDensityMatrices.ReducedDensityMatrices import get_mc_one_rdm, get_ri_mc_two_rdm,\
     get_spatial_one_rdm, get_spatial_two_rdm
 
@@ -27,18 +27,21 @@ class ConfigurationStateFunction:
         self.mol = mol
         self.mo_basis = mo_basis
         self.n_elec = mol.nelectron  # Number of electrons
+        self.n_elec_act = self.n_elec - 2 * len(core)
         self.spin = mol.spin  # M_s value
         self.s = s
-        self.n_alpha = (mol.nelectron + 2 * mol.spin) // 2  # Number of alpha electrons
-        self.n_beta = (mol.nelectron - 2 * mol.spin) // 2  # Number of beta electrons
+        self.n_alpha = (mol.nelectron + mol.spin) // 2  # Number of alpha electrons
+        self.n_beta = (mol.nelectron - mol.spin) // 2  # Number of beta electrons
         self.permutation = permutation
         coeffs = self.get_coeffs(method=self.mo_basis)
-
+        
         # Get information about the orbitals used
         self.ncore = len(core)
         self.nact = len(act)
         self.core_orbs = coeffs[:, core]   # Core orbitals
         self.act_orbs = coeffs[:, act]    # Active orbitals
+        #print("Active orbitals")
+        #print(self.act_orbs)
         if self.permutation is not None:
             self.act_orbs = self.act_orbs[:, permutation]
         self.n_orbs = self.ncore + self.nact  # Number of spatial orbitals
@@ -59,6 +62,7 @@ class ConfigurationStateFunction:
         self.n_csfs = 0
         self.csf = self.csf_from_g_coupling(g_coupling)
         self.csf_coeffs = self.get_specific_csf_coeffs()
+        self.ci = self.get_civec()
     
     def get_coeffs(self, method):
         r"""
@@ -293,6 +297,24 @@ class ConfigurationStateFunction:
         dets, coeffs = self.get_relevant_dets(self.dets_sq, self.csf_coeffs)
         dm1, dm2 = get_dm12(dets, coeffs)
         return dm1, dm2
+
+    def get_civec(self):
+        r"""
+        Gets civec in PySCF format
+        """
+        dets, coeffs = self.get_relevant_dets(self.dets_sq, self.csf_coeffs)
+        civec, norbs, nelec = mapper(dets, coeffs)
+        return civec
+
+    def get_s2(self):
+        r"""
+        Gets the S2 value from PySCF
+        """
+        dets, coeffs = self.get_relevant_dets(self.dets_sq, self.csf_coeffs)
+        civec, norbs, nelec = mapper(dets, coeffs)
+        mat_ci = civec.reshape(civec.size)
+        fcisolver = fci.direct_spin1.FCISolver(self.mol)
+        return fcisolver.spin_square(self.ci, self.nact, self.n_elec_act)[0]
 
     def get_csf_energy(self):
         rdm1 = self.get_csf_one_rdm()
