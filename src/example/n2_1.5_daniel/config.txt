@@ -1,0 +1,4 @@
+basis sto-3g
+units  A
+charge 0
+spin 0

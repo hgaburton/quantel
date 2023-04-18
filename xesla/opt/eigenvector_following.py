@@ -56,7 +56,7 @@ class EigenFollow:
             elif plev > 0:
                 print(" {: 5d} {: 16.10f}    {:8.0f}                {:8.2e}".format(istep, eref, cur_hind, conv))
             sys.stdout.flush()
- 
+            
             if(index == None):
                 index = np.sum(hess_eig < 0)
 
@@ -64,7 +64,7 @@ class EigenFollow:
             if(conv < thresh): 
                 converged = True
                 break
-
+            
             # Get the trial step
             step, dE_model, comment = self.get_step(grad, hess_vec, hess_eig, index)
 
@@ -73,10 +73,10 @@ class EigenFollow:
             if(step_length < thresh*thresh):
                 return True
             obj.take_step(step)
-
+            
             # Get actual energy change
             dE = obj.energy - eref
-
+            
             # Assess trust radius
             if istep > 0:
                 # Save reference energy if we accept step, otherwise undo the step

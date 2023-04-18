@@ -690,7 +690,7 @@ class ss_casscf():
 ##### Main #####
 if __name__ == '__main__':
     import sys, re, os
-    from newton_raphson import NewtonRaphson
+    from opt.newton_raphson import NewtonRaphson
     from pyscf import gto
 
     np.set_printoptions(linewidth=10000)

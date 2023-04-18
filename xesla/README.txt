@@ -32,3 +32,34 @@ Finally, the last commented part correspond to the script used to follow a negat
 4) "plot_orbitals.py"
 
 This script is used to plot the orbitals in the cube file format.
+
+
+#######################################################################################################
+
+Configuration State Function (CSF) optimisation
+
+#######################################################################################################
+
+Example files can be found in input/h4
+
+Example command:
+python search_csf.py h4_1.0.xyz h4_config.txt
+
+There are some keywords relevant to CSF optimisation
+active: Indices of the active orbitals (0-th indexing). In the example, 0 1 2 3 refers to using the first 4 orbitals.
+
+g_coupling: The genealogical coupling of the CSF desired. Every S=0.5 is denoted by + and every S=-0.5 is denoted by -. e.g. M CSF is given by +-+- and V CSF is given by ++--
+
+permutation: The orbital arrangement of the active orbitals (0-th indexing).
+
+mo_basis: The initial MO used when initialising the CSF. Current options are:
+	''site'': Symmetrically orthogonalised orbitals (site basis)
+	''hf'': (Restricted) Hartree--Fock orbitals
+	''custom'': Uses a custom set of orbitals. This reads the orbitals from a custom_mo.npy file in the worki		     ng directory
+
+Running the example command given, one should eventually arrive at 3 unique solutions:
+-1.168224
+-1.197117
+-1.181668
+
+These correspond to 1-2/3-4 (Case A), 1-3/2-4 (Case B), and 1-4/2-3 (Case C) spin coupling patterns respectively.

@@ -1,0 +1,44 @@
+===========================
+  Hugh Burton 5-Apr-2023
+===========================
+Here is an example of reading in Daniel's fixed coefficients, running a controlled optimisation, and 
+computing the subsequent many-body Hamiltonian/Overlap matrix elements.
+
+Pre-requisites:
+---------------
+You will need to install PyBind11
+
+'''
+pip install pybind11
+'''
+
+You need to install the PyGNME package, which provides a Python wrapper for LibGNME:
+
+'''
+git clone https://github.com/hgaburton/pygnme
+python -m pip install . -v --user
+'''
+
+Make sure that your python site-packages directory (where PyGNME is installed) is added 
+to the LD_LIBRARY_PATH.
+
+Running the code:
+-----------------
+The recoupling code is in 
+   ./recouple.py 
+and should be run from the current directory as
+   python3 recouple.py n2.xyz config.txt
+This should reproduce the output in "output".
+
+Interesting note on the result:
+-------------------------------
+We see some relaxation relative to Daniel's energy.
+
+What is interesting is to look at the 3rd root with energy -106.879217 and coefficients
+  0
+  1
+ -1
+  0
+  0
+This state only has contributions from the Pi_x and Pi_y states with bond-order 2. I suspect
+that these states are Delta_g symmetry, which transforms like x^2 - y^2...
