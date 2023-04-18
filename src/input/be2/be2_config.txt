@@ -5,9 +5,9 @@ cas (4,4)
 seed 50
 grid 5000
 core 0 5
-active 1 2 6 7
+active 1 4 6 9
 g_coupling +-+-
 permutation 0 1 2 3
 mo_basis site
 index 0
-nsample 1
+nsample 10
