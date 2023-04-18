@@ -45,22 +45,52 @@ class ESMF(Wavefunction):
         self.rot_idx    = self.uniq_var_indices(self.norb, self.frozen)
         self.nrot       = np.sum(self.rot_idx)
 
-    def copy(self):
-        # Return a copy of the current object
-        newcas = ESMF(self.mol)
-        newcas.initialise(self.mo_coeff, self.mat_ci, integrals=False)
-        return newcas
-#
-#    def overlap(self, them):
-#        # Represent the alternative CAS state in the current CI space
-#        vec2 = cas_proj(self, them, self.ovlp) 
-#        # Compute the overlap and return
-#        return np.dot(np.asarray(self.mat_ci)[:,0].conj(), vec2)
 
     @property
     def dim(self):
         """Get the number of degrees of freedom"""
         return self.nrot + self.nDet - 1
+
+
+    @property
+    def energy(self):
+        ''' Compute the energy corresponding to a given set of
+             one-el integrals, two-el integrals, 1- and 2-RDM '''
+        E  = self.enuc
+        E += np.einsum('pq,pq', self.h1e, self.dm1, optimize="optimal")
+        E += 0.5 * np.einsum('pqrs,pqrs', self.h2e, self.dm2, optimize="optimal")
+        return E
+#
+#    @property
+#    def s2(self):
+#        ''' Compute the spin of a given FCI vector '''
+#        return self.fcisolver.spin_square(self.mat_ci[:,0], self.ncas, self.nelecas)[0]
+#
+    @property
+    def gradient(self):
+        g_orb = self.get_orbital_gradient()
+        g_ci  = self.get_ci_gradient()  
+        # Unpack matrices/vectors accordingly
+        return np.concatenate((g_orb, g_ci))
+
+    @property
+    def hessian(self):
+        ''' This method concatenate the orb-orb, orb-CI and CI-CI part of the Hessian '''
+        H_OrbOrb = (self.get_hessianOrbOrb()[:,:,self.rot_idx])[self.rot_idx,:]
+        H_CICI   = self.get_hessianCICI()
+        H_OrbCI  = self.get_hessianOrbCI()[self.rot_idx,:]
+
+        return np.block([[H_OrbOrb, H_OrbCI],
+                         [H_OrbCI.T, H_CICI]])
+
+    def copy(self):
+        # Return a copy of the current object
+        newcas = ESMF(self.mol)
+        newcas.initialise(self.mo_coeff, self.mat_ci, integrals=False)
+        return newcas
+
+    def overlap(self, them):
+        raise Exception("ESMF.overlap(self,other) not implemented yet")
 
 
     def get_ao_integrals(self):
@@ -86,6 +116,41 @@ class ESMF(Wavefunction):
         # Initialise integrals
         if(integrals): self.update_integrals()
 
+
+    def deallocate(self):
+        # Reduce the memory footprint for storing 
+        self._eri     = None
+        self.h1e      = None
+        self.h2e      = None
+        self.ref_fock = None
+        self.F_cas    = None
+        self.ham      = None
+
+
+    def update_integrals(self):
+        # One-electron Hamiltonian
+        self.h1e = np.einsum('ip,ij,jq->pq', self.mo_coeff, self.hcore, self.mo_coeff,optimize="optimal")
+
+        # Occupied orbitals
+        self.h2e = ao2mo.incore.general(self._scf._eri, 
+                                        (self.mo_coeff, self.mo_coeff, self.mo_coeff, self.mo_coeff), 
+                                        compact=False)
+        self.h2e = np.reshape(self.h2e, (self.nmo, self.nmo, self.nmo, self.nmo))
+
+        # Reduced density matrices 
+        self.dm1, self.dm2 = self.get_rdm12()
+
+        # Fock matrix for reference determinant
+        self.ref_fock = self.h1e + (2 * np.einsum('pqjj->pq',self.h2e[:,:,:self.na,:self.na]) 
+                                      - np.einsum('pjjq->pq',self.h2e[:,:self.na,:self.na,:]))
+        fao = self.mo_coeff.dot(self.ref_fock).dot(self.mo_coeff.T)
+        fao = self.ovlp.dot(fao).dot(self.ovlp) 
+        # Energy for reference determinant
+        self.eref = self.enuc + (np.einsum('ii',self.h1e[:self.na,:self.na] + self.ref_fock[:self.na,:self.na]))
+
+        self.ham = self.get_ham()
+
+
     def get_rdm1(self):
         '''Compute the total 1RDM for the current state'''
         ne = self.na
@@ -106,6 +171,7 @@ class ESMF(Wavefunction):
         dm1[self.na:,:self.na] = c0 * t.T
         dm1[self.na:,self.na:] = ttVir
         return 2*dm1
+
 
     def get_rdm12(self):
         '''Compute the total 1RDM and 2RDM for the current state'''
@@ -156,6 +222,7 @@ class ESMF(Wavefunction):
 
         return dm1, dm2
 
+
     def get_trdm12(self, v1, v2):
         '''Compute the total 1RDM and 2RDM for the current state'''
         ne = self.na
@@ -205,91 +272,6 @@ class ESMF(Wavefunction):
 
         return dm1, dm2
 
-    def deallocate(self):
-        # Reduce the memory footprint for storing 
-        self._eri     = None
-        self.h1e      = None
-        self.h2e      = None
-        self.ref_fock = None
-        self.F_cas    = None
-        self.ham      = None
-
-    @property
-    def energy(self):
-        ''' Compute the energy corresponding to a given set of
-             one-el integrals, two-el integrals, 1- and 2-RDM '''
-        E  = self.enuc
-        E += np.einsum('pq,pq', self.h1e, self.dm1, optimize="optimal")
-        E += 0.5 * np.einsum('pqrs,pqrs', self.h2e, self.dm2, optimize="optimal")
-        return E
-#
-#    @property
-#    def s2(self):
-#        ''' Compute the spin of a given FCI vector '''
-#        return self.fcisolver.spin_square(self.mat_ci[:,0], self.ncas, self.nelecas)[0]
-#
-    @property
-    def gradient(self):
-        g_orb = self.get_orbital_gradient()
-        g_ci  = self.get_ci_gradient()  
-        # Unpack matrices/vectors accordingly
-        return np.concatenate((g_orb, g_ci))
-
-    @property
-    def hessian(self):
-        ''' This method concatenate the orb-orb, orb-CI and CI-CI part of the Hessian '''
-        H_OrbOrb = (self.get_hessianOrbOrb()[:,:,self.rot_idx])[self.rot_idx,:]
-        H_CICI   = self.get_hessianCICI()
-        H_OrbCI  = self.get_hessianOrbCI()[self.rot_idx,:]
-
-        return np.block([[H_OrbOrb, H_OrbCI],
-                         [H_OrbCI.T, H_CICI]])
-
-    def get_hessian_index(self, tol=1e-16):
-        eigs = scipy.linalg.eigvalsh(self.hessian)
-        ndown = 0
-        nzero = 0
-        nuphl = 0
-        for i in eigs:
-            if i < -tol:  ndown += 1
-            elif i > tol: nuphl +=1
-            else:         nzero +=1 
-        return ndown, nzero, nuphl
-
-
-    def pushoff(self, n, angle=np.pi/2, evec=None):
-        """Perturb along n Hessian directions"""
-        if evec is None:
-            eigval, eigvec = np.linalg.eigh(self.hessian)
-        else:
-            eigvec = evec
-        step = sum(eigvec[:,i] * angle for i in range(n))
-        self.take_step(step)
-
-
-    def update_integrals(self):
-        # One-electron Hamiltonian
-        self.h1e = np.einsum('ip,ij,jq->pq', self.mo_coeff, self.hcore, self.mo_coeff,optimize="optimal")
-
-        # Occupied orbitals
-        self.h2e = ao2mo.incore.general(self._scf._eri, 
-                                        (self.mo_coeff, self.mo_coeff, self.mo_coeff, self.mo_coeff), 
-                                        compact=False)
-        self.h2e = np.reshape(self.h2e, (self.nmo, self.nmo, self.nmo, self.nmo))
-
-        # Reduced density matrices 
-        self.dm1, self.dm2 = self.get_rdm12()
-
-        # Fock matrix for reference determinant
-        self.ref_fock = self.h1e + (2 * np.einsum('pqjj->pq',self.h2e[:,:,:self.na,:self.na]) 
-                                      - np.einsum('pjjq->pq',self.h2e[:,:self.na,:self.na,:]))
-        fao = self.mo_coeff.dot(self.ref_fock).dot(self.mo_coeff.T)
-        fao = self.ovlp.dot(fao).dot(self.ovlp) 
-        # Energy for reference determinant
-        self.eref = self.enuc + (np.einsum('ii',self.h1e[:self.na,:self.na] + self.ref_fock[:self.na,:self.na]))
-
-        self.ham = self.get_ham()
-
 
     def get_ham(self):
         '''Build the full Hamiltonian in the CIS space'''
@@ -313,6 +295,7 @@ class ESMF(Wavefunction):
         ham[1:,1:] = np.reshape(np.reshape(hiajb,(ne,self.nmo-self.na,-1)),(self.nDet-1,-1))
         return ham
 
+
     def restore_last_step(self):
         # Restore coefficients
         self.mo_coeff = self.mo_coeff_save.copy()
@@ -321,9 +304,11 @@ class ESMF(Wavefunction):
         # Finally, update our integrals for the new coefficients
         self.update_integrals()
 
+
     def save_last_step(self):
         self.mo_coeff_save = self.mo_coeff.copy()
         self.mat_ci_save   = self.mat_ci.copy()
+
 
     def take_step(self,step):
         # Save our last position
@@ -335,6 +320,7 @@ class ESMF(Wavefunction):
 
         # Finally, update our integrals for the new coefficients
         self.update_integrals()
+
 
     def rotate_orb(self,step): 
         '''Rotate the molecular orbital coefficients'''
