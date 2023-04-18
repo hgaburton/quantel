@@ -5,7 +5,7 @@ import numpy as np
 import scipy.linalg
 from pyscf import scf,  __config__, ao2mo
 from xesla.utils.linalg import delta_kron, orthogonalise
-from xesla.gnme.cas_noci import cas_proj
+from xesla.gnme.esmf_noci import esmf_coupling
 from .wavefunction import Wavefunction
 
 class ESMF(Wavefunction):
@@ -90,7 +90,7 @@ class ESMF(Wavefunction):
         return newcas
 
     def overlap(self, them):
-        raise Exception("ESMF.overlap(self,other) not implemented yet")
+        return esmf_coupling(self, them, self.ovlp)[0]
 
 
     def get_ao_integrals(self):

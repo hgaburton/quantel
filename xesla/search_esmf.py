@@ -81,8 +81,7 @@ if __name__ == '__main__':
     for itest in range(nsample):
         # Randomly perturb CI and MO coefficients
         mo_guess = ref_mo.copy()
-        mo_guess[:,[7,8]] = mo_guess[:,[7,8]].dot(half_rot)
-        print(mo_guess)
+        mo_guess[:,[2,3]] = mo_guess[:,[2,3]].dot(half_rot)
 #        mo_guess = ref_mo.dot(random_rot(nmo,  -np.pi, np.pi))
         ci_guess = ref_ci.dot(random_rot(ndet, -np.pi, np.pi))
 
@@ -90,16 +89,16 @@ if __name__ == '__main__':
         del myfun
         myfun = ESMF(mol)
         myfun.initialise(mo_guess, ci_guess)
-        num_hess = myfun.get_numerical_hessian(eps=1e-4)
-        hess = myfun.hessian
-        print("Numerical Hessian")
-        print(num_hess)
-        print("Hessian")
-        print(hess)
+        #num_hess = myfun.get_numerical_hessian(eps=1e-4)
+        #hess = myfun.hessian
+        #print("Numerical Hessian")
+        #print(num_hess)
+        #print("Hessian")
+        #print(hess)
         #print("Hessian")
         #print(np.linalg.eigvalsh(num_hess))
         #print(np.linalg.eigvalsh(hess))
-        quit()
+        #quit()
 
         #mycas.canonicalize_()
 
@@ -122,10 +121,11 @@ if __name__ == '__main__':
         
         # Get the distances
         new = True
-        #for othercas in cas_list:
-        #    if 1.0 - abs(mycas.overlap(othercas)) < 1e-8:
-        #        new = False
-        #        break
+        for othercas in sol_list:
+            if 1.0 - abs(myfun.overlap(othercas)) < 1e-8:
+                new = False
+                break
+        print(new)
         if new: 
             count += 1
             tag = "{:04d}".format(count)

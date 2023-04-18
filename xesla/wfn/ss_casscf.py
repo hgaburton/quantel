@@ -7,7 +7,7 @@ from functools import reduce
 from pyscf import scf, fci, __config__, ao2mo, lib, mcscf
 from pyscf.mcscf import mc_ao2mo
 from xesla.utils.linalg import delta_kron, orthogonalise
-from xesla.gnme.cas_noci import cas_proj, cas_overlap, cas_hamiltonian
+from xesla.gnme.cas_noci import cas_coupling
 from .wavefunction import Wavefunction
 
 class SS_CASSCF(Wavefunction):
@@ -114,7 +114,7 @@ class SS_CASSCF(Wavefunction):
 
     def overlap(self, them):
         """Compute the many-body overlap with another CAS waveunction (them)"""
-        return cas_overlap(self, them, self.ovlp)
+        return cas_coupling(self, them, self.ovlp)[0]
 
 
     def sanity_check(self):
