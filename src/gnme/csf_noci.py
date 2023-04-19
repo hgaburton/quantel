@@ -11,8 +11,13 @@ from csf import csf
 from opt.mode_controlling import ModeControl
 
 def csf_proj(mol, nmo, nocc, ovlp, h1e, h2e, ci, mo, ncore, nact, thresh=1e-10):
-    # Intialise memory
+    if(type(nocc) is int):
+        na = nocc
+        nb = nocc
+    else:
+        na, nb = nocc[0], nocc[1]
 
+    # Intialise memory
     nstate = len(ci)
     h = np.zeros((nstate, nstate))
     s = np.zeros((nstate, nstate))
@@ -24,35 +29,40 @@ def csf_proj(mol, nmo, nocc, ovlp, h1e, h2e, ci, mo, ncore, nact, thresh=1e-10):
     for x in range(nstate):
         for w in range(x, nstate):
             # Setup biorthogonalised orbital pair
-            refx = wick.reference_state[float](nmo, nmo, nocc, nact[x], ncore[x], mo[x])
-            refw = wick.reference_state[float](nmo, nmo, nocc, nact[w], ncore[w], mo[w])
-
+            refxa = wick.reference_state[float](nmo, nmo, na, nact[x], ncore[x], mo[x])
+            refxb = wick.reference_state[float](nmo, nmo, nb, nact[x], ncore[x], mo[x])
+            refwa = wick.reference_state[float](nmo, nmo, na, nact[w], ncore[w], mo[w])
+            refwb = wick.reference_state[float](nmo, nmo, nb, nact[w], ncore[w], mo[w])
+            
             # Setup paired orbitals
-            orbs = wick.wick_orbitals[float, float](refx, refw, ovlp)
+            orba = wick.wick_orbitals[float, float](refxa, refwa, ovlp)
+            orbb = wick.wick_orbitals[float, float](refxb, refwb, ovlp)
 
             # Setup matrix builder object
-            mb = wick.wick_rscf[float, float, float](orbs, mol.energy_nuc())
+            mb = wick.wick_uscf[float, float, float](orba, orbb, mol.energy_nuc())
             # Add one- and two-body contributions
             mb.add_one_body(h1e)
             mb.add_two_body(h2e)
 
             # Generate lists of FCI bitsets
-            vx = utils.fci_bitset_list(nocc-ncore[x], nact[x])
-            vw = utils.fci_bitset_list(nocc-ncore[w], nact[w])
+            vxa = utils.fci_bitset_list(na-ncore[x], nact[x])
+            vxb = utils.fci_bitset_list(nb-ncore[x], nact[x])
+            vwa = utils.fci_bitset_list(na-ncore[w], nact[w])
+            vwb = utils.fci_bitset_list(nb-ncore[w], nact[w])
 
             # Loop over FCI occupation strings
-            for iwa in range(len(vw)):
-                for iwb in range(len(vw)):
+            for iwa in range(len(vwa)):
+                for iwb in range(len(vwb)):
                     if(abs(ci[w][iwa,iwb]) < thresh):
                         # Skip if coefficient is below threshold
                         continue
-                    for ixa in range(len(vx)):
-                        for ixb in range(len(vx)):
+                    for ixa in range(len(vxa)):
+                        for ixb in range(len(vxb)):
                             if(abs(ci[x][ixa,ixb]) < thresh):
                                 # Skip if coefficient is below threshold
                                 continue
                             # Compute S and H contribution for this pair of determinants
-                            stmp, htmp = mb.evaluate(vx[ixa], vx[ixb], vw[iwa], vw[iwb])
+                            stmp, htmp = mb.evaluate(vxa[ixa], vxb[ixb], vwa[iwa], vwb[iwb])
                             # Accumulate the Hamiltonian and overlap matrix elements
                             h[x,w] += htmp * ci[w][iwa,iwb] * ci[x][ixa,ixb]
                             s[x,w] += stmp * ci[w][iwa,iwb] * ci[x][ixa,ixb]
