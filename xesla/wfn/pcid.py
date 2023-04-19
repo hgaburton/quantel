@@ -64,9 +64,9 @@ class PCID(Wavefunction):
 #
 #
     def get_ao_integrals(self):
-        self.enuc       = 0.0 * self._scf.energy_nuc()
-        self.v1e        = 0.0 * self.mol.intor('int1e_nuc')  # Nuclear repulsion matrix elements
-        self.t1e        = 0.0 * self.mol.intor('int1e_kin')  # Kinetic energy matrix elements
+        self.enuc       = self._scf.energy_nuc()
+        self.v1e        = self.mol.intor('int1e_nuc')  # Nuclear repulsion matrix elements
+        self.t1e        = self.mol.intor('int1e_kin')  # Kinetic energy matrix elements
         self.hcore      = self.t1e + self.v1e          # 1-electron matrix elements in the AO basis
         self.norb       = self.hcore.shape[0]
         self.ovlp       = self.mol.intor('int1e_ovlp') # Overlap matrix
@@ -123,28 +123,32 @@ class PCID(Wavefunction):
         dm1[self.na:,self.na:] = np.diag(np.diag(ttVir))
         dm1 *= 2
 
-        # Dompute the 2RDM
+        # Compute the 2RDM
         dm2 = np.zeros((self.nmo,self.nmo,self.nmo,self.nmo))
         # ijkl block
-        dm2[:ne,:ne,:ne,:ne] += 4 * np.einsum('ij,kl->ijkl', kron[:ne,:ne], kron[:ne,:ne])
-        dm2[:ne,:ne,:ne,:ne] -= 4 * np.einsum('ij,kl->ijkl', kron[:ne,:ne], np.diag(np.diag(ttOcc)))
-        dm2[:ne,:ne,:ne,:ne] -= 4 * np.einsum('ij,kl->ijkl', np.diag(np.diag(ttOcc)), kron[:ne,:ne])
-        dm2[:ne,:ne,:ne,:ne] -= 2 * np.einsum('il,kj->ijkl', kron[:ne,:ne], kron[:ne,:ne])
-        dm2[:ne,:ne,:ne,:ne] += 2 * np.einsum('ik,kl,lj->ijkl', kron[:ne,:ne], ttOcc, kron[:ne,:ne])
+        dm2[:ne,:ne,:ne,:ne] += 4 * np.einsum('ij,kl->ijkl', kron[:ne,:ne], kron[:ne,:ne]) #
+        dm2[:ne,:ne,:ne,:ne] -= 2 * np.einsum('il,kj->ijkl', kron[:ne,:ne], kron[:ne,:ne]) #
+        dm2[:ne,:ne,:ne,:ne] -= 4 * np.einsum('ij,kl->ijkl', kron[:ne,:ne], np.diag(np.diag(ttOcc))) #
+        dm2[:ne,:ne,:ne,:ne] += 2 * np.einsum('il,kj->ijkl', kron[:ne,:ne], np.diag(np.diag(ttOcc))) #
+        dm2[:ne,:ne,:ne,:ne] -= 4 * np.einsum('ij,kl->ijkl', np.diag(np.diag(ttOcc)), kron[:ne,:ne]) #
+        dm2[:ne,:ne,:ne,:ne] += 2 * np.einsum('il,kj->ijkl', np.diag(np.diag(ttOcc)), kron[:ne,:ne]) #
+        dm2[:ne,:ne,:ne,:ne] += 2 * np.einsum('ik,jl,ji->ijkl', kron[:ne,:ne], kron[:ne,:ne], ttOcc) #
         # ijka block = 0
         # ijak block = 0
         # ijab block
-        dm2[:ne,:ne,ne:,ne:] += 4 * np.einsum('ij,ab->ijab', kron[:ne,:ne], np.diag(np.diag(ttVir)))
-        dm2[:ne,:ne,ne:,ne:] -= 4 * np.einsum('ij,ja,ab->ijab', kron[:ne,:ne], np.power(t,2), kron[ne:,ne:])
-        dm2[ne:,ne:,:ne,:ne] = np.einsum('ijab->abij', dm2[:ne,:ne,ne:,ne:])
+        dm2[:ne,:ne,ne:,ne:] += 4 * np.einsum('ij,ab->ijab',    kron[:ne,:ne], np.diag(np.diag(ttVir))) #
+        dm2[:ne,:ne,ne:,ne:] -= 4 * np.einsum('ij,ja,ab->ijab', kron[:ne,:ne], np.power(t,2), kron[ne:,ne:]) #
+        dm2[ne:,ne:,:ne,:ne]  =     np.einsum('ijab->abij', dm2[:ne,:ne,ne:,ne:]) #
         # iabj block
-        dm2[:ne,ne:,ne:,:ne] -= 2 * np.einsum('ij,ab->iabj', kron[:ne,:ne], np.diag(np.diag(ttVir)))
-        dm2[:ne,ne:,ne:,:ne] += 2 * np.einsum('ij,ja,ab->iabj', kron[:ne,:ne], np.power(t,2), kron[ne:,ne:])
-        dm2[ne:,:ne,:ne,ne:] = np.einsum('iabj->bjia', dm2[:ne,ne:,ne:,:ne])
+        dm2[:ne,ne:,ne:,:ne] += 2 * np.einsum('ij,ja,ab->iabj', kron[:ne,:ne], np.power(t,2), kron[ne:,ne:]) #
+        dm2[:ne,ne:,ne:,:ne] -= 2 * np.einsum('ij,ab->iabj',    kron[:ne,:ne], np.diag(np.diag(ttVir))) #
+        dm2[ne:,:ne,:ne,ne:]  =     np.einsum('iabj->bjia', dm2[:ne,ne:,ne:,:ne]) #
         # iajb block
-        dm2[:ne,ne:,:ne,ne:] += 2 * np.einsum('ij,ja,ab->iajb',kron[:ne,:ne], t, kron[ne:,ne:]) * c0
+        dm2[:ne,ne:,:ne,ne:] += 2 * np.einsum('ij,ja,ab->iajb',kron[:ne,:ne], t, kron[ne:,ne:]) * c0 #
         # aibj block
-        dm2[ne:,:ne,ne:,:ne] += 2 * np.einsum('ij,ja,ab->aibj',kron[:ne,:ne], t, kron[ne:,ne:]) * c0
+        dm2[ne:,:ne,ne:,:ne] += 2 * np.einsum('ij,ja,ab->aibj',kron[:ne,:ne], t, kron[ne:,ne:]) * c0 #
+        # abcd block
+        dm2[ne:,ne:,ne:,ne:] += 2 * np.einsum('ac,bd,da->abcd', kron[ne:,ne:], kron[ne:,ne:], ttVir) # 
 
         return dm1, dm2
 
@@ -165,33 +169,34 @@ class PCID(Wavefunction):
 
         # Compute the 1RDM
         dm1 = np.zeros((self.nmo,self.nmo))
-        dm1[:self.na,:self.na] = - ttOcc
-        dm1[self.na:,self.na:] = ttVir
+        dm1[:self.na,:self.na] = - np.diag(np.diag(ttOcc))
+        dm1[self.na:,self.na:] = np.diag(np.diag(ttVir))
         dm1 *= 2
 
         # Dompute the 2RDM
         dm2 = np.zeros((self.nmo,self.nmo,self.nmo,self.nmo))
         # ijkl block
-        dm2[:ne,:ne,:ne,:ne] -= 4 * np.einsum('ij,kl->ijkl', kron[:ne,:ne], ttOcc)
-        dm2[:ne,:ne,:ne,:ne] -= 4 * np.einsum('ij,kl->ijkl', ttOcc, kron[:ne,:ne])
-        dm2[:ne,:ne,:ne,:ne] += 2 * np.einsum('il,kj->ijkl', kron[:ne,:ne], ttOcc)
-        dm2[:ne,:ne,:ne,:ne] += 2 * np.einsum('il,kj->ijkl', ttOcc, kron[:ne,:ne])
-        # ijka block
-        dm2[:ne,:ne,:ne,ne:] += 4 * c2_0 * np.einsum('ij,ka->ijka', kron[:ne,:ne], t1)
-        dm2[:ne,:ne,:ne,ne:] -= 2 * c2_0 * np.einsum('kj,ia->ijka', kron[:ne,:ne], t1)
-        dm2[:ne,ne:,:ne,:ne] = np.einsum('ijka->kaij',dm2[:ne,:ne,:ne,ne:])
-        # ijak block
-        dm2[:ne,:ne,ne:,:ne] += 4 * c1_0 * np.einsum('ij,ak->ijak', kron[:ne,:ne], t2.T)
-        dm2[:ne,:ne,ne:,:ne] -= 2 * c1_0 * np.einsum('ik,aj->ijak', kron[:ne,:ne], t2.T)
-        dm2[ne:,:ne,:ne,:ne] = np.einsum('ijak->akij',dm2[:ne,:ne,ne:,:ne])
+        dm2[:ne,:ne,:ne,:ne] -= 4 * np.einsum('ij,kl->ijkl', kron[:ne,:ne], np.diag(np.diag(ttOcc))) #
+        dm2[:ne,:ne,:ne,:ne] += 2 * np.einsum('il,kj->ijkl', kron[:ne,:ne], np.diag(np.diag(ttOcc))) #
+        dm2[:ne,:ne,:ne,:ne] -= 4 * np.einsum('ij,kl->ijkl', np.diag(np.diag(ttOcc)), kron[:ne,:ne]) #
+        dm2[:ne,:ne,:ne,:ne] += 2 * np.einsum('il,kj->ijkl', np.diag(np.diag(ttOcc)), kron[:ne,:ne]) #
+        dm2[:ne,:ne,:ne,:ne] += 2 * np.einsum('ik,jl,ji->ijkl', kron[:ne,:ne], kron[:ne,:ne], ttOcc) #
+        # ijka block = 0
+        # ijak block = 0
         # ijab block
-        dm2[:ne,:ne,ne:,ne:] += 4 * np.einsum('ij,ab->ijab', kron[:ne,:ne], ttVir)
-        dm2[:ne,:ne,ne:,ne:] -= 2 * np.einsum('ib,ja->ijab', t1, t2)
-        dm2[ne:,ne:,:ne,:ne] = np.einsum('ijab->abij', dm2[:ne,:ne,ne:,ne:])
+        dm2[:ne,:ne,ne:,ne:] += 4 * np.einsum('ij,ab->ijab',    kron[:ne,:ne], np.diag(np.diag(ttVir))) #
+        dm2[:ne,:ne,ne:,ne:] -= 4 * np.einsum('ij,ja,ab->ijab', kron[:ne,:ne], np.multiply(t1,t2), kron[ne:,ne:]) #
+        dm2[ne:,ne:,:ne,:ne]  =     np.einsum('ijab->abij', dm2[:ne,:ne,ne:,ne:]) #
         # iabj block
-        dm2[:ne,ne:,ne:,:ne] += 4 * np.einsum('ia,jb->iabj', t1, t2)
-        dm2[:ne,ne:,ne:,:ne] -= 2 * np.einsum('ij,ba->iabj', kron[:ne,:ne], ttVir)
-        dm2[ne:,:ne,:ne,ne:] = np.einsum('iabj->bjia', dm2[:ne,ne:,ne:,:ne])
+        dm2[:ne,ne:,ne:,:ne] += 2 * np.einsum('ij,ja,ab->iabj', kron[:ne,:ne], np.multiply(t1,t2), kron[ne:,ne:]) #
+        dm2[:ne,ne:,ne:,:ne] -= 2 * np.einsum('ij,ab->iabj',    kron[:ne,:ne], np.diag(np.diag(ttVir))) #
+        dm2[ne:,:ne,:ne,ne:]  =     np.einsum('iabj->bjia', dm2[:ne,ne:,ne:,:ne]) #
+        # iajb block
+        dm2[:ne,ne:,:ne,ne:] += 2 * np.einsum('ij,ja,ab->iajb',kron[:ne,:ne], t2, kron[ne:,ne:]) * c1_0 #
+        # aibj block
+        dm2[ne:,:ne,ne:,:ne] += 2 * np.einsum('ij,ja,ab->aibj',kron[:ne,:ne], t1, kron[ne:,ne:]) * c2_0 #
+        # abcd block
+        dm2[ne:,ne:,ne:,ne:] += 2 * np.einsum('ac,bd,da->abcd', kron[ne:,ne:], kron[ne:,ne:], ttVir) # 
 
         return dm1, dm2
 
@@ -214,7 +219,6 @@ class PCID(Wavefunction):
         E  = self.enuc
         E += np.einsum('pq,pq', self.h1e, self.dm1, optimize="optimal")
         E += 0.5 * np.einsum('pqrs,pqrs', self.h2e, self.dm2, optimize="optimal")
-        print(E, np.linalg.multi_dot((self.mat_ci[:,0],self.ham,self.mat_ci[:,0])))
         return E
 #
 #    @property
@@ -256,10 +260,13 @@ class PCID(Wavefunction):
 #
     def update_integrals(self):
         # One-electron Hamiltonian
-        self.h1e = np.einsum('ip,ij,jq->pq', self.mo_coeff, self.hcore, self.mo_coeff,optimize="optimal")
+        self.h1e = np.einsum('ip,ij,jq->pq', 
+                             self.mo_coeff, self.hcore, self.mo_coeff,optimize="optimal")
 
         # Occupied orbitals
-        self.h2e = ao2mo.incore.general(self._scf._eri, (self.mo_coeff, self.mo_coeff, self.mo_coeff, self.mo_coeff), compact=False)
+        self.h2e = ao2mo.incore.general(self._scf._eri, 
+                                       (self.mo_coeff, self.mo_coeff, self.mo_coeff, self.mo_coeff), 
+                                       compact=False)
         self.h2e = np.reshape(self.h2e, (self.nmo, self.nmo, self.nmo, self.nmo))
 
         # Reduced density matrices 
@@ -271,12 +278,13 @@ class PCID(Wavefunction):
         fao = self.mo_coeff.dot(self.ref_fock).dot(self.mo_coeff.T)
         fao = self.ovlp.dot(fao).dot(self.ovlp) 
         # Energy for reference determinant
-        self.eref = self.enuc + (np.einsum('ii',self.h1e[:self.na,:self.na] + self.ref_fock[:self.na,:self.na]))
+        self.eref = self.enuc + (np.einsum('ii',self.h1e[:self.na,:self.na] 
+                                         + self.ref_fock[:self.na,:self.na]))
 
         self.ham = self.get_ham()
 
     def get_ham(self):
-        '''Build the full Hamiltonian in the CIS space'''
+        '''Build the full Hamiltonian in the pCID space'''
         ne   = self.na
         nvir = self.nmo - self.na
         nov  = self.na * (self.nmo - self.na)
@@ -284,18 +292,18 @@ class PCID(Wavefunction):
         dij = np.identity(self.na)
         dab = np.identity(self.nmo - self.na)
 
-        JK = np.einsum('pqpq->pq',self.h2e)
-
         ham = np.zeros((self.nDet, self.nDet))
         ham[0,0]   = self.eref
-        ham[0,1:]  = np.reshape(JK[:self.na,self.na:], (nov))
-        ham[1:,0]  = np.reshape(JK[:self.na,self.na:], (nov))
+        ham[0,1:]  = np.reshape(np.einsum('iaia->ia',self.h2e[:ne,ne:,:ne,ne:]), (nov))
+        ham[1:,0]  = ham[0,1:]
 
         hiajb = ( self.eref * np.einsum('ij,ab->iajb',dij,dab) 
                  + 2 * np.einsum('ab,ij->iajb',np.diag(np.diag(self.ref_fock[ne:,ne:])),dij)
                  - 2 * np.einsum('ij,ab->iajb',np.diag(np.diag(self.ref_fock[:ne,:ne])),dab) 
-                 + 2 * 0.5 * np.einsum('ab,ij->iajb',JK[ne:,ne:],dij) 
-                 + 2 * 0.5 * np.einsum('ab,ji->iajb',dab,JK[:ne,:ne])
+                 + np.einsum('abab,ij->iajb', self.h2e[ne:,ne:,ne:,ne:], dij) 
+                 + np.einsum('ab,jiji->iajb', dab, self.h2e[:ne,:ne,:ne,:ne])
+                 - 4 * np.einsum('ij,ab,abji->iajb',dij,dab,self.h2e[ne:,ne:,:ne,:ne])
+                 + 2 * np.einsum('ij,ab,aijb->iajb',dij,dab,self.h2e[ne:,:ne,:ne,ne:])
                 ) 
         ham[1:,1:] = np.reshape(np.reshape(hiajb,(ne,self.nmo-self.na,-1)),(self.nDet-1,-1))
         return ham
