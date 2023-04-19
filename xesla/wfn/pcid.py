@@ -38,13 +38,14 @@ class PCID(Wavefunction):
 
     def copy(self):
         # Return a copy of the current object
-        newcas = pcid(self.mol)
+        newcas = PCID(self.mol)
         newcas.initialise(self.mo_coeff, self.mat_ci, integrals=False)
         return newcas
 
     def overlap(self, them):
         # Represent the alternative CAS state in the current CI space
-        return None
+        return 0
+        raise Exception('PCID.overlap(self,them) is not yet implemented')
         vec2 = cas_proj(self, them, self.ovlp) 
         # Compute the overlap and return
         return np.dot(np.asarray(self.mat_ci)[:,0].conj(), vec2)
@@ -200,18 +201,13 @@ class PCID(Wavefunction):
 
         return dm1, dm2
 
-#    def deallocate(self):
-#        # Reduce the memory footprint for storing 
-#        self._eri   = None
-#        self.ppoo   = None
-#        self.popo   = None
-#        self.h1e    = None
-#        self.h1eff  = None
-#        self.h2eff  = None
-#        self.F_core = None
-#        self.F_cas  = None
-#        self.ham    = None
-#
+    def deallocate(self):
+        # Reduce the memory footprint for storing 
+        self.h1e      = None
+        self.h2e      = None
+        self.ref_fock = None
+        self.ham      = None
+
     @property
     def energy(self):
         ''' Compute the energy corresponding to a given set of
@@ -395,12 +391,12 @@ class PCID(Wavefunction):
 
         # Two-body contribution
         F += np.einsum('mqrs,nqrs->mn', dm2, self.h2e, optimize='optimal')
-
         return F
 
     def get_orbital_gradient(self):
         ''' This method builds the orbital part of the gradient '''
         g_orb = 2 * self.get_gen_fock(self.dm1, self.dm2, False)
+#        print((g_orb.T - g_orb))
         return (g_orb.T - g_orb)[self.rot_idx]
 
 
@@ -487,11 +483,14 @@ class PCID(Wavefunction):
             A True element means that this rotation should be taken into 
             account during the optimization. Taken from pySCF.mcscf.casscf '''
         mask = np.zeros((self.norb,self.norb),dtype=bool)
-        mask[self.na:,:self.na] = True    # Active-Core rotations
-        if frozen is not None:
-            if isinstance(frozen, (int, np.integer)):
-                mask[:frozen] = mask[:,:frozen] = False
-            else:
-                frozen = np.asarray(frozen)
-                mask[frozen] = mask[:,frozen] = False
+        for i in  range(self.norb):
+            for j in range(i):
+                mask[i,j] = True
+        #mask[self.na:,:self.na] = True    # Active-Core rotations
+        #if frozen is not None:
+        #    if isinstance(frozen, (int, np.integer)):
+        #        mask[:frozen] = mask[:,:frozen] = False
+        #    else:
+        #        frozen = np.asarray(frozen)
+        #        mask[frozen] = mask[:,frozen] = False
         return mask

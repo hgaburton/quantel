@@ -7,6 +7,7 @@ from scipy.linalg import eigvalsh as scipy_eigvalsh
 from pyscf import gto
 from xesla.wfn.pcid import PCID as WFN
 from xesla.opt.eigenvector_following import EigenFollow
+from xesla.opt.mode_controlling import ModeControl
 
 def random_rot(n, lmin, lmax):
     X = lmin + np.random.rand(n,n) * (lmax - lmin)
@@ -60,6 +61,7 @@ if __name__ == '__main__':
     mol.charge = charge
     mol.spin = spin
     mol.build()
+    print(mol.nelec)
 
     # Get an initial HF solution
     myhf = mol.RHF().run()
@@ -73,7 +75,7 @@ if __name__ == '__main__':
     ref_mo = myhf.mo_coeff.copy()
     ref_ci = np.identity(ndet)
     
-    half_rot = scipy_expm(0.25*np.pi*np.matrix([[0,-1],[1,0]]))
+    half_rot = scipy_expm(-0.24*np.pi*np.matrix([[0,-1],[1,0]]))
 
     sol_list = []
 
@@ -81,35 +83,40 @@ if __name__ == '__main__':
     for itest in range(nsample):
         # Randomly perturb CI and MO coefficients
         mo_guess = ref_mo.copy()
-        mo_guess[:,[2,3]] = mo_guess[:,[2,3]].dot(half_rot)
-#        mo_guess = ref_mo.dot(random_rot(nmo,  -np.pi, np.pi))
+        #mo_guess[:,[3,4]] = mo_guess[:,[3,4]].dot(half_rot)
+        mo_guess = ref_mo.dot(random_rot(nmo,  -np.pi, np.pi))
+        ci_guess = ref_ci.copy()
+        #ci_guess[:,[0,1]] = ci_guess[:,[0,1]].dot(half_rot)
         ci_guess = ref_ci.dot(random_rot(ndet, -np.pi, np.pi))
 
         # Set orbital coefficients
         del myfun
         myfun = WFN(mol)
         myfun.initialise(mo_guess, ci_guess)
-        grad = myfun.gradient
-        num_grad = myfun.get_numerical_gradient(eps=1e-4)
-        print("Numerical gradient")
-        print(num_grad)
-        print("gradient")
-        print(grad)
 
-        num_hess = myfun.get_numerical_hessian(eps=1e-4)
-        hess = myfun.hessian
-        print("Numerical Hessian")
-        print(num_hess)
-        print("Hessian")
-        print(hess)
-        print("Hessian")
-        print(np.linalg.eigvalsh(num_hess))
-        print(np.linalg.eigvalsh(hess))
-        quit()
+        if(False):
+            grad = myfun.gradient
+            num_grad = myfun.get_numerical_gradient(eps=1e-4)
+            print("Numerical gradient")
+            print(num_grad)
+            print("gradient")
+            print(grad)
+
+            num_hess = myfun.get_numerical_hessian(eps=1e-4)
+            hess = myfun.hessian
+            print("Numerical Hessian")
+            print(num_hess)
+            print("Hessian")
+            print(hess)
+            print("Hessian")
+            print(np.linalg.eigvalsh(num_hess))
+            print(np.linalg.eigvalsh(hess))
+            quit()
 
         #mycas.canonicalize_()
 
-        opt = EigenFollow(minstep=0.0,rtrust=0.15)
+        opt = ModeControl(minstep=0.0,rtrust=0.01)
+        opt = EigenFollow(minstep=0.0,rtrust=0.01)
         if not opt.run(myfun, thresh=thresh, maxit=500, index=Hind):
             continue
         hindices = myfun.get_hessian_index()
