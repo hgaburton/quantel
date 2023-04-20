@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 r"""
 Driver for NOCI codes
 Given a .xyz file and config file, create possible MO coefficients at a particular geometry
@@ -26,10 +28,12 @@ mf = scf.ROHF(mol).run()
 nmo, nocc = mf.mo_occ.size, np.sum(mf.mo_occ > 0)
 sao = owndata(mol.intor('int1e_ovlp'))
 nocc = (5,3)
-ci = owndata(mycsf.csf_info.get_civec())
-mo = owndata(mycsf.mo_coeff)
-nact = [2]
-ncore = [3]
+# HGAB: You need to give the inputs to csf_proj as tuples. You can define a tuple of length 1 by 
+#       putting a comma after the first element.
+ci = (owndata(mycsf.csf_info.get_civec()),)
+mo = (owndata(mycsf.mo_coeff),)
+nact  = (2,)
+ncore = (3,)
 print("nmo: ", nmo)
 print("nocc: ", nocc)
     # Build required matrix elements
@@ -38,7 +42,7 @@ h1e  = owndata(mf.get_hcore())
     # ERIs in AO basis
 h2e  = owndata(ao2mo.restore(1, mf._eri, mol.nao).reshape(mol.nao**2, mol.nao**2))
 
-h, s, w, v = csf_proj(mol, nmo, nocc, sao, h1e, h2e, tuple(ci), tuple(mo), tuple(ncore), tuple(nact))
+h, s, w, v = csf_proj(mol, nmo, nocc, sao, h1e, h2e, ci, mo, ncore, nact)
 
 print(h)
 
