@@ -103,43 +103,55 @@ def get_csfs(mol, mo_coeff, mo_occ, mo_energy, sao, bo_list, keep_rhf=True, thre
         basis, charge, spin, frozen, cas, nsample, Hind, maxit, unit_str, thresh, core, active, g_coupling, permutation, custom, breaking = read_config(f"{bo}_config.txt")
         bo_coeffs = construct_orbitals(mo_coeff, mo_occ, mo_energy, sao, bo, custom, breaking, thresh)
         for j, coeff in enumerate(bo_coeffs):
-            mycsf = csf(mol, spin, cas[0], cas[1], frozen, core, active, g_coupling, permutation)
-            mycsf.initialise(coeff)
+            # TODO: HARDCODED SPIN BELOW
+            mycsf = csf(mol, 1, cas[0], cas[1], frozen, core, active, g_coupling, permutation)
+            norbs = coeff.shape[1]
+            vir = list(set(np.arange(norbs)) - set(core+active))
+            ncoeff = np.hstack([coeff[:, core], coeff[:, active], coeff[:, vir]])
+            mycsf.initialise(ncoeff)
             csfs.append(mycsf)
-    # Hacking this
-    #hacked_csf = csf(mol, 0, 2, 2, 0, [0,1,2,3,5,6], [4,9], '+-', [0,1], 'site')
-    #hacked_csf.initialise()
-    #from opt.eigenvector_following import EigenFollow
-    #opt = EigenFollow(minstep=0.0, rtrust=0.15)
-    #opt.run(hacked_csf, thresh=1e-8, maxit=500, index=0)
-    #csfs.append(hacked_csf)
     return csfs
 
 def get_reopt_mo_coeff(mycsf):
+    #print(mycsf.mo_coeff[:, 4:])
+    #quit()
+    #mycsf.mo_coeff = mycsf.mo_coeff[:, [0,1,2,3,4,5,8,7,6,9]]
     opt  = ModeControl(minstep=0.0, rtrust=0.01)
     opt.run(mycsf, thresh=1e-10, maxit=500, index=None)
     return mycsf.mo_coeff
 
 def run_noci(mol, bo_list, keep_rhf=True):
-    mf = scf.RHF(mol).run()
+    mf = scf.ROHF(mol).run()
     nmo, nocc = mf.mo_occ.size, np.sum(mf.mo_occ > 0)
     sao = owndata(mol.intor('int1e_ovlp'))
 
     csfs = get_csfs(mol, mf.mo_coeff, mf.mo_occ, mf.mo_energy, sao, bo_list)
-    ci = [owndata(csf.csf_info.ci) for csf in csfs]
-    mo = [owndata(get_reopt_mo_coeff(csf)) for csf in csfs]
+    for i, csf in enumerate(csfs):
+        get_reopt_mo_coeff(csf)
+        np.savetxt(f"{i}_opt.mo_coeff", csf.mo_coeff, fmt="% 20.16f")
+
+    ci = [owndata(csf.csf_info.get_civec()) for csf in csfs]
+    #mo = [owndata(get_reopt_mo_coeff(csf)) for csf in csfs]
+    mo = [owndata(csf.mo_coeff) for csf in csfs]
     nact = [csf.ncas for csf in csfs]
     ncore = [csf.ncore for csf in csfs]
 
-    for i, csf in enumerate(csfs):
-        np.savetxt(f"{i}_opt.mo_coeff", csf.mo_coeff, fmt="% 20.16f")
-
     if keep_rhf:
-        ci.append(np.array([[1]]))
-        mo.append(mf.mo_coeff)
-        nact.append(0)
-        ncore.append(mol.nelectron // 2)
-
+        if mol.spin == 0:
+            ci.append(np.array([[1]]))
+            mo.append(mf.mo_coeff)
+            nact.append(0)
+            ncore.append(mol.nelectron // 2)
+        else:
+            na = mf.nelec[0]
+            nb = mf.nelec[1]
+            ci.append(np.array([[1]]))
+            mo.append(mf.mo_coeff)
+            nact.append(na-nb)
+            ncore.append(nb)
+    print(ncore)
+    print(nact)
+    print(nocc)
     # Build required matrix elements
     # Core Hamiltonian
     h1e  = owndata(mf.get_hcore())
@@ -152,7 +164,7 @@ def run_noci(mol, bo_list, keep_rhf=True):
 def main():
     # Initialise the molecular structure
     basis, charge, spin, bo_list, rhf = read_noci_config(sys.argv[2])
-    mol = gto.Mole(symmetry=False, unit='A')
+    mol = gto.Mole(symmetry=True, unit='A')
     mol.atom = sys.argv[1]
     mol.basis = basis
     mol.charge = charge

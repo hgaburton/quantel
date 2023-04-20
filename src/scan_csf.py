@@ -112,7 +112,7 @@ if __name__ == '__main__':
             hindices = mycsf.get_hessian_index()
 
             # Canonicalise
-            mycsf.canonicalise()
+            #mycsf.canonicalise()
 
             # Get the distances
             new = True

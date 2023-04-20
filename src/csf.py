@@ -13,10 +13,10 @@ from utils import delta_kron, orthogonalise
 
 
 class csf():
-    def __init__(self, mol, spin, ncas, nelecas, frozen: int, core: List[int], act: List[int], g_coupling: str = None,
+    def __init__(self, mol, s, ncas, nelecas, frozen: int, core: List[int], act: List[int], g_coupling: str = None,
                  permutation: List[int] = None, mo_basis: 'str' = 'site', ncore=None):
         self.mol = mol
-        self.spin = spin
+        self.s = s    # Value of S
         self.core = core
         self.act = act
         self.g_coupling = g_coupling
@@ -46,7 +46,7 @@ class csf():
         self.get_ao_integrals()
 
         # Get information of CSFs
-        self.csf_info = ConfigurationStateFunction(self.mol, self.spin, self.core, self.act,
+        self.csf_info = ConfigurationStateFunction(self.mol, self.s, self.core, self.act,
                                                    self.g_coupling, self.permutation, mo_basis=self.mo_basis)
 
         # Get number of determinants (which is the dimension of the problem)
@@ -62,7 +62,7 @@ class csf():
 
     def copy(self):
         # Return a copy of the current object
-        newcsf = csf(self.mol, self.spin, self.ncas, self.nelecas, self.frozen, self.core, self.act, self.g_coupling, self.permutation, self.mo_basis)
+        newcsf = csf(self.mol, self.s, self.ncas, self.nelecas, self.frozen, self.core, self.act, self.g_coupling, self.permutation, self.mo_basis)
         newcsf.initialise(self.mo_coeff, integrals=False)
         return newcsf
 
