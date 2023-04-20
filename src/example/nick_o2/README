@@ -1,0 +1,13 @@
+Run the following command:
+python test_o2.py 0_opt.mo_coeff 1_opt.mo_coeff noci_output
+
+Get the following error:
+Traceback (most recent call last):
+  File "/home/dpt11/dpt/pemb6611/code/mcscf/src/example/nick_o2/test_o2.py", line 80, in <module>
+    main()
+  File "/home/dpt11/dpt/pemb6611/code/mcscf/src/example/nick_o2/test_o2.py", line 73, in main
+    h, s, w, v = run_noci(mol)
+  File "/home/dpt11/dpt/pemb6611/code/mcscf/src/example/nick_o2/test_o2.py", line 61, in run_noci
+    h, s, w, v = csf_proj(mol, nmo, nocc, sao, h1e, h2e, tuple(ci), tuple(mo), tuple(ncore), tuple(nact))
+  File "/home/dpt11/dpt/pemb6611/code/mcscf/src/example/nick_o2/../../gnme/csf_noci.py", line 44, in csf_proj
+    mb.add_one_body(h1e)
