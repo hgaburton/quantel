@@ -50,8 +50,7 @@ def mapper(kets, coeffs):
         alpha_str = ''.join(str(x) for x in ket[1:nspatialorbs+1])
         beta_str = ''.join(str(x) for x in ket[nspatialorbs+1:])
         mat[alpha_occ_dict.get(alpha_str)][beta_occ_dict.get(beta_str)] += coeffs[i] * pf
-    return mat, nspatialorbs, nalpha + nbeta
-
+    return mat, nspatialorbs, (nalpha, nbeta)
 
 def get_dm12(kets, coeffs):
     civec, norbs, nelec = mapper(kets, coeffs)

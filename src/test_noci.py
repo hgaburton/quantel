@@ -15,7 +15,7 @@ from gnme.write_noci_results import write_matrix
 from opt.mode_controlling import ModeControl
 
 mol = gto.M(atom=f"O 0 0 0",
-            basis='6-31g',
+            basis='sto-3g',
             spin=2,
             unit="Angstrom")
 mycsf = csf(mol, 1, 2, 2, 0, [0,1,2], [3,4], '++', mo_basis="site")
