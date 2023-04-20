@@ -53,7 +53,54 @@ def mapper(kets, coeffs):
     return mat, nspatialorbs, nalpha + nbeta
 
 
-def get_dm12(kets, coeffs):
+def make_rdm12(civec, norbs, nelec, spin, link_index=None, reorder=True):
+    r"""
+    PySCF's RDM makers assume that number of alpha and beta electrons differ by at most 1.
+    Technically _unpack_nelec can take into account spins but none of the RDM makers do.
+    This method thus generalises the functionality given by fci.direct_spin1.make_rdm12
+    """
+    import ctypes
+    from pyscf import lib
+    from pyscf.fci import cistring, rdm
+    from pyscf.fci.addons import _unpack_nelec
+    librdm = lib.load_library('libfci')
+
+    fname = 'FCIrdm12kern_sf'
+    symm = 0
+    assert civec is not None
+    cibra = np.asarray(civec, order='C')
+    ciket = np.asarray(civec, order='C')
+    if link_index is None:
+        neleca, nelecb = _unpack_nelec(nelec, spin)
+        link_indexa = link_indexb = cistring.gen_linkstr_index(range(norbs), neleca)
+        if neleca != nelecb:
+            link_indexb = cistring.gen_linkstr_index(range(norbs), nelecb)
+    else:
+        link_indexa, link_indexb = link_index
+    na,nlinka = link_indexa.shape[:2]
+    nb,nlinkb = link_indexb.shape[:2]
+    assert (cibra.size == na*nb)
+    assert (ciket.size == na*nb)
+    rdm1 = np.empty((norbs,norbs))
+    rdm2 = np.empty((norbs,norbs,norbs,norbs))
+    librdm.FCIrdm12_drv(getattr(librdm, fname),
+                        rdm1.ctypes.data_as(ctypes.c_void_p),
+                        rdm2.ctypes.data_as(ctypes.c_void_p),
+                        cibra.ctypes.data_as(ctypes.c_void_p),
+                        ciket.ctypes.data_as(ctypes.c_void_p),
+                        ctypes.c_int(norbs),
+                        ctypes.c_int(na), ctypes.c_int(nb),
+                        ctypes.c_int(nlinka), ctypes.c_int(nlinkb),
+                        link_indexa.ctypes.data_as(ctypes.c_void_p),
+                        link_indexb.ctypes.data_as(ctypes.c_void_p),
+                        ctypes.c_int(symm))
+    dm1 = rdm1.T
+    dm2 = rdm2
+    if reorder:
+        dm1, dm2 = rdm.reorder_rdm(dm1, dm2, inplace=True)
+    return dm1, dm2
+
+def get_dm12(kets, coeffs, spin):
     civec, norbs, nelec = mapper(kets, coeffs)
-    dm1, dm2 = fci.direct_spin1.make_rdm12(civec, norbs, nelec)
+    dm1, dm2 = make_rdm12(civec, norbs, nelec, spin)
     return dm1, dm2
