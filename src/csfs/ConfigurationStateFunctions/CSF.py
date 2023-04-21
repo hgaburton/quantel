@@ -28,7 +28,6 @@ class ConfigurationStateFunction:
         self.mo_basis = mo_basis
         self.n_elec = mol.nelectron  # Number of electrons
         self.n_elec_act = self.n_elec - 2 * len(core)
-        self.spin = mol.spin  # M_s value
         self.s = s
         self.n_alpha = (mol.nelectron + mol.spin) // 2  # Number of alpha electrons
         self.n_beta = (mol.nelectron - mol.spin) // 2  # Number of beta electrons
@@ -40,8 +39,6 @@ class ConfigurationStateFunction:
         self.nact = len(act)
         self.core_orbs = coeffs[:, core]   # Core orbitals
         self.act_orbs = coeffs[:, act]    # Active orbitals
-        #print("Active orbitals")
-        #print(self.act_orbs)
         if self.permutation is not None:
             self.act_orbs = self.act_orbs[:, permutation]
         self.n_orbs = self.ncore + self.nact  # Number of spatial orbitals
@@ -78,6 +75,10 @@ class ConfigurationStateFunction:
         if method == 'hf':
             # Runs RHF calculation
             mf = scf.rhf.RHF(self.mol)
+            mf.scf()
+            return mf.mo_coeff
+        if method == 'rohf':
+            mf = scf.ROHF(self.mol)
             mf.scf()
             return mf.mo_coeff
         if method == 'custom':
@@ -295,7 +296,7 @@ class ConfigurationStateFunction:
         Gets the spatial 1-RDM and 2-RDM from PySCF
         """
         dets, coeffs = self.get_relevant_dets(self.dets_sq, self.csf_coeffs)
-        dm1, dm2 = get_dm12(dets, coeffs)
+        dm1, dm2 = get_dm12(dets, coeffs, self.mol.spin)
         return dm1, dm2
 
     def get_civec(self):
