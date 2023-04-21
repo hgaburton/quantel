@@ -61,7 +61,6 @@ if __name__ == '__main__':
     mol.charge = charge
     mol.spin = spin
     mol.build()
-    print(mol.nelec)
 
     # Get an initial HF solution
     myhf = mol.RHF().run()
@@ -75,19 +74,34 @@ if __name__ == '__main__':
     ref_mo = myhf.mo_coeff.copy()
     ref_ci = np.identity(ndet)
     
-    half_rot = scipy_expm(-0.24*np.pi*np.matrix([[0,-1],[1,0]]))
+    half_rot = scipy_expm(0.24*np.pi*np.matrix([[0,-1],[1,0]]))
 
     sol_list = []
+
+    nocc = np.sum(myhf.mo_occ > 0)
+    nvir = nmo - nocc
+    print(nocc)
+
+    x = 7
+    y = 0
+    d = x * nvir + y
+
+    t = np.zeros((nocc, nvir))
+    t[7,8-nocc] = 1 
+    print(t)
 
     count = 0
     for itest in range(nsample):
         # Randomly perturb CI and MO coefficients
         mo_guess = ref_mo.copy()
-        #mo_guess[:,[3,4]] = mo_guess[:,[3,4]].dot(half_rot)
-        mo_guess = ref_mo.dot(random_rot(nmo,  -np.pi, np.pi))
+        print(mo_guess[:,[7,nocc+y]])
+        mo_guess[:,[7,nocc+y]] = mo_guess[:,[7,nocc+y]].dot(half_rot)
+        #mo_guess = ref_mo.dot(random_rot(nmo,  -np.pi, np.pi))
         ci_guess = ref_ci.copy()
-        #ci_guess[:,[0,1]] = ci_guess[:,[0,1]].dot(half_rot)
-        ci_guess = ref_ci.dot(random_rot(ndet, -np.pi, np.pi))
+        ci_guess[:,[0,d+1]] = ci_guess[:,[0,d+1]].dot(half_rot.T)
+        print(mo_guess)
+        print(ci_guess)
+        #ci_guess = ref_ci.dot(random_rot(ndet, -np.pi, np.pi))
 
         # Set orbital coefficients
         del myfun
@@ -101,6 +115,7 @@ if __name__ == '__main__':
             print(num_grad)
             print("gradient")
             print(grad)
+            print(np.linalg.norm(grad - num_grad))
 
             num_hess = myfun.get_numerical_hessian(eps=1e-4)
             hess = myfun.hessian
@@ -111,14 +126,21 @@ if __name__ == '__main__':
             print("Hessian")
             print(np.linalg.eigvalsh(num_hess))
             print(np.linalg.eigvalsh(hess))
+            print(np.linalg.norm(hess - num_hess))
             quit()
 
         #mycas.canonicalize_()
 
-        opt = ModeControl(minstep=0.0,rtrust=0.01)
-        opt = EigenFollow(minstep=0.0,rtrust=0.01)
-        if not opt.run(myfun, thresh=thresh, maxit=500, index=Hind):
+        opt = ModeControl(minstep=0.0,rtrust=0.1)
+        #opt = EigenFollow(minstep=0.0,rtrust=0.01)
+        if not opt.run(myfun, thresh=thresh, maxit=500, index=None):
             continue
+
+        dm1 = myfun.get_rdm1();
+        print(scipy_eigvalsh(dm1))
+
+
+
         hindices = myfun.get_hessian_index()
         myfun.update_integrals()
         #pushoff = 0.01
@@ -131,15 +153,15 @@ if __name__ == '__main__':
         #    pushoff *= 2
         #    pushit  += 1
 
-        if hindices[0] != Hind: continue
+        #if hindices[0] != Hind: continue
         
         # Get the distances
         new = True
         for othercas in sol_list:
+            print(myfun.overlap(othercas))
             if 1.0 - abs(myfun.overlap(othercas)) < 1e-8:
                 new = False
                 break
-        print(new)
         if new: 
             count += 1
             tag = "{:04d}".format(count)

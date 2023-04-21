@@ -81,8 +81,8 @@ if __name__ == '__main__':
     for itest in range(nsample):
         # Randomly perturb CI and MO coefficients
         mo_guess = ref_mo.copy()
-        mo_guess[:,[2,3]] = mo_guess[:,[2,3]].dot(half_rot)
-#        mo_guess = ref_mo.dot(random_rot(nmo,  -np.pi, np.pi))
+#        mo_guess[:,[2,3]] = mo_guess[:,[2,3]].dot(half_rot)
+        mo_guess = ref_mo.dot(random_rot(nmo,  -np.pi, np.pi))
         ci_guess = ref_ci.dot(random_rot(ndet, -np.pi, np.pi))
 
         # Set orbital coefficients
@@ -130,7 +130,7 @@ if __name__ == '__main__':
             count += 1
             tag = "{:04d}".format(count)
             np.savetxt(tag+'.mo_coeff', myfun.mo_coeff, fmt="% 20.16f")
-            np.savetxt(tag+'.mat_ci', myfun.mat_ci[:,0], fmt="% 20.16f")
+            np.savetxt(tag+'.mat_ci', myfun.mat_ci, fmt="% 20.16f")
             np.savetxt(tag+'.energy', np.array([
                   [myfun.energy, hindices[0], hindices[1], 0.0]]), fmt="% 18.12f % 5d % 5d % 12.6f")
             

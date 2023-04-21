@@ -20,7 +20,7 @@ class ESMF(Wavefunction):
             - restore_step
     """
 
-    def __init__(self, mol):
+    def __init__(self, mol, spin=0):
         """Initialise excited-state mean-field wavefunction
                mol : PySCF molecule object
         """
@@ -30,6 +30,7 @@ class ESMF(Wavefunction):
         self.verbose    = mol.verbose
         self.stdout     = mol.stdout
         self.max_memory = self._scf.max_memory
+        self.spin       = spin
         # Get AO integrals 
         self.get_ao_integrals()
         self.norb       = self.hcore.shape[0]

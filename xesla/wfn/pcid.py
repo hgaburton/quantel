@@ -7,6 +7,7 @@ from functools import reduce
 from pyscf import scf, __config__, ao2mo
 from xesla.utils.linalg import delta_kron, orthogonalise
 from .wavefunction import Wavefunction
+from xesla.gnme.pcid_noci import pcid_coupling
 
 class PCID(Wavefunction):
     def __init__(self, mol):
@@ -42,28 +43,11 @@ class PCID(Wavefunction):
         newcas.initialise(self.mo_coeff, self.mat_ci, integrals=False)
         return newcas
 
-    def overlap(self, them):
-        # Represent the alternative CAS state in the current CI space
-        return 0
-        raise Exception('PCID.overlap(self,them) is not yet implemented')
-        vec2 = cas_proj(self, them, self.ovlp) 
-        # Compute the overlap and return
-        return np.dot(np.asarray(self.mat_ci)[:,0].conj(), vec2)
 
-#    def sanity_check(self):
-#        '''Need to be run at the start of the kernel to verify that the number of 
-#           orbitals and electrons in the CAS are consistent with the system '''
-#        assert self.ncas > 0
-#        ncore = self.ncore
-#        nvir = self.mo_coeff.shape[1] - ncore - self.ncas
-#        assert ncore >= 0
-#        assert nvir >= 0
-#        assert ncore * 2 + sum(self.nelecas) == self.mol.nelectron
-#        assert 0 <= self.nelecas[0] <= self.ncas
-#        assert 0 <= self.nelecas[1] <= self.ncas
-#        return self
-#
-#
+    def overlap(self, them):
+        return pcid_coupling(self, them, self.ovlp)[0]
+
+
     def get_ao_integrals(self):
         self.enuc       = self._scf.energy_nuc()
         self.v1e        = self.mol.intor('int1e_nuc')  # Nuclear repulsion matrix elements
