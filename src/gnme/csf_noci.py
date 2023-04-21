@@ -70,11 +70,24 @@ def csf_proj(mol, nmo, nocc, ovlp, h1e, h2e, ci, mo, ncore, nact, thresh=1e-10):
             h[w,x] = h[x,w]
             s[w,x] = s[x,w]
 
+    print("NOCI Hamiltonian")
+    print(h)
+    print([h[i,i] for i in range(3)])
+
+    print("\nNOCI Overlap")
+    print(s)
+
     # HGAB: You can use the LibGNME eigensolver to avoid issues with singular overlap matrix
     #       Just be aware that it returns eigval as a matrix not an array 
     #       Here, the threshold corresponds to the null space of the overlap matrix
     eigval, v = utils.gen_eig_sym(nstate, h, s,thresh=1e-8)
     w = eigval[0,:]
+
+    print("\nNOCI energies")
+    print(w)
+
+    print("\nNOCI eigenvectors")
+    print(v)
     # Solve the generalised eigenvalue problem
     #w, v = scipy.linalg.eigh(h, b=s)
     return h, s, w, v
