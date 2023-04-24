@@ -53,8 +53,9 @@ if __name__ == '__main__':
             elif re.match('maxit', line) is not None:
                 maxit = int(line.split()[-1])
             elif re.match('cas', line) is not None:
-                tmp = list(re.split(r'\s', line)[-1])
-                cas = (int(tmp[1]), int(tmp[3]))
+                tmp = re.split(r'\s', line)[-1]
+                tmp2 = tmp[1:-1].split(',')
+                cas = (int(tmp2[0]), int(tmp2[1]))
             elif re.match('grid', line) is not None:
                 if re.split(r'\s', line)[-1] == 'full':
                     grid_option = re.split(r'\s', line)[-1]
@@ -75,8 +76,9 @@ if __name__ == '__main__':
     mf = scf.RHF(mol)
     mf.kernel()
     
-    mc = mcscf.state_average_(mcscf.CASSCF(mf, 2, 2,), [0,0.0,0.00,1.00])
-    mc.verbose = 4
+    w=np.ones((6,))
+    mc = mcscf.state_average_(mcscf.CASSCF(mf, cas[0], cas[1],), (w/np.sum(w)).tolist())
+    mc.verbose = 4 
     mc.kernel()
     mo = mc.mo_coeff
 

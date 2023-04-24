@@ -140,7 +140,6 @@ class SS_CASSCF(Wavefunction):
         self.norb       = self.hcore.shape[0]
         self.ovlp       = self.mol.intor('int1e_ovlp') # Overlap matrix
         self._scf._eri  = self.mol.intor("int2e", aosym="s8") # Two electron integrals
-       
 
     def initialise(self, mo_guess, ci_guess, integrals=True):
         # Save orbital coefficients
@@ -208,7 +207,26 @@ class SS_CASSCF(Wavefunction):
         self.get_fock_matrices()
 
         # Hamiltonian in active space
-        self.ham = self.fcisolver.pspace(self.h1eff, self.h2eff, self.ncas, self.nelecas, np=1000000)[1]
+        self.ham = self.get_cas_ham()
+
+    def get_cas_ham(self):
+
+        addr, ham = self.fcisolver.pspace(self.h1eff, self.h2eff, self.ncas, self.nelecas, np=1000000)
+        ham += self.energy_core * np.identity(self.nDet)
+        return ham
+
+#        link_indexa, link_indexb = fci.direct_spin1._unpack(self.ncas, self.nelecas, link_index=None)
+#        h2e = self.fcisolver.absorb_h1e(self.h1eff, self.h2eff, self.ncas, self.nelecas, 0.5)
+#        def hop(c):
+#            cvec = np.reshape(c, (self.nDeta, self.nDetb))
+#            hc = self.fcisolver.contract_2e(h2e, cvec, self.ncas, self.nelecas, (link_indexa,link_indexb))
+#            return hc.ravel()
+#
+#        for i in range(self.nDet):
+#            ham[:,i] += hop(ID[:,i])
+#       
+#        return ham
+#        return reduce(np.dot, (self.mat_ci, ham, self.mat_ci.T))
 
 
     def restore_last_step(self):
@@ -243,7 +261,7 @@ class SS_CASSCF(Wavefunction):
     def rotate_ci(self,step): 
         S       = np.zeros((self.nDet,self.nDet))
         S[1:,0] = step
-        self.mat_ci = np.dot(self.mat_ci, scipy.linalg.expm(S - S.T))
+        self.mat_ci = np.dot(scipy.linalg.expm(S - S.T), self.mat_ci)
 
 
     def get_h1eff(self):
@@ -272,7 +290,7 @@ class SS_CASSCF(Wavefunction):
         # Get effective Hamiltonian in CAS space
         h1eff  = np.einsum('ki,kl,lj->ij', mo_cas.conj(), self.hcore, mo_cas,optimize="optimal")
         h1eff += self.vhf_c[ncore:nocc,ncore:nocc]
-        return h1eff, energy_core
+        return h1eff, np.asscalar(energy_core)
 
 
     def get_h2eff(self):
@@ -449,7 +467,7 @@ class SS_CASSCF(Wavefunction):
             abvi = self.ppoo[nocc:,nocc:,ncore:nocc,:ncore]
 
             Htmp[nocc:,:ncore,nocc:,ncore:nocc] = ( 2 * np.einsum('tv,aibv->aibt', self.dm1_cas, 4 * aibv - avbi.transpose((0,3,2,1)) - abvi.transpose((0,3,1,2)),optimize="optimal") 
-                                                  - 2 * np.einsum('ab,tvxy,vixy ->aibt', id_vir, 0.5 * self.dm2_cas, self.ppoo[ncore:nocc, :ncore, ncore:nocc, ncore:nocc],optimize="optimal") 
+                                                  - 1 * np.einsum('ab,tvxy,vixy ->aibt', id_vir, self.dm2_cas, self.ppoo[ncore:nocc, :ncore, ncore:nocc, ncore:nocc],optimize="optimal") 
                                                   - 2 * np.einsum('ab,ti->aibt', id_vir, F_tot[ncore:nocc, :ncore],optimize="optimal") 
                                                   - 1 * np.einsum('ab,tv,vi->aibt', id_vir, self.dm1_cas, self.F_core[ncore:nocc, :ncore],optimize="optimal") )
 
@@ -464,7 +482,7 @@ class SS_CASSCF(Wavefunction):
             ajvi = self.ppoo[nocc:,:ncore,ncore:nocc,:ncore]
 
             Htmp[nocc:,:ncore,ncore:nocc,:ncore] = ( 2 * np.einsum('tv,aivj->aitj', (2 * id_cas - self.dm1_cas), 4 * aivj - avji.transpose((0,3,1,2)) - ajvi.transpose((0,3,2,1)),optimize="optimal") 
-                                                   - 2 * np.einsum('ji,tvxy,avxy -> aitj', id_cor, 0.5 * self.dm2_cas, self.ppoo[nocc:,ncore:nocc,ncore:nocc,ncore:nocc],optimize="optimal") 
+                                                   - 1 * np.einsum('ji,tvxy,avxy -> aitj', id_cor, self.dm2_cas, self.ppoo[nocc:,ncore:nocc,ncore:nocc,ncore:nocc],optimize="optimal") 
                                                    + 4 * np.einsum('ij,at-> aitj', id_cor, F_tot[nocc:, ncore:nocc],optimize="optimal") 
                                                    - 1 * np.einsum('ij,tv,av-> aitj', id_cor, self.dm1_cas, self.F_core[nocc:, ncore:nocc],optimize="optimal"))
 
@@ -474,12 +492,12 @@ class SS_CASSCF(Wavefunction):
 
         #virtual-active virtual-active H_{at,bu}
         if nvir>0:
-            Htmp[nocc:, ncore:nocc, nocc:, ncore:nocc]  = ( 4 * np.einsum('tuvx,abvx->atbu', 0.5 * self.dm2_cas, self.ppoo[nocc:,nocc:,ncore:nocc,ncore:nocc],optimize="optimal") 
-                                                          + 4 * np.einsum('txvu,axbv->atbu', 0.5 * self.dm2_cas, self.popo[nocc:,ncore:nocc,nocc:,ncore:nocc],optimize="optimal") 
-                                                          + 4 * np.einsum('txuv,axbv->atbu', 0.5 * self.dm2_cas, self.popo[nocc:,ncore:nocc,nocc:,ncore:nocc],optimize="optimal") )
-            Htmp[nocc:, ncore:nocc, nocc:, ncore:nocc] -= ( 2 * np.einsum('ab,tvxy,uvxy->atbu', id_vir, 0.5 * self.dm2_cas, self.ppoo[ncore:nocc,ncore:nocc,ncore:nocc,ncore:nocc],optimize="optimal") 
+            Htmp[nocc:, ncore:nocc, nocc:, ncore:nocc]  = ( 2 * np.einsum('tuvx,abvx->atbu', self.dm2_cas, self.ppoo[nocc:,nocc:,ncore:nocc,ncore:nocc],optimize="optimal") 
+                                                          + 2 * np.einsum('txvu,axbv->atbu', self.dm2_cas, self.popo[nocc:,ncore:nocc,nocc:,ncore:nocc],optimize="optimal") 
+                                                          + 2 * np.einsum('txuv,axbv->atbu', self.dm2_cas, self.popo[nocc:,ncore:nocc,nocc:,ncore:nocc],optimize="optimal") )
+            Htmp[nocc:, ncore:nocc, nocc:, ncore:nocc] -= ( 1 * np.einsum('ab,tvxy,uvxy->atbu', id_vir, self.dm2_cas, self.ppoo[ncore:nocc,ncore:nocc,ncore:nocc,ncore:nocc],optimize="optimal") 
                                                           + 1 * np.einsum('ab,tv,uv->atbu', id_vir, self.dm1_cas, self.F_core[ncore:nocc,ncore:nocc],optimize="optimal"))
-            Htmp[nocc:, ncore:nocc, nocc:, ncore:nocc] -= ( 2 * np.einsum('ab,uvxy,tvxy->atbu', id_vir, 0.5 * self.dm2_cas, self.ppoo[ncore:nocc,ncore:nocc,ncore:nocc,ncore:nocc],optimize="optimal") 
+            Htmp[nocc:, ncore:nocc, nocc:, ncore:nocc] -= ( 1 * np.einsum('ab,uvxy,tvxy->atbu', id_vir, self.dm2_cas, self.ppoo[ncore:nocc,ncore:nocc,ncore:nocc,ncore:nocc],optimize="optimal") 
                                                           + 1 * np.einsum('ab,uv,tv->atbu', id_vir, self.dm1_cas, self.F_core[ncore:nocc,ncore:nocc],optimize="optimal"))
             Htmp[nocc:, ncore:nocc, nocc:, ncore:nocc] +=   2 * np.einsum('tu,ab->atbu', self.dm1_cas, self.F_core[nocc:, nocc:],optimize="optimal")
 
@@ -488,9 +506,9 @@ class SS_CASSCF(Wavefunction):
             avti = self.ppoo[nocc:, ncore:nocc, ncore:nocc, :ncore]
             aitv = self.ppoo[nocc:, :ncore, ncore:nocc, ncore:nocc]
 
-            Htmp[ncore:nocc,:ncore,nocc:,ncore:nocc]  = (- 4 * np.einsum('tuvx,aivx->tiau', 0.5 * self.dm2_cas, self.ppoo[nocc:,:ncore,ncore:nocc,ncore:nocc],optimize="optimal") 
-                                                         - 4 * np.einsum('tvux,axvi->tiau', 0.5 * self.dm2_cas, self.ppoo[nocc:,ncore:nocc,ncore:nocc,:ncore],optimize="optimal") 
-                                                         - 4 * np.einsum('tvxu,axvi->tiau', 0.5 * self.dm2_cas, self.ppoo[nocc:,ncore:nocc,ncore:nocc,:ncore],optimize="optimal") )
+            Htmp[ncore:nocc,:ncore,nocc:,ncore:nocc]  = (- 2 * np.einsum('tuvx,aivx->tiau', self.dm2_cas, self.ppoo[nocc:,:ncore,ncore:nocc,ncore:nocc],optimize="optimal") 
+                                                         - 2 * np.einsum('tvux,axvi->tiau', self.dm2_cas, self.ppoo[nocc:,ncore:nocc,ncore:nocc,:ncore],optimize="optimal") 
+                                                         - 2 * np.einsum('tvxu,axvi->tiau', self.dm2_cas, self.ppoo[nocc:,ncore:nocc,ncore:nocc,:ncore],optimize="optimal") )
             Htmp[ncore:nocc,:ncore,nocc:,ncore:nocc] += ( 2 * np.einsum('uv,avti->tiau', self.dm1_cas, 4 * avti - aitv.transpose((0,3,2,1)) - avti.transpose((0,2,1,3)),optimize="optimal" ) 
                                                         - 2 * np.einsum('tu,ai->tiau', self.dm1_cas, self.F_core[nocc:,:ncore],optimize="optimal") 
                                                         + 2 * np.einsum('tu,ai->tiau', id_cas, F_tot[nocc:,:ncore],optimize="optimal"))
@@ -503,13 +521,12 @@ class SS_CASSCF(Wavefunction):
             viuj = self.ppoo[ncore:nocc,:ncore,ncore:nocc,:ncore]
             uvij = self.ppoo[ncore:nocc,ncore:nocc,:ncore,:ncore]
 
-            Htmp[ncore:nocc,:ncore,ncore:nocc,:ncore]  = 2 * np.einsum('tv,viuj->tiuj', id_cas - self.dm1_cas, 4 * viuj - viuj.transpose((2,1,0,3)) - uvij.transpose((1,2,0,3)),optimize="optimal" )
-            Htmp[ncore:nocc,:ncore,ncore:nocc,:ncore] += np.einsum('tiuj->uitj', Htmp[ncore:nocc,:ncore,ncore:nocc,:ncore],optimize="optimal") 
-            Htmp[ncore:nocc,:ncore,ncore:nocc,:ncore] += ( 4 * np.einsum('utvx,vxij->tiuj', 0.5 * self.dm2_cas, self.ppoo[ncore:nocc,ncore:nocc,:ncore,:ncore],optimize="optimal") 
-                                                         + 4 * np.einsum('uxvt,vixj->tiuj', 0.5 * self.dm2_cas, self.ppoo[ncore:nocc,:ncore,ncore:nocc,:ncore],optimize="optimal") 
-                                                         + 4  *np.einsum('uxtv,vixj->tiuj', 0.5 * self.dm2_cas, self.ppoo[ncore:nocc,:ncore,ncore:nocc,:ncore],optimize="optimal") )
+            Htmp[ncore:nocc,:ncore,ncore:nocc,:ncore]  = 4 * np.einsum('tv,viuj->tiuj', id_cas - self.dm1_cas, 4 * viuj - viuj.transpose((2,1,0,3)) - uvij.transpose((1,2,0,3)),optimize="optimal" )
+            Htmp[ncore:nocc,:ncore,ncore:nocc,:ncore] += ( 2 * np.einsum('utvx,vxij->tiuj', self.dm2_cas, self.ppoo[ncore:nocc,ncore:nocc,:ncore,:ncore],optimize="optimal") 
+                                                         + 2 * np.einsum('uxvt,vixj->tiuj', self.dm2_cas, self.ppoo[ncore:nocc,:ncore,ncore:nocc,:ncore],optimize="optimal") 
+                                                         + 2  *np.einsum('uxtv,vixj->tiuj', self.dm2_cas, self.ppoo[ncore:nocc,:ncore,ncore:nocc,:ncore],optimize="optimal") )
             Htmp[ncore:nocc,:ncore,ncore:nocc,:ncore] += ( 2 * np.einsum('tu,ij->tiuj', self.dm1_cas, self.F_core[:ncore, :ncore],optimize="optimal") 
-                                                         - 4 * np.einsum('ij,tvxy,uvxy->tiuj', id_cor, 0.5 * self.dm2_cas, self.ppoo[ncore:nocc,ncore:nocc,ncore:nocc,ncore:nocc],optimize="optimal") 
+                                                         - 2 * np.einsum('ij,tvxy,uvxy->tiuj', id_cor, self.dm2_cas, self.ppoo[ncore:nocc,ncore:nocc,ncore:nocc,ncore:nocc],optimize="optimal") 
                                                          - 2 * np.einsum('ij,uv,tv->tiuj', id_cor, self.dm1_cas, self.F_core[ncore:nocc, ncore:nocc],optimize="optimal"))
             Htmp[ncore:nocc,:ncore,ncore:nocc,:ncore] += ( 4 * np.einsum('ij,tu->tiuj', id_cor, F_tot[ncore:nocc, ncore:nocc],optimize="optimal") 
                                                          - 4 * np.einsum('tu,ij->tiuj', id_cas, F_tot[:ncore, :ncore],optimize="optimal"))

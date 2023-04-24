@@ -7,6 +7,12 @@ def delta_kron(i,j):
     if i==j: return 1
     else: return 0
 
+def sym_orthogonalise(mat, metric, thresh=1e-10):
+    S = mat.T.dot(metric.dot(mat))
+    eigval, eigvec = np.linalg.eigh(S)
+    X = eigvec.dot(np.diag(np.power(eigval,-0.5)))
+    return mat.dot(X)
+
 def orthogonalise(mat, metric, thresh=1e-10, fill=True):
     '''Orthogonalise the columns of mat with respect to the metric tensor'''
     nc = mat.shape[1]
