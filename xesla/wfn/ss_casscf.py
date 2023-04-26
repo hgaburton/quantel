@@ -23,13 +23,14 @@ class SS_CASSCF(Wavefunction):
            - save_last_step
            - restore_step
     """
-    def __init__(self, mol, ncas, nelecas, ncore=None):
+    def __init__(self, mol, active_space):
         """Initialise a state-specific CASSCF object
                mol      PySCF molecule object
                ncas     Number of active orbitals
                nelecas  Number of active electrons, either total or (Na,Nb)
                ncore    Number of core (doubly-occupied) orbitals
         """
+        ncas, nelecas = active_space[0], active_space[1]
         self.mol        = mol
         self.nelec      = mol.nelec
         self._scf       = scf.RHF(mol)
@@ -44,13 +45,10 @@ class SS_CASSCF(Wavefunction):
         else:
             self.nelecas = np.asarray((nelecas[0],nelecas[1])).astype(int)
 
-        if ncore is None:
-            ncorelec = self.mol.nelectron - sum(self.nelecas)
-            assert ncorelec % 2 == 0
-            assert ncorelec >= 0
-            self.ncore = ncorelec // 2
-        else:
-            self.ncore = ncore
+        ncorelec = self.mol.nelectron - sum(self.nelecas)
+        assert ncorelec % 2 == 0
+        assert ncorelec >= 0
+        self.ncore = ncorelec // 2
 
         # Get AO integrals 
         self.get_ao_integrals()

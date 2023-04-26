@@ -13,7 +13,6 @@ class ModeControl:
         self.control["minstep"] = 0.0
         self.control["maxstep"] = 0.2
         self.control["rtrust"]  = 0.01
-        self.control["hesstol"] = 1e-16
 
         for key in kwargs:
             if not key in self.control.keys():

@@ -2,6 +2,12 @@
 
 from functools import reduce
 import numpy as np
+from scipy.linalg import expm as scipy_expm
+
+def random_rot(n, lmin, lmax):
+    X = lmin + np.random.rand(n,n) * (lmax - lmin)
+    X = np.tril(X)  - np.tril(X).T
+    return scipy_expm(X)
 
 def delta_kron(i,j):
     if i==j: return 1

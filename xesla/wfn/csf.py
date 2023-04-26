@@ -13,13 +13,14 @@ from xesla.utils.linalg import delta_kron, orthogonalise
 from .wavefunction import Wavefunction
 
 
-class csf(Wavefunction):
-    def __init__(self, mol, spin, ncas, nelecas, frozen: int, core: List[int], act: List[int], g_coupling: str = None,
-                 permutation: List[int] = None, mo_basis: 'str' = 'site', ncore=None):
+class CSF(Wavefunction):
+    def __init__(self, mol, stot, active_space, core: List[int], active: List[int], g_coupling: str = None, frozen: int = 0,
+                 permutation: List[int] = None, mo_basis: 'str' = 'site'):
+        (ncas, nelecas) = active_space 
         self.mol = mol
-        self.spin = spin
+        self.spin = stot
         self.core = core
-        self.act = act
+        self.act = active
         self.g_coupling = g_coupling
         self.permutation = permutation
         self.mo_basis = mo_basis
@@ -29,6 +30,7 @@ class csf(Wavefunction):
         self.stdout = mol.stdout
         self.max_memory = self._scf.max_memory
         self.ncas = ncas  # Number of active orbitals
+        self.mat_ci = None
         if isinstance(nelecas, (int, np.integer)):
             nelecb = (nelecas - mol.spin) // 2
             neleca = nelecas - nelecb
@@ -36,13 +38,11 @@ class csf(Wavefunction):
         else:
             self.nelecas = np.asarray((nelecas[0], nelecas[1])).astype(int)
 
-        if ncore is None:
-            ncorelec = self.mol.nelectron - sum(self.nelecas)
-            assert ncorelec % 2 == 0
-            assert ncorelec >= 0
-            self.ncore = ncorelec // 2
-        else:
-            self.ncore = ncore
+        ncorelec = self.mol.nelectron - sum(self.nelecas)
+        assert ncorelec % 2 == 0
+        assert ncorelec >= 0
+        self.ncore = ncorelec // 2
+
         # Get AO integrals
         self.get_ao_integrals()
 
@@ -70,7 +70,6 @@ class csf(Wavefunction):
         E = self.energy_core
         Ecore = E
         E += np.einsum('pq,pq', self.h1eff, self.dm1_cas, optimize="optimal")
-        onee = E - Ecore
         E += 0.5 * np.einsum('pqrs,pqrs', self.h2eff, self.dm2_cas, optimize="optimal")
         return E
 
@@ -94,8 +93,8 @@ class csf(Wavefunction):
 
     def copy(self):
         # Return a copy of the current object
-        newcsf = csf(self.mol, self.spin, self.ncas, self.nelecas, self.frozen, self.core, 
-                     self.act, self.g_coupling, self.permutation, self.mo_basis)
+        newcsf = CSF(self.mol, self.spin, [self.ncas, self.nelecas], self.core, 
+                     self.act, self.g_coupling, self.frozen, self.permutation, self.mo_basis)
         newcsf.initialise(self.mo_coeff, integrals=False)
         return newcsf
 
@@ -134,7 +133,7 @@ class csf(Wavefunction):
         self.ovlp = self.mol.intor('int1e_ovlp')  # Overlap matrix
         self._scf._eri = self.mol.intor("int2e", aosym="s8")  # Two electron integrals
 
-    def initialise(self, mo_guess=None, integrals=True):
+    def initialise(self, mo_guess=None, mat_ci=None, integrals=True):
         # Save orbital coefficients
         if(not(mo_guess is not None)): mo_guess = self.csf_info.coeffs.copy()
         mo_guess = orthogonalise(mo_guess, self.ovlp)

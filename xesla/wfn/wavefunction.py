@@ -19,3 +19,8 @@ class Wavefunction(Function,metaclass=ABCMeta):
     def overlap(self,other):
         """Compute the overlap with another wavefunction of this type"""
         pass
+
+    @abstractmethod
+    def initialise(self, mo_coeff, mat_ci=None, integrals=True):
+        """Initialise wavefunction with orbital coefficient (and CI matrix)"""
+        pass
