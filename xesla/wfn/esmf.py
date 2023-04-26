@@ -20,10 +20,11 @@ class ESMF(Wavefunction):
             - restore_step
     """
 
-    def __init__(self, mol, spin=0):
+    def __init__(self, mol, spin=0, ref_allowed=False):
         """Initialise excited-state mean-field wavefunction
                mol : PySCF molecule object
         """
+        print(ref_allowed)
         self.mol        = mol
         self.nelec      = mol.nelec
         self._scf       = scf.RHF(mol)
@@ -31,6 +32,7 @@ class ESMF(Wavefunction):
         self.stdout     = mol.stdout
         self.max_memory = self._scf.max_memory
         self.spin       = spin
+        self.with_ref   = ref_allowed
         # Get AO integrals 
         self.get_ao_integrals()
         self.norb       = self.hcore.shape[0]
@@ -40,6 +42,8 @@ class ESMF(Wavefunction):
 
         # Get number of determinants
         self.nDet      = self.na * (self.norb - self.na) + 1
+        if not self.with_ref: 
+            self.nDet -= 1
 
         # Save mapping indices for unique orbital rotations
         self.frozen     = None
@@ -86,12 +90,12 @@ class ESMF(Wavefunction):
 
     def copy(self):
         # Return a copy of the current object
-        newcas = ESMF(self.mol)
+        newcas = ESMF(self.mol, spin=self.spin, ref_allowed=self.with_ref)
         newcas.initialise(self.mo_coeff, self.mat_ci, integrals=False)
         return newcas
 
     def overlap(self, them):
-        return esmf_coupling(self, them, self.ovlp)[0]
+        return esmf_coupling(self, them, self.ovlp, with_ref=self.with_ref)[0]
 
 
     def get_ao_integrals(self):
@@ -155,8 +159,12 @@ class ESMF(Wavefunction):
     def get_rdm1(self):
         '''Compute the total 1RDM for the current state'''
         ne = self.na
-        c0   = self.mat_ci[0,0]
-        t    = 1/np.sqrt(2) * np.reshape(self.mat_ci[1:,0],(self.na, self.nmo - self.na))
+        if(self.with_ref):
+            c0   = self.mat_ci[0,0]
+            t    = 1/np.sqrt(2) * np.reshape(self.mat_ci[1:,0],(self.na, self.nmo - self.na))
+        else:
+            c0   = 0.0
+            t    = 1/np.sqrt(2) * np.reshape(self.mat_ci[:,0],(self.na, self.nmo - self.na))
         kron = np.identity(self.nmo)
         dij  = np.identity(ne)
         dab  = np.identity(self.nmo-ne)
@@ -177,8 +185,12 @@ class ESMF(Wavefunction):
     def get_rdm12(self):
         '''Compute the total 1RDM and 2RDM for the current state'''
         ne = self.na
-        c0   = self.mat_ci[0,0]
-        t    = 1/np.sqrt(2) * np.reshape(self.mat_ci[1:,0],(self.na, self.nmo - self.na))
+        if(self.with_ref):
+            c0   = self.mat_ci[0,0]
+            t    = 1/np.sqrt(2) * np.reshape(self.mat_ci[1:,0],(self.na, self.nmo - self.na))
+        else:
+            c0   = 0.0
+            t    = 1/np.sqrt(2) * np.reshape(self.mat_ci[:,0],(self.na, self.nmo - self.na))
         kron = np.identity(self.nmo)
         dij  = np.identity(ne)
         dab  = np.identity(self.nmo-ne)
@@ -227,10 +239,16 @@ class ESMF(Wavefunction):
     def get_trdm12(self, v1, v2):
         '''Compute the total 1RDM and 2RDM for the current state'''
         ne = self.na
-        c1_0   = v1[0]
-        c2_0   = v2[0]
-        t1     = 1/np.sqrt(2) * np.reshape(v1[1:], (self.na, self.nmo - self.na))
-        t2     = 1/np.sqrt(2) * np.reshape(v2[1:], (self.na, self.nmo - self.na))
+        if(self.with_ref):
+            c1_0   = v1[0]
+            c2_0   = v2[0]
+            t1     = 1/np.sqrt(2) * np.reshape(v1[1:], (self.na, self.nmo - self.na))
+            t2     = 1/np.sqrt(2) * np.reshape(v2[1:], (self.na, self.nmo - self.na))
+        else:
+            c1_0   = 0.0
+            c2_0   = 0.0
+            t1     = 1/np.sqrt(2) * np.reshape(v1[:], (self.na, self.nmo - self.na))
+            t2     = 1/np.sqrt(2) * np.reshape(v2[:], (self.na, self.nmo - self.na))
         kron = np.identity(self.nmo)
         dij  = np.identity(ne)
         dab  = np.identity(self.nmo-ne)
@@ -250,26 +268,26 @@ class ESMF(Wavefunction):
         # Dompute the 2RDM
         dm2 = np.zeros((self.nmo,self.nmo,self.nmo,self.nmo))
         # ijkl block
-        dm2[:ne,:ne,:ne,:ne] -= 4 * np.einsum('ij,kl->ijkl', kron[:ne,:ne], ttOcc)
-        dm2[:ne,:ne,:ne,:ne] -= 4 * np.einsum('ij,kl->ijkl', ttOcc, kron[:ne,:ne])
-        dm2[:ne,:ne,:ne,:ne] += 2 * np.einsum('il,kj->ijkl', kron[:ne,:ne], ttOcc)
-        dm2[:ne,:ne,:ne,:ne] += 2 * np.einsum('il,kj->ijkl', ttOcc, kron[:ne,:ne])
+        dm2[:ne,:ne,:ne,:ne] -= 4 * np.einsum('ij,kl->ijkl', kron[:ne,:ne], ttOcc, optimize="optimal")
+        dm2[:ne,:ne,:ne,:ne] -= 4 * np.einsum('ij,kl->ijkl', ttOcc, kron[:ne,:ne], optimize="optimal")
+        dm2[:ne,:ne,:ne,:ne] += 2 * np.einsum('il,kj->ijkl', kron[:ne,:ne], ttOcc, optimize="optimal")
+        dm2[:ne,:ne,:ne,:ne] += 2 * np.einsum('il,kj->ijkl', ttOcc, kron[:ne,:ne], optimize="optimal")
         # ijka block
-        dm2[:ne,:ne,:ne,ne:] += 4 * c2_0 * np.einsum('ij,ka->ijka', kron[:ne,:ne], t1)
-        dm2[:ne,:ne,:ne,ne:] -= 2 * c2_0 * np.einsum('kj,ia->ijka', kron[:ne,:ne], t1)
-        dm2[:ne,ne:,:ne,:ne] = np.einsum('ijka->kaij',dm2[:ne,:ne,:ne,ne:])
+        dm2[:ne,:ne,:ne,ne:] += 4 * c2_0 * np.einsum('ij,ka->ijka', kron[:ne,:ne], t1, optimize="optimal")
+        dm2[:ne,:ne,:ne,ne:] -= 2 * c2_0 * np.einsum('kj,ia->ijka', kron[:ne,:ne], t1, optimize="optimal")
+        dm2[:ne,ne:,:ne,:ne] = np.einsum('ijka->kaij',dm2[:ne,:ne,:ne,ne:], optimize="optimal")
         # ijak block
-        dm2[:ne,:ne,ne:,:ne] += 4 * c1_0 * np.einsum('ij,ak->ijak', kron[:ne,:ne], t2.T)
-        dm2[:ne,:ne,ne:,:ne] -= 2 * c1_0 * np.einsum('ik,aj->ijak', kron[:ne,:ne], t2.T)
-        dm2[ne:,:ne,:ne,:ne] = np.einsum('ijak->akij',dm2[:ne,:ne,ne:,:ne])
+        dm2[:ne,:ne,ne:,:ne] += 4 * c1_0 * np.einsum('ij,ak->ijak', kron[:ne,:ne], t2.T, optimize="optimal")
+        dm2[:ne,:ne,ne:,:ne] -= 2 * c1_0 * np.einsum('ik,aj->ijak', kron[:ne,:ne], t2.T, optimize="optimal")
+        dm2[ne:,:ne,:ne,:ne] = np.einsum('ijak->akij',dm2[:ne,:ne,ne:,:ne], optimize="optimal")
         # ijab block
-        dm2[:ne,:ne,ne:,ne:] += 4 * np.einsum('ij,ab->ijab', kron[:ne,:ne], ttVir)
-        dm2[:ne,:ne,ne:,ne:] -= 2 * np.einsum('ib,ja->ijab', t1, t2)
-        dm2[ne:,ne:,:ne,:ne] = np.einsum('ijab->abij', dm2[:ne,:ne,ne:,ne:])
+        dm2[:ne,:ne,ne:,ne:] += 4 * np.einsum('ij,ab->ijab', kron[:ne,:ne], ttVir, optimize="optimal")
+        dm2[:ne,:ne,ne:,ne:] -= 2 * np.einsum('ib,ja->ijab', t1, t2, optimize="optimal")
+        dm2[ne:,ne:,:ne,:ne] = np.einsum('ijab->abij', dm2[:ne,:ne,ne:,ne:], optimize="optimal")
         # iabj block
-        dm2[:ne,ne:,ne:,:ne] += 4 * np.einsum('ia,jb->iabj', t1, t2)
-        dm2[:ne,ne:,ne:,:ne] -= 2 * np.einsum('ij,ba->iabj', kron[:ne,:ne], ttVir)
-        dm2[ne:,:ne,:ne,ne:] = np.einsum('iabj->bjia', dm2[:ne,ne:,ne:,:ne])
+        dm2[:ne,ne:,ne:,:ne] += 4 * np.einsum('ia,jb->iabj', t1, t2, optimize="optimal")
+        dm2[:ne,ne:,ne:,:ne] -= 2 * np.einsum('ij,ba->iabj', kron[:ne,:ne], ttVir, optimize="optimal")
+        dm2[ne:,:ne,:ne,ne:] = np.einsum('iabj->bjia', dm2[:ne,ne:,ne:,:ne], optimize="optimal")
 
         return dm1, dm2
 
@@ -284,16 +302,24 @@ class ESMF(Wavefunction):
         dab = np.identity(self.nmo - self.na)
 
         ham = np.zeros((self.nDet, self.nDet))
-        ham[0,0]   = self.eref
-        ham[0,1:]  = np.sqrt(2) * np.reshape(self.ref_fock[:self.na,self.na:], (nov))
-        ham[1:,0]  = np.sqrt(2) * np.reshape(self.ref_fock[:self.na,self.na:], (nov))
+        if(self.with_ref):
+            ham[0,0]   = self.eref
+            ham[0,1:]  = np.sqrt(2) * np.reshape(self.ref_fock[:self.na,self.na:], (nov))
+            ham[1:,0]  = np.sqrt(2) * np.reshape(self.ref_fock[:self.na,self.na:], (nov))
 
-        hiajb = ( self.eref * np.einsum('ij,ab->iajb',dij,dab) 
-                 + np.einsum('ab,ij->iajb',self.ref_fock[ne:,ne:],dij)
-                 - np.einsum('ij,ab->iajb',self.ref_fock[:ne,:ne],dab) 
-                 + 2 * np.einsum('aijb->iajb',self.h2e[ne:,:ne,:ne,ne:]) 
-                     - np.einsum('abji->iajb',self.h2e[ne:,ne:,:ne,:ne])) 
-        ham[1:,1:] = np.reshape(np.reshape(hiajb,(ne,self.nmo-self.na,-1)),(self.nDet-1,-1))
+            hiajb = ( self.eref * np.einsum('ij,ab->iajb',dij,dab) 
+                     + np.einsum('ab,ij->iajb',self.ref_fock[ne:,ne:],dij)
+                     - np.einsum('ij,ab->iajb',self.ref_fock[:ne,:ne],dab) 
+                     + 2 * np.einsum('aijb->iajb',self.h2e[ne:,:ne,:ne,ne:]) 
+                         - np.einsum('abji->iajb',self.h2e[ne:,ne:,:ne,:ne])) 
+            ham[1:,1:] = np.reshape(np.reshape(hiajb,(ne,self.nmo-self.na,-1)),(self.nDet-1,-1))
+        else:
+            hiajb = ( self.eref * np.einsum('ij,ab->iajb',dij,dab) 
+                     + np.einsum('ab,ij->iajb',self.ref_fock[ne:,ne:],dij)
+                     - np.einsum('ij,ab->iajb',self.ref_fock[:ne,:ne],dab) 
+                     + 2 * np.einsum('aijb->iajb',self.h2e[ne:,:ne,:ne,ne:]) 
+                         - np.einsum('abji->iajb',self.h2e[ne:,ne:,:ne,:ne])) 
+            ham[:,:] = np.reshape(np.reshape(hiajb,(ne,self.nmo-self.na,-1)),(self.nDet,-1))
         return ham
 
 
@@ -399,7 +425,7 @@ class ESMF(Wavefunction):
 
         # Build last part of Eq 10.8.53
         tmp   = 2 * np.einsum('pr,qs->pqrs', self.dm1, self.h1e)
-        tmp  -=  np.einsum('pr,qs->pqrs',F + F.T, dqs) 
+        tmp  -=  np.einsum('pr,qs->pqrs', F + F.T, dqs) 
         tmp  += 2 * Y
 
         # Apply the permutation operators and return result

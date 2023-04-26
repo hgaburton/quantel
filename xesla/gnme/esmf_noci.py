@@ -4,7 +4,7 @@ import numpy as np
 from pygnme import wick, utils, owndata
 
 
-def esmf_coupling(esmf1, esmf2, metric, hcore=None, eri=None, enuc=0.0, thresh=1e-10):
+def esmf_coupling(esmf1, esmf2, metric, hcore=None, eri=None, enuc=0.0, thresh=1e-10, with_ref=True):
     # Convert integral matrices to pygnme-friendly format
     ovlp = owndata(metric)
 
@@ -22,10 +22,16 @@ def esmf_coupling(esmf1, esmf2, metric, hcore=None, eri=None, enuc=0.0, thresh=1
     nvir = nmo - nocc
 
     # Get access to CI coefficients
-    cref1 = esmf1.mat_ci[0,0]
-    cref2 = esmf2.mat_ci[0,0]
-    t1   = 1/np.sqrt(2) * np.reshape(esmf1.mat_ci[1:,0], (esmf1.na, esmf1.nmo - esmf1.na))
-    t2   = 1/np.sqrt(2) * np.reshape(esmf2.mat_ci[1:,0], (esmf2.na, esmf2.nmo - esmf2.na))
+    if(with_ref):
+        cref1 = esmf1.mat_ci[0,0]
+        cref2 = esmf2.mat_ci[0,0]
+        t1   = 1/np.sqrt(2) * np.reshape(esmf1.mat_ci[1:,0], (esmf1.na, esmf1.nmo - esmf1.na))
+        t2   = 1/np.sqrt(2) * np.reshape(esmf2.mat_ci[1:,0], (esmf2.na, esmf2.nmo - esmf2.na))
+    else:
+        cref1 = 0.0
+        cref2 = 0.0
+        t1   = 1/np.sqrt(2) * np.reshape(esmf1.mat_ci[:,0], (esmf1.na, esmf1.nmo - esmf1.na))
+        t2   = 1/np.sqrt(2) * np.reshape(esmf2.mat_ci[:,0], (esmf2.na, esmf2.nmo - esmf2.na))
 
     # Intialise output
     Hwx, Swx = 0, 0

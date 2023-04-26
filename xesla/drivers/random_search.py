@@ -23,7 +23,6 @@ def random_search(mol, config):
         
     # Get variables
     nmo  = ref_mo.shape[1]
-    print(wfnconfig)
 
     # Select the optimiser
     optconfig = config["optimiser"][config["optimiser"]["algorithm"]]
@@ -68,7 +67,7 @@ def random_search(mol, config):
         # Compare solution against previously found states
         new = True
         for otherwfn in wfn_list:
-            if 1.0 - abs(myfun.overlap(otherwfn)) < config["jobcontrol"]["search"]["dist_thresh"]:
+            if 1.0 - abs(myfun.overlap(otherwfn)) < config["jobcontrol"]["dist_thresh"]:
                 new = False
                 break
 

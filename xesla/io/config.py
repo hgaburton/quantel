@@ -84,11 +84,10 @@ class Config(dict):
         # Get keywords for each allowed method
         if self["wavefunction"]["method"] == "esmf":
             # TODO: Add support for triplet states 
-            # TODO: Add ability to exclude HF reference
-            self["wavefunction"]["esmf"] = dict()
+            self["wavefunction"]["esmf"] = dict(ref_allowed = self.__getbool("with_ref",False,True))
 
         elif self["wavefunction"]["method"] == "casscf":
-            self["wavefunction"]["casscf"] = dict(active_space=self.__getlist("active_space",int,True))
+            self["wavefunction"]["casscf"] = dict(active_space = self.__getlist("active_space",int,True))
 
         elif self["wavefunction"]["method"] == "csf":
             self["wavefunction"]["csf"] = dict(g_coupling = self.__getvalue("genealogical_coupling",str,True),
@@ -125,7 +124,7 @@ class Config(dict):
 
         self["optimiser"]["keywords"] = dict(thresh = self.__getvalue("convergence",float,False,default=1e-8),
                                              maxit = self.__getvalue("maxit",int,False,default=500),
-                                             index = self.__getvalue("target_index",int,False,default=0)
+                                             index = self.__getvalue("target_index",int,False,default=None)
                                             )
 
         
@@ -133,13 +132,17 @@ class Config(dict):
     def parse_jobcontrol(self):
         """Parse keywords that define how jobs are run"""
         self["jobcontrol"] = dict(guess = self.__getvalue("guess",str,False,default="random").lower(), 
-                                  noci  = self.__getbool("noci",False,default=False)) 
+                                  noci  = self.__getbool("noci",False,default=False),
+                                  dist_thresh = self.__getvalue("dist_tresh",float,False,default=1e-8)
+                                  ) 
         
         if self["jobcontrol"]["guess"] == "random":
             self["jobcontrol"]["search"] = dict(nsample = self.__getvalue("nsample",int,False,default=10),
-                                                seed = self.__getvalue("seed",int,False,default=7),
-                                                dist_thresh = self.__getvalue("dist_tresh",float,False,default=1e-8)
+                                                seed = self.__getvalue("seed",int,False,default=7)
                                                )
 
         elif self["jobcontrol"]["guess"] == "fromfile":
             self["jobcontrol"]["read_dir"] = self.__getlist("read_dir",str,True)
+
+        elif self["jobcontrol"]["guess"] == "ciguess":
+            self["jobcontrol"]["ci_guess"] = self.__getlist("ci_guess",int,True)
