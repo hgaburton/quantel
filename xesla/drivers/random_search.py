@@ -4,10 +4,13 @@ import numpy
 from xesla.utils.linalg import random_rot
 
 def random_search(mol, config):
-  
+    """Perform a random search for multiple solutions"""
+
+    # Get reference RHF wavefunction
     ref_mo = mol.RHF().run().mo_coeff.copy()
     ref_ci = None
 
+    # Get information about the wavefunction defintion
     wfnconfig = config["wavefunction"][config["wavefunction"]["method"]]
     if config["wavefunction"]["method"] == "esmf":
         from xesla.wfn.esmf import ESMF as WFN
@@ -38,6 +41,7 @@ def random_search(mol, config):
     wfn_list = []
 
     # Perform random search, saving coefficients as we go
+    target_index = config["optimiser"]["keywords"]["index"]
     count = 0
     for itest in range(config["jobcontrol"]["search"]["nsample"]):
         # Randomly perturb CI and MO coefficients
@@ -61,7 +65,7 @@ def random_search(mol, config):
         # Check the Hessian index
         hindices = myfun.get_hessian_index()
         myfun.update_integrals()
-        if hindices[0] != config["optimiser"]["keywords"]["index"]: 
+        if (hindices[0] != target_index) and (target_index is not None):
             continue
         
         # Compare solution against previously found states

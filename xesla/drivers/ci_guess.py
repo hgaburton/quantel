@@ -4,8 +4,12 @@ import numpy
 from xesla.utils.linalg import random_rot
 
 def ci_guess(mol, config):
-    ref_mo = mol.RHF().run().mo_coeff.copy()
+    """Generate wavefunctions using standard CI guess as the starting point"""
+
+    hf     = mol.RHF().run(verbose=0)
+    ref_mo = hf.mo_coeff.copy()
     ref_ci = None
+    escf   = hf.energy_tot()
 
     wfnconfig = config["wavefunction"][config["wavefunction"]["method"]]
     if config["wavefunction"]["method"] == "esmf":

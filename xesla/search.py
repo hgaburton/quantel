@@ -68,7 +68,7 @@ if __name__ == '__main__':
     myhf = mol.RHF().run()
 
     # Initialise CAS object
-    mycas = SS_CASSCF(mol, cas[0], cas[1])
+    mycas = SS_CASSCF(mol, (cas[0], cas[1]))
 
     nmo = myhf.mo_coeff.shape[1]
     ndet = mycas.nDet
@@ -87,16 +87,22 @@ if __name__ == '__main__':
 
         # Set orbital coefficients
         mycas.initialise(mo_guess, ci_guess)
-        #num_hess = mycas.get_numerical_hessian(eps=1e-4)
-        #hess = mycas.hessian
-        #print("Numerical Hessian")
-        #print(num_hess)
-        #print("Hessian")
-        #print(hess)
-        #print("Hessian")
-        #print(np.linalg.eigvalsh(num_hess))
-        #print(np.linalg.eigvalsh(hess))
-        #quit()
+        num_grad = mycas.get_numerical_gradient(eps=1e-4)
+        print("Numerical Gradient")
+        print(num_grad)
+        print("Gradient")
+        print(mycas.gradient)
+        
+        num_hess = mycas.get_numerical_hessian(eps=1e-4)
+        hess = mycas.hessian
+        print("Numerical Hessian")
+        print(num_hess)
+        print("Hessian")
+        print(hess)
+        print("Hessian")
+        print(np.linalg.eigvalsh(num_hess))
+        print(np.linalg.eigvalsh(hess))
+        quit()
 
         mycas.canonicalize_()
 

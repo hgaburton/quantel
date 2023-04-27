@@ -1,8 +1,14 @@
-basis 6-31g
-charge 0
-spin 0
-index 0
-cas (2,2)
-seed 7
-units B
-nsample 10
+basis                   6-31g
+charge                  0
+spin                    0
+units                   B
+
+method                  casscf
+active_space            2 2
+
+algorithm               eigenvector_following
+convergence             1e-8
+
+guess                   ciguess
+ci_guess                0 1 2
+overlap_matrix          true

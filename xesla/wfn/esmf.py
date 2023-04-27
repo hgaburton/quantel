@@ -24,7 +24,6 @@ class ESMF(Wavefunction):
         """Initialise excited-state mean-field wavefunction
                mol : PySCF molecule object
         """
-        print(ref_allowed)
         self.mol        = mol
         self.nelec      = mol.nelec
         self._scf       = scf.RHF(mol)
@@ -49,7 +48,6 @@ class ESMF(Wavefunction):
         self.frozen     = None
         self.rot_idx    = self.uniq_var_indices(self.norb, self.frozen)
         self.nrot       = np.sum(self.rot_idx)
-
 
     @property
     def dim(self):
@@ -386,7 +384,10 @@ class ESMF(Wavefunction):
     def get_ci_gradient(self):
         """Compute the CI component of the energy gradient"""
         if(self.nDet > 1):
-            return 2.0 * np.einsum('i,ij,jk->k', np.asarray(self.mat_ci)[:,0], self.ham, self.mat_ci[:,1:],optimize="optimal")
+            return 2.0 * np.einsum('i,ij,jk->k', np.asarray(self.mat_ci)[:,0], 
+                                                 self.ham, 
+                                                 self.mat_ci[:,1:],
+                                                 optimize="optimal")
         else:
             return np.zeros((0))
 

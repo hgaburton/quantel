@@ -1,8 +1,13 @@
-basis 6-31g
-charge 0
-spin 0
-index 0
-cas (2,2)
+molecule  mol.xyz 
+charge    0
+spin      0
+basis     6-31g
+symmetry  0
+units     B
+
+method    csf
+active_space (2,2)
 seed 7
-units B
 nsample 10
+
+index 0

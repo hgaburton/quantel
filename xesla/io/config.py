@@ -55,9 +55,9 @@ class Config(dict):
             if re.match(target, line) is not None:
                 value = str(re.split(r'\s+', line.strip())[-1])
                 if value in ["1","True","true"]:
-                    self["molecule"][target] = True
+                    return True
                 elif value in ["0","False","false"]:
-                    self["molecule"][target] = False
+                    return False
                 else:
                     errstr = "Boolean '"+target+"' keyword value '"+value+"' is not valid" 
                     raise ValueError(errstr)
@@ -131,9 +131,10 @@ class Config(dict):
 
     def parse_jobcontrol(self):
         """Parse keywords that define how jobs are run"""
-        self["jobcontrol"] = dict(guess = self.__getvalue("guess",str,False,default="random").lower(), 
+        self["jobcontrol"] = dict(guess = self.__getvalue("guess",str,True,default="random").lower(), 
                                   noci  = self.__getbool("noci",False,default=False),
-                                  dist_thresh = self.__getvalue("dist_tresh",float,False,default=1e-8)
+                                  dist_thresh = self.__getvalue("dist_tresh",float,False,default=1e-8),
+                                  ovlp_mat = self.__getbool("overlap_matrix",False,default=False)
                                   ) 
         
         if self["jobcontrol"]["guess"] == "random":
