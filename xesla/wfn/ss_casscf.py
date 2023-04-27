@@ -137,6 +137,11 @@ class SS_CASSCF(Wavefunction):
         """Compute the many-body overlap with another CAS waveunction (them)"""
         return cas_coupling(self, them, self.ovlp)[0]
 
+    def hamiltonian(self, them):
+        """Compute the many-body Hamiltonian coupling with another CAS wavefunction (them)"""
+        eri = ao2mo.restore(1, self._scf._eri, self.mol.nao).reshape(self.mol.nao**2, self.mol.nao**2)
+        return cas_coupling(self, them, self.ovlp, self.hcore, eri, self.enuc)
+
 
     def sanity_check(self):
         '''Need to be run at the start of the kernel to verify that the number of 

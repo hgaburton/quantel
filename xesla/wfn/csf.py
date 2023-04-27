@@ -165,6 +165,9 @@ class CSF(Wavefunction):
         return get_generic_no_overlap(self.csf_info.dets_sq, ref.csf_info.dets_sq, csf_coeffs, ref_coeffs,
                                       cross_overlap_mat)
 
+    def hamiltonian(self, other):
+        raise NotImplementedError
+
     def sanity_check(self):
         '''Need to be run at the start of the kernel to verify that the number of
            orbitals and electrons in the CAS are consistent with the system '''

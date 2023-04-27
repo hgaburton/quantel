@@ -113,3 +113,9 @@ class Config(dict):
         else:
             errstr = "'"+self["jobcontrol"]["guess"]+"' is not a valid option for keyword 'guess'"
             raise ValueError(errstr)
+
+        if self["jobcontrol"]["noci"]:
+            self["jobcontrol"]["noci_job"] = dict(lindep_tol = getvalue(self.lines,"lindep_tol",float,False,default=1e-8), 
+                                                  plev = getvalue(self.lines,"plevel",int,False,default=1)
+                                                 )
+

@@ -116,7 +116,13 @@ class ESMF(Wavefunction):
         return newcas
 
     def overlap(self, them):
+        """Compute the many-body overlap with another CAS waveunction (them)"""
         return esmf_coupling(self, them, self.ovlp, with_ref=self.with_ref)[0]
+
+    def hamiltonian(self, them):
+        """Compute the many-body Hamiltonian coupling with another CAS wavefunction (them)"""
+        eri = ao2mo.restore(1, self._scf._eri, self.mol.nao).reshape(self.mol.nao**2, self.mol.nao**2)
+        return esmf_coupling(self, them, self.ovlp, self.hcore, eri, self.enuc, with_ref=self.with_ref)
 
 
     def get_ao_integrals(self):

@@ -11,7 +11,7 @@
 import sys, argparse, numpy, time
 from datetime import datetime, timedelta
 from xesla.io.config import Config
-from xesla.drivers import random_search, ci_guess, from_file
+from xesla.drivers import random_search, ci_guess, from_file, noci, overlap
 from pyscf import gto
 
 def write_splash():
@@ -33,6 +33,9 @@ def main():
     parser.add_argument("input_file", action="store", help="Input file containing calculation configuration")
     parser.add_argument("molecule_file", action="store", help="Text file containing molecular structure")
     args = parser.parse_args()
+
+    # Make numpy print nicely
+    numpy.set_printoptions(linewidth=100,precision=8,suppress=True,floatmode="fixed",edgeitems=10)
 
     # Startup
     write_splash()
@@ -61,17 +64,10 @@ def main():
         raise ValueError(errstr)
 
 
-    if config["jobcontrol"]["ovlp_mat"]:
-        # Compute the overlap matrix between solutions
-        nstate = len(wfnlist)
-        dist_mat = numpy.zeros((nstate,nstate))
-        for i, state_i in enumerate(wfnlist):
-            for j, state_j in enumerate(wfnlist):
-                if(i<j): continue
-                dist_mat[i,j] = state_i.overlap(state_j) 
-                dist_mat[j,i] = dist_mat[i,j]
-
-        numpy.savetxt('wfn_ov', dist_mat, fmt="% 8.6f")
+    if config["jobcontrol"]["noci"]:
+        noci(wfnlist, **config["jobcontrol"]["noci_job"])
+    elif config["jobcontrol"]["ovlp_mat"]:
+        overlap(wfnlist)
 
 
     # Clean up

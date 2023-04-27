@@ -34,3 +34,8 @@ class Wavefunction(Function,metaclass=ABCMeta):
     def read_from_disk(self, tag):
         """Read a wavefunction object to disk"""
         pass
+
+    @abstractmethod 
+    def hamiltonian(self, other):
+        """Compute the Hamiltonian coupling with another wavefunction of this type"""
+        pass
