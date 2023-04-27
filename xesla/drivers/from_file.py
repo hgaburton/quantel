@@ -39,15 +39,12 @@ def from_file(mol, config):
         nstates = len(glob.glob(prefix+"*.energy"))
         for i in range(nstates):
             old_tag = "{:s}{:04d}".format(prefix, i+1)
-            mo_guess = numpy.genfromtxt(old_tag+".mo_coeff")
-            try: ci_guess = numpy.asmatrix(numpy.genfromtxt(old_tag+".mat_ci"))
-            except: ci_guess = None
 
             # Initialise optimisation object
             try: del myfun
             except: pass
             myfun = WFN(mol, **wfnconfig)
-            myfun.initialise(mo_guess, ci_guess)
+            myfun.read_from_disk(old_tag)
 
             # Run the optimisation
             myopt = OPT(**optconfig)
@@ -61,7 +58,7 @@ def from_file(mol, config):
 
             # Compare solution against previously found states
             new = True
-            for otherwfn in wfn_list:
+            for prev, otherwfn in enumerate(wfn_list):
                 if 1.0 - abs(myfun.overlap(otherwfn)) < config["jobcontrol"]["dist_thresh"]:
                     new = False
                     break

@@ -24,3 +24,13 @@ class Wavefunction(Function,metaclass=ABCMeta):
     def initialise(self, mo_coeff, mat_ci=None, integrals=True):
         """Initialise wavefunction with orbital coefficient (and CI matrix)"""
         pass
+
+    @abstractmethod
+    def save_to_disk(self, tag):
+        """Save a wavefunction object to disk"""
+        pass
+
+    @abstractmethod
+    def read_from_disk(self, tag):
+        """Read a wavefunction object to disk"""
+        pass

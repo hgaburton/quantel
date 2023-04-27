@@ -77,16 +77,14 @@ def random_search(mol, config):
 
         # Save the solution if it is a new one!
         if new: 
+            # Get the prefix for this solution
             count += 1
             tag = "{:04d}".format(count)
-            numpy.savetxt(tag+'.mo_coeff', myfun.mo_coeff, fmt="% 20.16f")
-            if myfun.mat_ci is not None:
-                numpy.savetxt(tag+'.mat_ci',   myfun.mat_ci, fmt="% 20.16f")
-            numpy.savetxt(tag+'.energy',   numpy.array([[myfun.energy, hindices[0], hindices[1], 0.0]]), 
-                          fmt="% 18.12f % 5d % 5d % 12.6f")
-            
-            # Deallocate integrals to reduce memory footprint
-            myfun.deallocate()
+
+            # Save the object to disck
+            myfun.save_to_disk(tag)
+
+            # Append wavefunction to our list
             wfn_list.append(myfun.copy())
 
     return wfn_list

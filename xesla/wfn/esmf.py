@@ -86,6 +86,29 @@ class ESMF(Wavefunction):
         return np.block([[H_OrbOrb, H_OrbCI],
                          [H_OrbCI.T, H_CICI]])
 
+
+    def save_to_disk(self,tag):
+        """Save object to disk with prefix 'tag'"""
+        # Get the Hessian index
+        hindices = self.get_hessian_index()
+
+        # Save coefficients, CI, and energy
+        np.savetxt(tag+'.mo_coeff', self.mo_coeff, fmt="% 20.16f")
+        np.savetxt(tag+'.mat_ci',   self.mat_ci, fmt="% 20.16f")
+        np.savetxt(tag+'.energy',   
+                   numpy.array([[self.energy, hindices[0], hindices[1], self.s2]]), 
+                   fmt="% 18.12f % 5d % 5d % 12.6f")
+
+
+    def read_from_disk(self,tag):
+        """Read object from disk with prefix 'tag'"""
+        # Read MO coefficient and CI coefficients
+        mo_coeff = np.genfromtxt(tag+".mo_coeff")
+        ci_coeff = np.genfromtxt(tag+".mat_ci")
+
+        # Initialise object
+        self.initialise(mo_coeff, ci_coeff)
+
     def copy(self):
         # Return a copy of the current object
         newcas = ESMF(self.mol, spin=self.spin, ref_allowed=self.with_ref)

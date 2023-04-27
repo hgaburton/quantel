@@ -147,3 +147,7 @@ class Config(dict):
 
         elif self["jobcontrol"]["guess"] == "ciguess":
             self["jobcontrol"]["ci_guess"] = self.__getlist("ci_guess",int,True)
+
+        else:
+            errstr = "'"+self["jobcontrol"]["guess"]+"' is not a valid option for keyword 'guess'"
+            raise ValueError(errstr)
