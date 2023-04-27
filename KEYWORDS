@@ -1,0 +1,66 @@
+===============
+General inputs:
+===============
+  basis             str : [Required] String containing basis set name, e.g. sto-3g
+  charge            int : [Required] Nuclear charge
+  spin              int : [Required] Molecular Sz value
+
+===============
+Wavefunction:
+===============
+  method            str : [Required] Type of wavefunction model [casscf|csf|esmf]
+  noci             bool : [Optional] Determine if a NOCI calculation will be performed. Default = False
+  overlap_matrix   bool : [Optional] Determine if a overlap matrix will be computed. Default = False
+  dist_thresh     float : [Optional] Threshold overlap for considering two solution to be distrinct. Default = 1e-8
+
+CASSCF inputs:
+--------------
+  active_space  int int : [Required] Number of active orbitals and number of active electrons
+ 
+CSF inputs:
+--------------
+  active_space              int int : [Required] Number of active orbitals and number of active electrons
+  core_orbitals         int int ... : [Required] List of core orbital indices
+  active_orbitals       int int ... : [Required] List of active orbital indices
+  genealogical_coupling       str   : [Required] Denotes the spin-coupling pattern, e.g. ++--
+  coupling_permutation  int int ... : [Required] List of indices for ordering orbitals involved in the spin coupling
+  mo_basis                      str : [Optional] Type of orbital guess to use. Default = site
+  total_spin                  float : [Required] Total spin value for CSF
+
+ESMF input:
+--------------
+  with_ref  bool : [Optional] If False, the closed-shell reference is excluded from wavefunction. Default = True
+
+Optimisation:
+--------------
+  algorithm     str : [Optional] Determines which optimisation algorithm to use [eigenvector_following|mode_control] 
+                                 Default = eigenvector_following
+  convergence float : [Optional] Convergence threshold for optimisation. Default = 1e-8
+  maxit         int : [Optional] Maximum number of allowed iterations. Default = 500
+  index         int : [Optional] Target Hessian index. Default = None
+  minstep     float : [Optional] Minimum allowed step size. Default = 0
+  maxstep     float : [Optional] Maximum allowed step size. Defail = pi
+  rtrust      float : [Optional] Starting trust radius. Default = 0.15
+  hesstol     float : [Optional] Tolerance for throwing away zero Hesian eigenvalue. Default = 1e-16
+
+
+==============
+Initial guess: 
+==============
+  guess         str : [Optional] Select how to choose initial guess [random|ci_guess|fromfile]. Default = random
+                                  > random   : Use random initial orbital and CI coefficients
+                                  > ci_guess : Start from CIS or CASCI solution (not valid for CSF wavefunction)
+                                  > fromfile : Read solutions from disk 
+
+Random search:
+--------------
+  nsample       int : [Optional] Number of random samples to use. Default = 10
+  seed          int : [Optional] Seed for random number generator. Default = 7
+
+CI guess:
+---------------
+  ci_guess  int int... : [Required] List of indices for the CI states to use as an initial guess
+
+Read from file:
+---------------
+  read_dir  str str... : [Required] List of directories to search for solutions

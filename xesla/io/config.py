@@ -93,7 +93,7 @@ class Config(dict):
 
     def parse_jobcontrol(self):
         """Parse keywords that define how jobs are run"""
-        self["jobcontrol"] = dict(guess = getvalue(self.lines,"guess",str,True,default="random").lower(), 
+        self["jobcontrol"] = dict(guess = getvalue(self.lines,"guess",str,False,default="random").lower(), 
                                   noci  = getbool(self.lines,"noci",False,default=False),
                                   dist_thresh = getvalue(self.lines,"dist_tresh",float,False,default=1e-8),
                                   ovlp_mat = getbool(self.lines,"overlap_matrix",False,default=False)
