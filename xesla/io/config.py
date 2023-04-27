@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
-import re, numpy
+import numpy
+from .parser import getvalue, getlist, getbool
 
 class Config(dict):
     def __init__(self, fname):
@@ -28,93 +29,54 @@ class Config(dict):
         self.parse_optimiser()
         self.parse_jobcontrol()
 
-    def __getvalue(self, target, typ, required=False, default=None):
-        """Get the value of a keyword with a single argument"""
-        for line in self.lines:
-            if re.match(target, line) is not None:
-                return typ(re.split(r'\s+', line.strip())[-1])
-        if required:
-            errstr = "Keyword '"+target+"' was not found"
-            raise ValueError(errstr)
-        elif default is not None:
-            return default
-
-    def __getlist(self, target, typ, required=False):
-        """Get the value of a keyword with a list of arguments"""
-        for line in self.lines:
-            if re.match(target, line) is not None:
-                return [typ(x) for x in re.split(r'\s+', line.strip())[1:]]
-        if required:
-            errstr = "Keyword '"+target+"' was not found"
-            raise ValueError(errstr)
-        return []
-
-    def __getbool(self, target, required=False, default=None):
-        """Get the value for a boolean keyword"""
-        for line in self.lines:
-            if re.match(target, line) is not None:
-                value = str(re.split(r'\s+', line.strip())[-1])
-                if value in ["1","True","true"]:
-                    return True
-                elif value in ["0","False","false"]:
-                    return False
-                else:
-                    errstr = "Boolean '"+target+"' keyword value '"+value+"' is not valid" 
-                    raise ValueError(errstr)
-        if required:
-            errstr = "Keyword '"+target+"' was not found"
-            raise ValueError(errstr)
-        elif default is not None:
-            return default
-
 
     def parse_molecule(self):
         """Read keywords that define the molecular system"""
-        self["molecule"] = dict(charge = self.__getvalue("charge",int,True),
-                                spin = self.__getvalue("spin",int,True),
-                                basis = self.__getvalue("basis",str,True), 
-                                unit = self.__getvalue("units",str,False,"Ang")
+        self["molecule"] = dict(charge = getvalue(self.lines,"charge",int,True),
+                                spin = getvalue(self.lines,"spin",int,True),
+                                basis = getvalue(self.lines,"basis",str,True), 
+                                unit = getvalue(self.lines,"units",str,False,"Ang")
                                )
 
             
     def parse_wavefunction(self):
         """Read keywords that define the wavefunction model"""
-        self["wavefunction"] = dict(method = self.__getvalue("method",str,True).lower())
+        self["wavefunction"] = dict(method = getvalue(self.lines,"method",str,True).lower())
 
         # Get keywords for each allowed method
         if self["wavefunction"]["method"] == "esmf":
             # TODO: Add support for triplet states 
-            self["wavefunction"]["esmf"] = dict(ref_allowed = self.__getbool("with_ref",False,True))
+            self["wavefunction"]["esmf"] = dict(ref_allowed = getbool(self.lines,"with_ref",False,True))
 
         elif self["wavefunction"]["method"] == "casscf":
-            self["wavefunction"]["casscf"] = dict(active_space = self.__getlist("active_space",int,True))
+            self["wavefunction"]["casscf"] = dict(active_space = getlist(self.lines,"active_space",int,True))
 
         elif self["wavefunction"]["method"] == "csf":
-            self["wavefunction"]["csf"] = dict(g_coupling = self.__getvalue("genealogical_coupling",str,True),
-                                               mo_basis = self.__getvalue("mo_basis",str,True),
-                                               active = self.__getlist("active_orbitals",int,True),
-                                               active_space=self.__getlist("active_space",int,True),
-                                               core = self.__getlist("core_orbitals",int,True),
-                                               permutation = self.__getlist("coupling_permutation",int,True),
-                                               stot = self.__getvalue("total_spin",int,True)
+            self["wavefunction"]["csf"] = dict(g_coupling = getvalue(self.lines,"genealogical_coupling",str,True),
+                                               mo_basis = getvalue(self.lines,"mo_basis",str,True),
+                                               active = getlist(self.lines,"active_orbitals",int,True),
+                                               active_space=getlist(self.lines,"active_space",int,True),
+                                               core = getlist(self.lines,"core_orbitals",int,True),
+                                               permutation = getlist(self.lines,"coupling_permutation",int,True),
+                                               stot = getvalue(self.lines,"total_spin",float,True)
                                               )
 
 
     def parse_optimiser(self):
         """Read keywords that define the optimiser we use"""
-        self["optimiser"] = dict(algorithm = self.__getvalue("algorithm",str,False,default="eigenvector_following").lower())
+        self["optimiser"] = dict(algorithm = getvalue(self.lines,"algorithm",str,False,default="eigenvector_following").lower())
 
         if self["optimiser"]["algorithm"] == "eigenvector_following":
-            self["optimiser"]["eigenvector_following"] = dict(minstep = self.__getvalue("minstep",float,False,default=0),
-                                                              rtrust  = self.__getvalue("rstrust",float,False,default=0.15),
-                                                              maxstep = self.__getvalue("maxstep",float,False,default=numpy.pi),
-                                                              hesstol = self.__getvalue("hesstol",float,False,1e-16)
+            self["optimiser"]["eigenvector_following"] = dict(minstep = getvalue(self.lines,"minstep",float,False,default=0),
+                                                              rtrust  = getvalue(self.lines,"rstrust",float,False,default=0.15),
+                                                              maxstep = getvalue(self.lines,"maxstep",float,False,default=numpy.pi),
+                                                              hesstol = getvalue(self.lines,"hesstol",float,False,1e-16)
                                                              )
         elif self["optimiser"]["algorithm"] == "mode_control":
-            self["optimiser"]["mode_control"] = dict(minstep = self.__getvalue("minstep",float,False,default=0),
-                                                    rtrust  = self.__getvalue("rstrust",float,False,default=0.15),
-                                                    maxstep = self.__getvalue("maxstep",float,False,default=numpy.pi),
-                                                    hesstol = self.__getvalue("hesstol",float,False,1e-16)
+            self["optimiser"]["mode_control"] = dict(minstep = getvalue(self.lines,"minstep",float,False,default=0),
+                                                    rtrust  = getvalue(self.lines,"rstrust",float,False,default=0.15),
+                                                    maxstep = getvalue(self.lines,"maxstep",float,False,default=numpy.pi),
+                                                    hesstol = getvalue(self.lines,"hesstol",float,False,1e-16)
                                                     )
 
         else:
@@ -122,31 +84,31 @@ class Config(dict):
             raise ValueError(errstr)
 
 
-        self["optimiser"]["keywords"] = dict(thresh = self.__getvalue("convergence",float,False,default=1e-8),
-                                             maxit = self.__getvalue("maxit",int,False,default=500),
-                                             index = self.__getvalue("target_index",int,False,default=None)
+        self["optimiser"]["keywords"] = dict(thresh = getvalue(self.lines,"convergence",float,False,default=1e-8),
+                                             maxit = getvalue(self.lines,"maxit",int,False,default=500),
+                                             index = getvalue(self.lines,"target_index",int,False,default=None)
                                             )
 
         
 
     def parse_jobcontrol(self):
         """Parse keywords that define how jobs are run"""
-        self["jobcontrol"] = dict(guess = self.__getvalue("guess",str,True,default="random").lower(), 
-                                  noci  = self.__getbool("noci",False,default=False),
-                                  dist_thresh = self.__getvalue("dist_tresh",float,False,default=1e-8),
-                                  ovlp_mat = self.__getbool("overlap_matrix",False,default=False)
+        self["jobcontrol"] = dict(guess = getvalue(self.lines,"guess",str,True,default="random").lower(), 
+                                  noci  = getbool(self.lines,"noci",False,default=False),
+                                  dist_thresh = getvalue(self.lines,"dist_tresh",float,False,default=1e-8),
+                                  ovlp_mat = getbool(self.lines,"overlap_matrix",False,default=False)
                                   ) 
         
         if self["jobcontrol"]["guess"] == "random":
-            self["jobcontrol"]["search"] = dict(nsample = self.__getvalue("nsample",int,False,default=10),
-                                                seed = self.__getvalue("seed",int,False,default=7)
+            self["jobcontrol"]["search"] = dict(nsample = getvalue(self.lines,"nsample",int,False,default=10),
+                                                seed = getvalue(self.lines,"seed",int,False,default=7)
                                                )
 
         elif self["jobcontrol"]["guess"] == "fromfile":
-            self["jobcontrol"]["read_dir"] = self.__getlist("read_dir",str,True)
+            self["jobcontrol"]["read_dir"] = getlist(self.lines,"read_dir",str,True)
 
         elif self["jobcontrol"]["guess"] == "ciguess":
-            self["jobcontrol"]["ci_guess"] = self.__getlist("ci_guess",int,True)
+            self["jobcontrol"]["ci_guess"] = getlist(self.lines,"ci_guess",int,True)
 
         else:
             errstr = "'"+self["jobcontrol"]["guess"]+"' is not a valid option for keyword 'guess'"

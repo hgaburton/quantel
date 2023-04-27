@@ -96,7 +96,7 @@ class ESMF(Wavefunction):
         np.savetxt(tag+'.mo_coeff', self.mo_coeff, fmt="% 20.16f")
         np.savetxt(tag+'.mat_ci',   self.mat_ci, fmt="% 20.16f")
         np.savetxt(tag+'.energy',   
-                   numpy.array([[self.energy, hindices[0], hindices[1], self.s2]]), 
+                   np.array([[self.energy, hindices[0], hindices[1], self.s2]]), 
                    fmt="% 18.12f % 5d % 5d % 12.6f")
 
 

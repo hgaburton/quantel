@@ -7,6 +7,7 @@ import scipy
 from functools import reduce
 from typing import List
 from pyscf import scf, fci, __config__, ao2mo, lib, mcscf
+from xesla.io.parser import getlist, getvalue
 from xesla.wfn.csfs.ConfigurationStateFunctions.CSF import ConfigurationStateFunction
 from xesla.wfn.csfs.Operators.Operators import get_generic_no_overlap
 from xesla.utils.linalg import delta_kron, orthogonalise
@@ -14,41 +15,21 @@ from .wavefunction import Wavefunction
 
 
 class CSF(Wavefunction):
-    def __init__(self, mol, stot, active_space, core: List[int], active: List[int], g_coupling: str = None, frozen: int = 0,
+    def __init__(self, mol, stot, active_space = None, core: List[int] = None, 
+                 active: List[int] = None, g_coupling: str = None, frozen: int = 0,
                  permutation: List[int] = None, mo_basis: 'str' = 'site'):
-        (ncas, nelecas) = active_space 
-        self.mol = mol
-        self.spin = stot
-        self.core = core
-        self.act = active
-        self.g_coupling = g_coupling
-        self.permutation = permutation
-        self.mo_basis = mo_basis
-        self.nelec = mol.nelec
-        self._scf = scf.RHF(mol)
-        self.verbose = mol.verbose
-        self.stdout = mol.stdout
-        self.max_memory = self._scf.max_memory
-        self.ncas = ncas  # Number of active orbitals
-        self.mat_ci = None
-        if isinstance(nelecas, (int, np.integer)):
-            nelecb = (nelecas - mol.spin) // 2
-            neleca = nelecas - nelecb
-            self.nelecas = (neleca, nelecb)  # Tuple of number of active electrons
-        else:
-            self.nelecas = np.asarray((nelecas[0], nelecas[1])).astype(int)
 
-        ncorelec = self.mol.nelectron - sum(self.nelecas)
-        assert ncorelec % 2 == 0
-        assert ncorelec >= 0
-        self.ncore = ncorelec // 2
+        # Save molecule and reference SCF
+        self.mol = mol
+        self._scf = scf.RHF(mol)
+        self.max_memory = self._scf.max_memory
 
         # Get AO integrals
         self.get_ao_integrals()
 
-        # Get information of CSFs
-        self.csf_info = ConfigurationStateFunction(self.mol, self.spin, self.core, self.act,
-                                                   self.g_coupling, self.permutation, mo_basis=self.mo_basis)
+        # Setup CSF variables
+        if active_space is not None:
+            self.setup_csf(stot, active_space, core, active, g_coupling, permutation, mo_basis)
 
         # Get number of determinants (which is the dimension of the problem)
         self.nDet = self.csf_info.n_dets
@@ -90,6 +71,79 @@ class CSF(Wavefunction):
     def hessian(self):
         ''' This method finds orb-orb part of the Hessian '''
         return (self.get_hessianOrbOrb()[:, :, self.rot_idx])[self.rot_idx, :]
+
+    def setup_csf(self, stot, active_space, core: List[int], active: List[int], 
+                       g_coupling: str, permutation: List[int], mo_basis: 'str' = "site"):
+
+        self.ncas = active_space[0]   # Number of active orbitals
+        self.spin = stot   # Total S value
+        self.core = core   # List of core (doubly occupied) orbitals
+        self.act  = active # List of active orbitals
+
+        self.g_coupling  = g_coupling   # Genealogical coupling pattern
+        self.permutation = permutation  # Permutation for spin coupling
+
+        self.mo_basis    = mo_basis # Choice of basis for orbital guess
+        self.mat_ci = None
+
+        if isinstance(active_space[1], (int, np.integer)):
+            nelecb = (active_space[1] - self.mol.spin) // 2
+            neleca = active_space[1] - nelecb
+            self.nelecas = (neleca, nelecb)  # Tuple of number of active electrons
+        else:
+            self.nelecas = np.asarray((active_space[1][0], active_space[1][1])).astype(int)
+
+        ncorelec = self.mol.nelectron - sum(self.nelecas)
+        assert ncorelec % 2 == 0
+        assert ncorelec >= 0
+        self.ncore = ncorelec // 2
+
+        # Get information of CSFs
+        self.csf_info = ConfigurationStateFunction(self.mol, self.spin, self.core, self.act,
+                                                   self.g_coupling, self.permutation, mo_basis=self.mo_basis)
+
+    def save_to_disk(self,tag):
+        """Save a CSF to disk with prefix 'tag'"""
+        # Get the Hessian index
+        hindices = self.get_hessian_index()
+
+        # Save coefficients and energy
+        np.savetxt(tag+'.mo_coeff', self.mo_coeff, fmt="% 20.16f")
+        np.savetxt(tag+'.energy',   
+                   np.array([[self.energy, hindices[0], hindices[1], self.s2]]), 
+                   fmt="% 18.12f % 5d % 5d % 12.6f")
+
+        # Save CSF config
+        with open(tag+'.csf','w') as outF:
+            outF.write('total_spin             {:2.2f}\n'.format(self.spin))
+            outF.write('active_space           {:d} {:d}\n'.format(self.ncas, self.nelecas[0]+self.nelecas[1])) 
+            outF.write(('core_orbitals         '+len(self.core)*" {:d}"+"\n").format(*self.core))
+            outF.write(('active_orbitals       '+len(self.act)*" {:d}"+"\n").format(*self.act))
+            outF.write('genealogical_coupling  {:s}\n'.format(self.g_coupling))
+            outF.write(('coupling_permutation  '+len(self.permutation)*" {:d}"+"\n").format(*self.permutation))
+
+
+    def read_from_disk(self,tag):
+        """Read a SS-CASSCF object from disk with prefix 'tag'"""
+        # Read MO coefficient and CI coefficients
+        mo_coeff = np.genfromtxt(tag+".mo_coeff")
+
+        # Read the .csf file
+        with open(tag+'.csf','r') as inF:
+            lines = inF.read().splitlines()
+
+        spin         = getvalue(lines,"total_spin",float,True)
+        active_space = getlist(lines,"active_space",int,True)
+        core         = getlist(lines,"core_orbitals",int,True)
+        active       = getlist(lines,"active_orbitals",int,True)
+        permutation  = getlist(lines,"coupling_permutation",int,True)
+        g_coupling   = getvalue(lines,"genealogical_coupling",str,True)
+
+        # Setup CSF
+        self.setup_csf(spin, active_space, core, active, g_coupling, permutation)
+
+        # Initialise object
+        self.initialise(mo_coeff, None)
 
     def copy(self):
         # Return a copy of the current object
