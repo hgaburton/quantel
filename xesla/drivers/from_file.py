@@ -42,7 +42,7 @@ def from_file(mol, config):
     for prefix in config["jobcontrol"]["read_dir"]:
         print(" Reading solutions from directory {:s}".format(prefix))
         # Need to count the number of states to converge
-        nstates = len(glob.glob(prefix+"*.energy"))
+        nstates = len(glob.glob(prefix+"*.mo_coeff"))
         for i in range(nstates):
             old_tag = "{:s}{:04d}".format(prefix, i+1)
 
