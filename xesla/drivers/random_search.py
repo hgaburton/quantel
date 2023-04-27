@@ -6,6 +6,12 @@ from xesla.utils.linalg import random_rot
 def random_search(mol, config):
     """Perform a random search for multiple solutions"""
 
+    print("-----------------------------------------------")
+    print(" Searching for solutions using random searches ")
+    print("    + Wavefunction:      {:s}".format(config["wavefunction"]["method"]))
+    print("    + Number of samples: {:d}".format(config["jobcontrol"]["search"]["nsample"]))
+    print("-----------------------------------------------")
+
     # Get reference RHF wavefunction
     ref_mo = mol.RHF().run().mo_coeff.copy()
     ref_ci = None
@@ -86,5 +92,10 @@ def random_search(mol, config):
 
             # Append wavefunction to our list
             wfn_list.append(myfun.copy())
+
+    print()
+    print(" Search complete... Identified {:5d} unique solutions".format(len(wfn_list)))
+    print("------------------------------------------------------")
+    print()
 
     return wfn_list

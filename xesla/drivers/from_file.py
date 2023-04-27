@@ -5,6 +5,11 @@ import numpy, glob
 def from_file(mol, config):
     """Read wavefunctions from solutions that are saved to file"""
 
+    print("-----------------------------------------------")
+    print(" Reading solutions from file")
+    print("    + Wavefunction:       {:s}".format(config["wavefunction"]["method"]))
+    print("-----------------------------------------------")
+
     # Get information about the wavefunction
     wfnconfig = config["wavefunction"][config["wavefunction"]["method"]]
     if config["wavefunction"]["method"] == "esmf":
@@ -35,6 +40,7 @@ def from_file(mol, config):
     target_index = config["optimiser"]["keywords"]["index"]
     count = 0
     for prefix in config["jobcontrol"]["read_dir"]:
+        print(" Reading solutions from directory {:s}".format(prefix))
         # Need to count the number of states to converge
         nstates = len(glob.glob(prefix+"*.energy"))
         for i in range(nstates):
@@ -81,9 +87,17 @@ def from_file(mol, config):
                 myfun.deallocate()
                 wfn_list.append(myfun.copy())
             else: 
-                print("Solution matches previous solution...",prev+1)
+                print("  Solution matches previous solution...",prev+1)
+
+        # Print a new line
+        print()
 
     numpy.savetxt('energy_list', numpy.array([e_list]),fmt="% 16.10f")
     numpy.savetxt('ind_list', numpy.array([i_list]),fmt="% 5d")
+
+    print()
+    print(" Read from file complete... Identified {:5d} unique solutions".format(len(wfn_list)))
+    print("--------------------------------------------------------------")
+    print()
 
     return wfn_list

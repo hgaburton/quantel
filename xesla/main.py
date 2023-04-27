@@ -8,8 +8,8 @@
        Nick Lee           2022-
 """
 
-import sys, argparse, numpy
-from datetime import datetime
+import sys, argparse, numpy, time
+from datetime import datetime, timedelta
 from xesla.io.config import Config
 from xesla.drivers import random_search, ci_guess, from_file
 from pyscf import gto
@@ -36,7 +36,8 @@ def main():
 
     # Startup
     write_splash()
-    print(datetime.now().strftime("%d %b %Y at %H:%M:%S"))
+    print(datetime.now().strftime("Today: %d %b %Y at %H:%M:%S"))
+    start_time = time.monotonic()
 
     # Read the input file
     config = Config(args.input_file)
@@ -51,16 +52,14 @@ def main():
     wfnlist = None
     if config["jobcontrol"]["guess"] == "fromfile":
         wfnlist = from_file(mol, config)
-
     elif config["jobcontrol"]["guess"] == "random":
         wfnlist = random_search(mol, config)
-
     elif config["jobcontrol"]["guess"] == "ciguess":
         wfnlist = ci_guess(mol, config)
-
     else:
         errstr = "No wavefunctions have been defined"
         raise ValueError(errstr)
+
 
     if config["jobcontrol"]["ovlp_mat"]:
         # Compute the overlap matrix between solutions
@@ -73,3 +72,11 @@ def main():
                 dist_mat[j,i] = dist_mat[i,j]
 
         numpy.savetxt('wfn_ov', dist_mat, fmt="% 8.6f")
+
+
+    # Clean up
+    end_time = time.monotonic()
+    print("===================================================")
+    print(" Calculation complete. Thank you for using XESLA!  ")
+    print(" Total time = {:5.3f}s".format(timedelta(seconds=(end_time - start_time)).total_seconds()))
+    print("===================================================")
