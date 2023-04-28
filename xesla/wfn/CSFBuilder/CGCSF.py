@@ -51,12 +51,9 @@ class CGCSF(GenericCSF):
         newkets = []
         for _, ket in enumerate(kets):
             n = (len(ket) - 1) // 2
-            newket = [ket[0]] + [1] * self.n_core + ket[1:n+1] + [1] * self.n_core + ket[n+1:]
-            nn = (len(newket) - 1) // 2
-            newket[0] = get_phase_factor(list(np.nonzero(newket[1:nn+1])[0]), list(np.nonzero(newket[nn+1:])[0]))
-            newkets.append(newket)
+            ket[0] = get_phase_factor(list(np.nonzero(ket[1:n+1])[0]), list(np.nonzero(ket[n+1:])[0]))
+            newkets.append(ket)
         return newkets, coeffs
-
 
     def get_s2(self):
         r"""
