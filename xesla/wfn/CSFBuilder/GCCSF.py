@@ -4,32 +4,21 @@ Construct CSFs via genealogical coupling
 import itertools
 import numpy as np
 from pyscf import gto, scf, fci
-from typing import List
 from scipy import linalg
 from CSFTools.CouplingCoefficients import get_total_coupling_coefficient
 from GenericCSF import GenericCSF
 from Operators.Operators import create
 from CSFTools.PermutationTools import get_phase_factor
-from ReducedDensityMatrices.RDMapper import mapper, get_dm12
 
 
 class GCCSF(GenericCSF):
-    def __init__(self, mol: gto.Mole, stot: float, core: List[int], act: List[int],
-                 g_coupling: str, permutation: List[int] = None, mo_basis="site"):
+    def __init__(self, mol: gto.Mole, stot: float, n_core: int, n_act: int,
+                 g_coupling: str, mo_basis="site"):
         self.mol = mol
-        super().__init__(stot, mol.spin / 2, len(core), len(act), mol.nelectron)
+        super().__init__(stot, mol.spin / 2, n_core, n_act, mol.nelectron)
         self.g_coupling = g_coupling
         self.mo_basis = mo_basis
-        self.permutation = permutation
-        coeffs = self.get_coeffs(method=self.mo_basis)
-
-        # Get information about the orbitals used
-        self.core_orbs = coeffs[:, core]  # Core orbitals
-        self.act_orbs = coeffs[:, act]  # Active orbitals
-        if self.permutation is not None:
-            self.act_orbs = self.act_orbs[:, permutation]
-        self.n_orbs = self.n_core + self.n_act  # Number of spatial orbitals
-        self.coeffs = np.hstack([self.core_orbs, self.act_orbs])
+        self.coeffs = self.get_coeffs(method=self.mo_basis)
 
         self.dets_orbrep = self.form_dets_orbrep()
         self.n_dets = len(self.dets_orbrep)
@@ -39,6 +28,7 @@ class GCCSF(GenericCSF):
         self.dets_sq = self.form_dets_sq()  # Determinants in Second Quantisation
         self.csf = self.csf_from_g_coupling(g_coupling)
         self.csf_coeffs = self.get_specific_csf_coeffs()
+        self.rdm1, self.rdm2 = self.get_pyscf_rdms()
         self.ci = self.get_civec()
 
     def get_coeffs(self, method):
@@ -197,12 +187,6 @@ class GCCSF(GenericCSF):
                 csf_coeffs[d_key] = get_total_coupling_coefficient(d_val[2], self.csf)
         return csf_coeffs
 
-    def update_coeffs(self, new_coeffs):
-        r"""
-        Updates MO coefficient matrices
-        :return:
-        """
-        self.coeffs = new_coeffs
 
     def get_s2(self):
         r"""

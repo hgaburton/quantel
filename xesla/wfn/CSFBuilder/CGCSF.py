@@ -1,40 +1,24 @@
 r"""
 Construct CSFs via Clebsch-Gordon coupling
 """
-import itertools
 import numpy as np
-from pyscf import gto, scf, fci
-from typing import List, Tuple
-from scipy import linalg
-
+from pyscf import gto, fci
+from typing import Tuple
 
 from ActiveCSF import ActiveCSF
-from CSFTools.CouplingCoefficients import get_total_coupling_coefficient
 from CSFTools.ClebschGordon import get_general_tensorprod, get_local_g_coupling, get_cg, take_csf_tensorprod
 from GenericCSF import GenericCSF
-from Operators.Operators import create
 from CSFTools.PermutationTools import get_phase_factor
-from ReducedDensityMatrices.RDMapper import mapper, get_dm12
-from ReducedDensityMatrices.ReducedDensityMatrices import get_mc_one_rdm, get_ri_mc_two_rdm, \
-    get_spatial_one_rdm, get_spatial_two_rdm
 
 
 class CGCSF(GenericCSF):
-    def __init__(self, mol: gto.Mole, stot: float, j1: int, j2: int,
+    def __init__(self, mol: gto.Mole, stot: float, j1: float, j2: float,
                  cas1: Tuple[int, int], cas2: Tuple[int, int],
-                 core: List[int], act: List[int], coeffs: np.ndarray, permutation: List[int] = None):
-        super().__init__(stot, mol.spin // 2, len(core), len(act), mol.nelectron)
+                 n_core: int, n_act: int):
+        super().__init__(stot, mol.spin // 2, n_core, n_act, mol.nelectron)
         self.mol = mol
         self.dets_sq, self.csf_coeffs = self.get_cgcsf(j1, j2, cas1, cas2, self.stot, self.mol.spin // 2)
-        self.permutation = permutation
-
-        # Get information about the orbitals used
-        self.core_orbs = coeffs[:, core]  # Core orbitals
-        self.act_orbs = coeffs[:, act]  # Active orbitals
-        if self.permutation is not None:
-            self.act_orbs = self.act_orbs[:, permutation]
-        self.n_orbs = self.n_core + self.n_act  # Number of spatial orbitals
-        self.coeffs = np.hstack([self.core_orbs, self.act_orbs])
+        self.rdm1, self.rdm2 = self.get_pyscf_rdms()
         self.ci = self.get_civec()
 
     def construct_csf_det(self, s, ms, cas, g_coupling):
@@ -73,12 +57,6 @@ class CGCSF(GenericCSF):
             newkets.append(newket)
         return newkets, coeffs
 
-    def update_coeffs(self, new_coeffs):
-        r"""
-        Updates MO coefficient matrices
-        :return:
-        """
-        self.coeffs = new_coeffs
 
     def get_s2(self):
         r"""

@@ -8,16 +8,20 @@ from functools import reduce
 from typing import List
 from pyscf import scf, fci, __config__, ao2mo, lib, mcscf
 from xesla.io.parser import getlist, getvalue
-from xesla.wfn.csfs.ConfigurationStateFunctions.CSF import ConfigurationStateFunction
-from xesla.wfn.csfs.Operators.Operators import get_generic_no_overlap
+#from xesla.wfn.csfs.ConfigurationStateFunctions.CSF import ConfigurationStateFunction
+#from xesla.wfn.csfs.Operators.Operators import get_generic_no_overlap
+from xesla.wfn.CSFBuilder.CGCSF import CGCSF
+from xesla.wfn.CSFBuilder.GCCSF import GCCSF
+from xesla.wfn.CSFBuilder.Operators.Operators import get_generic_no_overlap
 from xesla.utils.linalg import delta_kron, orthogonalise
 from .wavefunction import Wavefunction
 
 
 class CSF(Wavefunction):
-    def __init__(self, mol, stot, active_space = None, core: List[int] = None, 
+    def __init__(self, mol, stot, active_space = None, core: List[int] = None,
                  active: List[int] = None, g_coupling: str = None, frozen: int = 0,
-                 permutation: List[int] = None, mo_basis: 'str' = 'site', csf_build: str = 'genealogical'):
+                 permutation: List[int] = None, mo_basis: 'str' = 'site', csf_build: str = 'genealogical',
+                 localstots: List[float] = None, active_subspaces: List[int] = None):
 
         # Save molecule and reference SCF
         self.mol = mol
@@ -29,17 +33,18 @@ class CSF(Wavefunction):
 
         # Setup CSF variables
         if active_space is not None:
-            self.setup_csf(stot, active_space, core, active, g_coupling, permutation, mo_basis, csf_build)
+            self.setup_csf(stot, active_space, core, active, g_coupling, permutation, mo_basis, csf_build,
+                           localstots, active_subspaces)
 
         # Get number of determinants (which is the dimension of the problem)
-        self.nDet = self.csf_instance.n_dets
+        # self.nDet = self.csf_instance.n_dets
 
         # Save mapping indices for unique orbital rotations
         self.frozen = frozen
         self.rot_idx = self.uniq_var_indices(self.norb, self.frozen)
         self.nrot = np.sum(self.rot_idx)
 
-    @property 
+    @property
     def dim(self):
         """Number of degrees of freedom"""
         return self.nrot
@@ -71,12 +76,13 @@ class CSF(Wavefunction):
         ''' This method finds orb-orb part of the Hessian '''
         return (self.get_hessianOrbOrb()[:, :, self.rot_idx])[self.rot_idx, :]
 
-    def setup_csf(self, stot, active_space, core: List[int], active: List[int], 
-                       g_coupling: str, permutation: List[int], mo_basis: 'str' = "site",
-                        csf_build:str = 'genealogical'):
+    def setup_csf(self, stot: float, active_space: List[int], core: List[int], active: List[int],
+                    g_coupling: str, permutation: List[int], mo_basis: 'str' = "site",
+                    csf_build: str = 'genealogical', localstots: List[float] = None,
+                    active_subspaces: List[int] = None):
 
         self.ncas = active_space[0]   # Number of active orbitals
-        self.spin = stot   # Total S value
+        self.stot = stot   # Total S value
         self.core = core   # List of core (doubly occupied) orbitals
         self.act  = active # List of active orbitals
 
@@ -100,9 +106,20 @@ class CSF(Wavefunction):
 
         # Build CSF
         if csf_build.lower() == 'genealogical':
-            self.csf_instance = ConfigurationStateFunction(self.mol, self.spin, self.core, self.act,
-                                                            self.g_coupling, self.permutation, mo_basis=self.mo_basis)
+            self.csf_instance = GCCSF(self.mol, self.stot, len(self.core), len(self.act),
+                                        self.g_coupling, self.mo_basis)
         elif csf_build.lower() == 'clebschgordon':
+            assert localstots is not None, "Local spin quantum numbers (localstots) undefined"
+            assert active_subspaces is not None "Active subspaces (active_subspaces) undefined"
+            assert active_subspaces[0] + active_subspaces[2] == active_space[0], "Mismatched number of active orbitals"
+            assert active_subspaces[1] + active_subspaces[3] == active_space[1], "Mismatched number of active electrons"
+            self.csf_instance = CGCSF(self.mol, self.stot, localstots[0], localstots[1],
+                                      (active_subspaces[0], active_subspaces[1]),
+                                      (active_subspaces[2], active_subspaces[3]),
+                                      len(self.core), len(self.act))
+        else:
+            import sys
+            sys.exit("The requested CSF build is not supported, exiting.")
 
 
     def save_to_disk(self,tag):
@@ -112,14 +129,14 @@ class CSF(Wavefunction):
 
         # Save coefficients and energy
         np.savetxt(tag+'.mo_coeff', self.mo_coeff, fmt="% 20.16f")
-        np.savetxt(tag+'.energy',   
-                   np.array([[self.energy, hindices[0], hindices[1], self.s2]]), 
+        np.savetxt(tag+'.energy',
+                   np.array([[self.energy, hindices[0], hindices[1], self.s2]]),
                    fmt="% 18.12f % 5d % 5d % 12.6f")
 
         # Save CSF config
         with open(tag+'.csf','w') as outF:
-            outF.write('total_spin             {:2.2f}\n'.format(self.spin))
-            outF.write('active_space           {:d} {:d}\n'.format(self.ncas, self.nelecas[0]+self.nelecas[1])) 
+            outF.write('total_spin             {:2.2f}\n'.format(self.stot))
+            outF.write('active_space           {:d} {:d}\n'.format(self.ncas, self.nelecas[0]+self.nelecas[1]))
             outF.write(('core_orbitals         '+len(self.core)*" {:d}"+"\n").format(*self.core))
             outF.write(('active_orbitals       '+len(self.act)*" {:d}"+"\n").format(*self.act))
             outF.write('genealogical_coupling  {:s}\n'.format(self.g_coupling))
@@ -135,23 +152,26 @@ class CSF(Wavefunction):
         with open(tag+'.csf','r') as inF:
             lines = inF.read().splitlines()
 
-        spin         = getvalue(lines,"total_spin",float,True)
-        active_space = getlist(lines,"active_space",int,True)
-        core         = getlist(lines,"core_orbitals",int,True)
-        active       = getlist(lines,"active_orbitals",int,True)
-        permutation  = getlist(lines,"coupling_permutation",int,True)
-        g_coupling   = getvalue(lines,"genealogical_coupling",str,True)
-        csf_build    = getvalue(lines,"csf_build",str,True)
+        stot                = getvalue(lines,"total_spin",float,True)
+        active_space        = getlist(lines,"active_space",int,True)
+        core                = getlist(lines,"core_orbitals",int,True)
+        active              = getlist(lines,"active_orbitals",int,True)
+        permutation         = getlist(lines,"coupling_permutation",int,True)
+        g_coupling          = getvalue(lines,"genealogical_coupling",str,True)
+        csf_build           = getvalue(lines,"csf_build",str,True)
+        localstots          = getlist(lines,"local_spins", float, True),
+        active_subspaces    = getlist(lines,"active_subspaces", int, True)
 
         # Setup CSF
-        self.setup_csf(spin, active_space, core, active, g_coupling, permutation)
+        self.setup_csf(stot, active_space, core, active, g_coupling, permutation, None, csf_build,
+                       localstots, active_subspaces)
 
         # Initialise object
         self.initialise(mo_coeff, None)
 
     def copy(self):
         # Return a copy of the current object
-        newcsf = CSF(self.mol, self.spin, [self.ncas, self.nelecas], self.core, 
+        newcsf = CSF(self.mol, self.stot, [self.ncas, self.nelecas], self.core,
                      self.act, self.g_coupling, self.frozen, self.permutation, self.mo_basis)
         newcsf.initialise(self.mo_coeff, integrals=False)
         return newcsf
@@ -194,11 +214,20 @@ class CSF(Wavefunction):
         self.ovlp = self.mol.intor('int1e_ovlp')  # Overlap matrix
         self._scf._eri = self.mol.intor("int2e", aosym="s8")  # Two electron integrals
 
+    def permute_orbitals(self, mo_coeff):
+        """A method to permute the MO coefficients read in"""
+        norbs = mo_coeff.shape[1]
+        virs = list(set([i for i in range(norbs)]) - set(self.core + self.act))
+        core_orbs = mo_coeff[:, self.core]
+        act_orbs = mo_coeff[:, self.act][:, self.permutation]
+        vir_orbs = mo_coeff[:, virs]
+        return np.hstack([core_orbs, act_orbs, vir_orbs])
+
     def initialise(self, mo_guess=None, mat_ci=None, integrals=True):
         # Save orbital coefficients
         if(not(mo_guess is not None)): mo_guess = self.csf_instance.coeffs.copy()
         mo_guess = orthogonalise(mo_guess, self.ovlp)
-        self.mo_coeff = mo_guess.copy()
+        self.mo_coeff = self.permute_orbitals(mo_guess)
         self.nmo = self.mo_coeff.shape[1]
 
         # Initialise integrals
@@ -238,9 +267,9 @@ class CSF(Wavefunction):
         self.h1eff, self.energy_core = self.get_h1eff()
         self.h2eff = self.get_h2eff()
         self.h2eff = ao2mo.restore(1, self.h2eff, self.ncas)
-        self.csf_instance.update_coeffs(self.mo_coeff)
+        #self.csf_instance.update_coeffs(self.mo_coeff)
         # Reduced density matrices
-        self.dm1_cas, self.dm2_cas = self.get_csfrdm_12(self.csf_instance)
+        self.dm1_cas, self.dm2_cas = self.get_csfrdm_12()
         # Transform 1e integrals
         self.h1e_mo = reduce(np.dot, (self.mo_coeff.T, self.hcore, self.mo_coeff))
 
@@ -306,20 +335,12 @@ class CSF(Wavefunction):
         ncore = self.ncore
         return self.ppoo[ncore:nocc, ncore:nocc, ncore:, ncore:]
 
-    def get_csfrdm_12(self, csfobj):
+    def get_csfrdm_12(self):
         r"""
-        We first form a new CSFConstructor object with new coeffs
-        :return:
+        Get 1RDM and 2RDM from PySCF
         """
-        # Nick 2 March 2023: Commented below two lines. Using PySCF to construct RDMs instead
-        #dm1_csf = csfobj.get_csf_one_rdm()
-        #dm2_csf = csfobj.get_csf_two_rdm()
-        dm1_csf, dm2_csf = csfobj.get_pyscf_rdms()
-        # Since we only want the active orbitals:
-        #nocc = self.ncore + self.ncas
-        #return dm1_csf[self.ncore:nocc, :][:, self.ncore:nocc],\
-        #        dm2_csf[self.ncore:nocc, :, :, :][:, self.ncore:nocc, :, :][:, :, self.ncore:nocc, :][:, :, :, self.ncore:nocc]
-        return dm1_csf, dm2_csf
+        #dm1_csf, dm2_csf = self.csf_instance.get_pyscf_rdms()
+        return self.csf_instance.rdm1, self.csf_instance_rdm2
 
     def get_fock_matrices(self):
         ''' Compute the core part of the generalized Fock matrix '''
