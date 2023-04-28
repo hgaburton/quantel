@@ -5,10 +5,10 @@ import itertools
 import numpy as np
 from pyscf import gto, scf, fci
 from scipy import linalg
-from CSFTools.CouplingCoefficients import get_total_coupling_coefficient
-from GenericCSF import GenericCSF
-from Operators.Operators import create
-from CSFTools.PermutationTools import get_phase_factor
+from .CSFTools.CouplingCoefficients import get_total_coupling_coefficient
+from .CSFTools.PermutationTools import get_phase_factor
+from .GenericCSF import GenericCSF
+from .Operators.Operators import create
 
 
 class GCCSF(GenericCSF):

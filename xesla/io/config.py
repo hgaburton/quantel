@@ -59,8 +59,8 @@ class Config(dict):
                                                core = getlist(self.lines,"core_orbitals",int,True),
                                                permutation = getlist(self.lines,"coupling_permutation",int,True),
                                                stot = getvalue(self.lines,"total_spin",float,True),
-                                               csf_build = getvalue(self.lines,"csf_build",str,False),
-                                               localstots = getlist(self.lines,"local_spins",int,False),
+                                               csf_build = getvalue(self.lines,"csf_build",str,True),
+                                               localstots = getlist(self.lines,"local_spins",float,False),
                                                active_subspaces = getlist(self.lines,"active_subspaces",int,False)
                                               )
 

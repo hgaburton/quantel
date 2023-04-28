@@ -90,6 +90,7 @@ class CSF(Wavefunction):
         self.permutation = permutation  # Permutation for spin coupling
 
         self.mo_basis    = mo_basis # Choice of basis for orbital guess
+        self.csf_build   = csf_build # Method for constructing CSFs
         self.mat_ci = None
 
         if isinstance(active_space[1], (int, np.integer)):
@@ -110,7 +111,7 @@ class CSF(Wavefunction):
                                         self.g_coupling, self.mo_basis)
         elif csf_build.lower() == 'clebschgordon':
             assert localstots is not None, "Local spin quantum numbers (localstots) undefined"
-            assert active_subspaces is not None "Active subspaces (active_subspaces) undefined"
+            assert active_subspaces is not None, "Active subspaces (active_subspaces) undefined"
             assert active_subspaces[0] + active_subspaces[2] == active_space[0], "Mismatched number of active orbitals"
             assert active_subspaces[1] + active_subspaces[3] == active_space[1], "Mismatched number of active electrons"
             self.csf_instance = CGCSF(self.mol, self.stot, localstots[0], localstots[1],
@@ -141,7 +142,7 @@ class CSF(Wavefunction):
             outF.write(('active_orbitals       '+len(self.act)*" {:d}"+"\n").format(*self.act))
             outF.write('genealogical_coupling  {:s}\n'.format(self.g_coupling))
             outF.write(('coupling_permutation  '+len(self.permutation)*" {:d}"+"\n").format(*self.permutation))
-
+            outF.write('csf_build              {:s}\n'.format(self.csf_build))
 
     def read_from_disk(self,tag):
         """Read a SS-CASSCF object from disk with prefix 'tag'"""
@@ -158,7 +159,7 @@ class CSF(Wavefunction):
         active              = getlist(lines,"active_orbitals",int,True)
         permutation         = getlist(lines,"coupling_permutation",int,True)
         g_coupling          = getvalue(lines,"genealogical_coupling",str,True)
-        csf_build           = getvalue(lines,"csf_build",str,False)
+        csf_build           = getvalue(lines,"csf_build",str,True)
         localstots          = getlist(lines,"local_spins",float,False)
         active_subspaces    = getlist(lines,"active_subspaces",int,False)
 
@@ -340,7 +341,7 @@ class CSF(Wavefunction):
         Get 1RDM and 2RDM from PySCF
         """
         #dm1_csf, dm2_csf = self.csf_instance.get_pyscf_rdms()
-        return self.csf_instance.rdm1, self.csf_instance_rdm2
+        return self.csf_instance.rdm1, self.csf_instance.rdm2
 
     def get_fock_matrices(self):
         ''' Compute the core part of the generalized Fock matrix '''

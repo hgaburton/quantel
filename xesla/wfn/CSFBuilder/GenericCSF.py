@@ -1,6 +1,6 @@
 from abc import ABCMeta
 import numpy as np
-from ReducedDensityMatrices.RDMapper import mapper, get_dm12
+from .ReducedDensityMatrices.RDMapper import mapper, get_dm12
 
 
 class GenericCSF(metaclass=ABCMeta):
@@ -73,7 +73,7 @@ class GenericCSF(metaclass=ABCMeta):
     def get_pyscf_rdms(self):
         """Gets the spatial 1-RDM and 2-RDM from PySCF"""
         dets, coeffs = self.get_relevant_dets(self.dets_sq, self.csf_coeffs)
-        dm1, dm2 = get_dm12(dets, coeffs, self.ms * 2)
+        dm1, dm2 = get_dm12(dets, coeffs, int(self.ms * 2))
         return dm1, dm2
 
     def get_civec(self):

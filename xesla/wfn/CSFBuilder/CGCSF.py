@@ -5,10 +5,10 @@ import numpy as np
 from pyscf import gto, fci
 from typing import Tuple
 
-from ActiveCSF import ActiveCSF
-from CSFTools.ClebschGordon import get_general_tensorprod, get_local_g_coupling, get_cg, take_csf_tensorprod
-from GenericCSF import GenericCSF
-from CSFTools.PermutationTools import get_phase_factor
+from .ActiveCSF import ActiveCSF
+from .CSFTools.ClebschGordon import get_general_tensorprod, get_local_g_coupling, get_cg, take_csf_tensorprod
+from .CSFTools.PermutationTools import get_phase_factor
+from .GenericCSF import GenericCSF
 
 
 class CGCSF(GenericCSF):
