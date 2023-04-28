@@ -154,8 +154,8 @@ class CSF(Wavefunction):
             lines = inF.read().splitlines()
 
         stot                = getvalue(lines,"total_spin",float,True)
-        active_space        = getlist(lines,"active_space",int,True)
-        core                = getlist(lines,"core_orbitals",int,True)
+        active_space        = getlist(lines,"active_space",int,False)
+        core                = getlist(lines,"core_orbitals",int,False)
         active              = getlist(lines,"active_orbitals",int,False)
         permutation         = getlist(lines,"coupling_permutation",int,False)
         g_coupling          = getvalue(lines,"genealogical_coupling",str,False)
