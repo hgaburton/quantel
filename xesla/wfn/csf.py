@@ -158,9 +158,9 @@ class CSF(Wavefunction):
         active              = getlist(lines,"active_orbitals",int,True)
         permutation         = getlist(lines,"coupling_permutation",int,True)
         g_coupling          = getvalue(lines,"genealogical_coupling",str,True)
-        csf_build           = getvalue(lines,"csf_build",str,True)
-        localstots          = getlist(lines,"local_spins", float, True),
-        active_subspaces    = getlist(lines,"active_subspaces", int, True)
+        csf_build           = getvalue(lines,"csf_build",str,False)
+        localstots          = getlist(lines,"local_spins",float,False)
+        active_subspaces    = getlist(lines,"active_subspaces",int,False)
 
         # Setup CSF
         self.setup_csf(stot, active_space, core, active, g_coupling, permutation, None, csf_build,

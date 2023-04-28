@@ -52,16 +52,16 @@ class Config(dict):
             self["wavefunction"]["casscf"] = dict(active_space = getlist(self.lines,"active_space",int,True))
 
         elif self["wavefunction"]["method"] == "csf":
-            self["wavefunction"]["csf"] = dict(g_coupling = getvalue(self.lines,"genealogical_coupling",str,True),
-                                               mo_basis = getvalue(self.lines,"mo_basis",str,True),
+            self["wavefunction"]["csf"] = dict(g_coupling = getvalue(self.lines,"genealogical_coupling",str,False),
+                                               mo_basis = getvalue(self.lines,"mo_basis",str,False),
                                                active = getlist(self.lines,"active_orbitals",int,True),
                                                active_space=getlist(self.lines,"active_space",int,True),
                                                core = getlist(self.lines,"core_orbitals",int,True),
                                                permutation = getlist(self.lines,"coupling_permutation",int,True),
                                                stot = getvalue(self.lines,"total_spin",float,True),
-                                               csf_build = getvalue(self.lines,"csf_build",str,True),
-                                               localstots = getlist(self.lines,"local_spins",int,True),
-                                               active_subspaces = getlist(self.lines,"active_subspaces",int,True)
+                                               csf_build = getvalue(self.lines,"csf_build",str,False),
+                                               localstots = getlist(self.lines,"local_spins",int,False),
+                                               active_subspaces = getlist(self.lines,"active_subspaces",int,False)
                                               )
 
 
