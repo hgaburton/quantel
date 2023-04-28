@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 # Modified from ss_casscf code of Antoine Marie and Hugh G. A. Burton
-# This is code for a single CSF case -- just to understand what is going on here
+# This is code for a CSF, which can be formed in a variety of ways.
 
 import numpy as np
 import scipy
@@ -17,7 +17,7 @@ from .wavefunction import Wavefunction
 class CSF(Wavefunction):
     def __init__(self, mol, stot, active_space = None, core: List[int] = None, 
                  active: List[int] = None, g_coupling: str = None, frozen: int = 0,
-                 permutation: List[int] = None, mo_basis: 'str' = 'site'):
+                 permutation: List[int] = None, mo_basis: 'str' = 'site', csf_build: str = 'genealogical'):
 
         # Save molecule and reference SCF
         self.mol = mol
@@ -29,10 +29,10 @@ class CSF(Wavefunction):
 
         # Setup CSF variables
         if active_space is not None:
-            self.setup_csf(stot, active_space, core, active, g_coupling, permutation, mo_basis)
+            self.setup_csf(stot, active_space, core, active, g_coupling, permutation, mo_basis, csf_build)
 
         # Get number of determinants (which is the dimension of the problem)
-        self.nDet = self.csf_info.n_dets
+        self.nDet = self.csf_instance.n_dets
 
         # Save mapping indices for unique orbital rotations
         self.frozen = frozen
@@ -49,7 +49,6 @@ class CSF(Wavefunction):
         ''' Compute the energy corresponding to a given set of
              one-el integrals, two-el integrals, 1- and 2-RDM '''
         E = self.energy_core
-        Ecore = E
         E += np.einsum('pq,pq', self.h1eff, self.dm1_cas, optimize="optimal")
         E += 0.5 * np.einsum('pqrs,pqrs', self.h2eff, self.dm2_cas, optimize="optimal")
         return E
@@ -57,7 +56,7 @@ class CSF(Wavefunction):
     @property
     def s2(self):
         ''' Compute the spin of a given FCI vector '''
-        return self.csf_info.get_s2()
+        return self.csf_instance.get_s2()
 
     @property
     def gradient(self):
@@ -73,7 +72,8 @@ class CSF(Wavefunction):
         return (self.get_hessianOrbOrb()[:, :, self.rot_idx])[self.rot_idx, :]
 
     def setup_csf(self, stot, active_space, core: List[int], active: List[int], 
-                       g_coupling: str, permutation: List[int], mo_basis: 'str' = "site"):
+                       g_coupling: str, permutation: List[int], mo_basis: 'str' = "site",
+                        csf_build:str = 'genealogical'):
 
         self.ncas = active_space[0]   # Number of active orbitals
         self.spin = stot   # Total S value
@@ -98,9 +98,12 @@ class CSF(Wavefunction):
         assert ncorelec >= 0
         self.ncore = ncorelec // 2
 
-        # Get information of CSFs
-        self.csf_info = ConfigurationStateFunction(self.mol, self.spin, self.core, self.act,
-                                                   self.g_coupling, self.permutation, mo_basis=self.mo_basis)
+        # Build CSF
+        if csf_build.lower() == 'genealogical':
+            self.csf_instance = ConfigurationStateFunction(self.mol, self.spin, self.core, self.act,
+                                                            self.g_coupling, self.permutation, mo_basis=self.mo_basis)
+        elif csf_build.lower() == 'clebschgordon':
+
 
     def save_to_disk(self,tag):
         """Save a CSF to disk with prefix 'tag'"""
@@ -138,6 +141,7 @@ class CSF(Wavefunction):
         active       = getlist(lines,"active_orbitals",int,True)
         permutation  = getlist(lines,"coupling_permutation",int,True)
         g_coupling   = getvalue(lines,"genealogical_coupling",str,True)
+        csf_build    = getvalue(lines,"csf_build",str,True)
 
         # Setup CSF
         self.setup_csf(spin, active_space, core, active, g_coupling, permutation)
@@ -158,11 +162,11 @@ class CSF(Wavefunction):
 
         :param ref: A ConfigurationStateFunction object which we are comparing to
         """
-        csf_coeffs = self.csf_info.csf_coeffs
-        ref_coeffs = ref.csf_info.csf_coeffs
+        csf_coeffs = self.csf_instance.csf_coeffs
+        ref_coeffs = ref.csf_instance.csf_coeffs
         smo = np.einsum("ip,ij,jq->pq", self.mo_coeff, self.ovlp, ref.mo_coeff)
         cross_overlap_mat = scipy.linalg.block_diag(smo, smo)
-        return get_generic_no_overlap(self.csf_info.dets_sq, ref.csf_info.dets_sq, csf_coeffs, ref_coeffs,
+        return get_generic_no_overlap(self.csf_instance.dets_sq, ref.csf_instance.dets_sq, csf_coeffs, ref_coeffs,
                                       cross_overlap_mat)
 
     def hamiltonian(self, other):
@@ -192,7 +196,7 @@ class CSF(Wavefunction):
 
     def initialise(self, mo_guess=None, mat_ci=None, integrals=True):
         # Save orbital coefficients
-        if(not(mo_guess is not None)): mo_guess = self.csf_info.coeffs.copy()
+        if(not(mo_guess is not None)): mo_guess = self.csf_instance.coeffs.copy()
         mo_guess = orthogonalise(mo_guess, self.ovlp)
         self.mo_coeff = mo_guess.copy()
         self.nmo = self.mo_coeff.shape[1]
@@ -234,9 +238,9 @@ class CSF(Wavefunction):
         self.h1eff, self.energy_core = self.get_h1eff()
         self.h2eff = self.get_h2eff()
         self.h2eff = ao2mo.restore(1, self.h2eff, self.ncas)
-        self.csf_info.update_coeffs(self.mo_coeff)
+        self.csf_instance.update_coeffs(self.mo_coeff)
         # Reduced density matrices
-        self.dm1_cas, self.dm2_cas = self.get_csfrdm_12(self.csf_info)
+        self.dm1_cas, self.dm2_cas = self.get_csfrdm_12(self.csf_instance)
         # Transform 1e integrals
         self.h1e_mo = reduce(np.dot, (self.mo_coeff.T, self.hcore, self.mo_coeff))
 
