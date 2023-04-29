@@ -1,3 +1,11 @@
+# Solution files
+00*
+noci_ham
+noci_ov
+
+# Swap files
+*.sw?
+
 # Editors
 .vscode/
 .idea/

@@ -63,12 +63,13 @@ class ESMF(Wavefunction):
         E += np.einsum('pq,pq', self.h1e, self.dm1, optimize="optimal")
         E += 0.5 * np.einsum('pqrs,pqrs', self.h2e, self.dm2, optimize="optimal")
         return E
-#
-#    @property
-#    def s2(self):
-#        ''' Compute the spin of a given FCI vector '''
-#        return self.fcisolver.spin_square(self.mat_ci[:,0], self.ncas, self.nelecas)[0]
-#
+
+    @property
+    def s2(self):
+        ''' Compute the spin of a given FCI vector '''
+        # TODO Need to implement s2 computation
+        return 0 #self.fcisolver.spin_square(self.mat_ci[:,0], self.ncas, self.nelecas)[0]
+
     @property
     def gradient(self):
         g_orb = self.get_orbital_gradient()

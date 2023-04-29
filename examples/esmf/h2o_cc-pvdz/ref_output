@@ -1,0 +1,121 @@
+===================================================
+                      XESLA                        
+===================================================
+  A library for exploring excited-state solutions  
+  in electronic structure theory.                  
+                                                   
+  Written by                                       
+     Antoine Marie, Nick Lee,                      
+     and Hugh G. A. Burton                         
+===================================================
+Today: 29 Apr 2023 at 11:14:07
+
+------------
+Input File:
+------------
+basis                   cc-pvdz
+charge                  0
+spin                    0
+units                   ang
+
+method                  esmf
+with_ref                true
+
+algorithm               eigenvector_following
+convergence             1e-8
+
+guess                   ciguess
+ci_guess                0 1 2
+
+noci                    true
+------------
+
+---------------------------------------------------------------
+ Searching for solutions using configuration interaction guess 
+    + Wavefunction:      esmf
+---------------------------------------------------------------
+
+  Generating RHF guess:
+    RHF total energy (Eh):     -76.02657119
+
+  Computing initial CI energies (Eh):
+       Initial state    0:     -76.02657119
+       Initial state    1:     -75.68921823
+       Initial state    2:     -75.62423334
+
+  Converging state-specific calculation from initial guess    0:
+  --------------------------------------------------------------
+
+  Initializing Eigenvector Following...
+  ================================================================
+           Energy / Eh      Index      Step Len     Error  
+  ================================================================
+     0   -76.0265711947          61                2.58e-08
+     1   -76.0265711947          61    2.41e-06    2.41e-14              
+  ================================================================
+  Eigenvector-following walltime:  1.631473  seconds
+
+  Converging state-specific calculation from initial guess    1:
+  --------------------------------------------------------------
+
+  Initializing Eigenvector Following...
+  ================================================================
+           Energy / Eh      Index      Step Len     Error  
+  ================================================================
+     0   -75.6892182348           1                7.05e-02
+     1   -75.7501180075           1    1.50e-01    1.79e-02    Dogleg step
+     2   -75.7517013015           1    2.77e-02    7.06e-05              
+     3   -75.7517013796           1    2.03e-04    6.69e-09              
+  ================================================================
+  Eigenvector-following walltime:  3.465104  seconds
+
+  Converging state-specific calculation from initial guess    2:
+  --------------------------------------------------------------
+
+  Initializing Eigenvector Following...
+  ================================================================
+           Energy / Eh      Index      Step Len     Error  
+  ================================================================
+     0   -75.6242333354           2                6.26e-02
+     1   -75.6762699494           2    1.50e-01    1.86e-02    Dogleg step
+     2   -75.6784547243           2    4.00e-02    9.60e-05              
+     3   -75.6784549994           2    6.02e-04    2.27e-08              
+     4   -75.6784549994           2    1.50e-07    3.10e-15              
+  ================================================================
+  Eigenvector-following walltime:  4.163514  seconds
+
+ Search complete... Identified     3 unique solutions
+---------------------------------------------------------------
+
+
+-----------------------------------------------
+ Performing Nonorthogonal CI on 3 solutions
+-----------------------------------------------
+ > Building NOCI matrices... done
+
+NOCI Hamiltonian
+[[-76.02657119   0.00000000  -0.00000000]
+ [  0.00000000 -75.75170138   0.00000000]
+ [ -0.00000000   0.00000000 -75.67845500]]
+
+NOCI Overlap
+[[ 1.00000000 -0.00000000  0.00000000]
+ [-0.00000000  1.00000000 -0.00000000]
+ [ 0.00000000 -0.00000000  1.00000000]]
+
+ > Solving generalised eigenvalue problem... done
+
+ NOCI Eigenvalues
+[-76.02657119 -75.75170138 -75.67845500]
+
+NOCI Eigenvectors
+[[-1.00000000  0.00000000  0.00000000]
+ [-0.00000000 -1.00000000 -0.00000000]
+ [-0.00000000 -0.00000000 -1.00000000]]
+
+-----------------------------------------------
+
+===================================================
+ Calculation complete. Thank you for using XESLA!  
+ Total time = 19.585s
+===================================================

@@ -1,0 +1,16 @@
+basis                   6-31g
+charge                  0
+spin                    0
+units                   B
+
+method                  esmf
+with_ref                true
+
+algorithm               eigenvector_following
+convergence             1e-8
+target_index            0
+
+guess                   random
+nsample                 10
+
+noci                    true

@@ -6,10 +6,18 @@ from xesla.utils.linalg import random_rot
 def ci_guess(mol, config):
     """Generate wavefunctions using standard CI guess as the starting point"""
 
+    print("---------------------------------------------------------------")
+    print(" Searching for solutions using configuration interaction guess ")
+    print("    + Wavefunction:      {:s}".format(config["wavefunction"]["method"]))
+    print("---------------------------------------------------------------")
+
+
+    print("\n  Generating RHF guess:")
     hf     = mol.RHF().run(verbose=0)
     ref_mo = hf.mo_coeff.copy()
     ref_ci = None
     escf   = hf.energy_tot()
+    print("    RHF total energy (Eh): {: 16.8f}".format(escf))
 
     wfnconfig = config["wavefunction"][config["wavefunction"]["method"]]
     if config["wavefunction"]["method"] == "esmf":
@@ -35,9 +43,12 @@ def ci_guess(mol, config):
         from xesla.opt.mode_controlling import ModeControl as OPT
 
     # Get reference MOs and CI vector
+    print("\n  Computing initial CI energies (Eh):")
     ref = WFN(mol, **wfnconfig)
     ref.initialise(ref_mo, ref_ci)
     ref_e, ref_ci = numpy.linalg.eigh(ref.ham)
+    for ind in config["jobcontrol"]["ci_guess"]:
+        print("       Initial state {:4d}: {: 16.8f}".format(ind, ref_e[ind]))  
 
     # Initialise wavefunction list
     wfn_list = []
@@ -46,6 +57,8 @@ def ci_guess(mol, config):
     target_index = config["optimiser"]["keywords"]["index"]
     count = 0
     for itest in config["jobcontrol"]["ci_guess"]:
+        print("\n  Converging state-specific calculation from initial guess {: 4d}:".format(itest))
+        print(  "  --------------------------------------------------------------")
         # Set CI and MO guess according to reference CI problem
         mo_guess = ref_mo.copy()
         ci_guess = ref_ci.copy()
@@ -88,5 +101,10 @@ def ci_guess(mol, config):
             # Deallocate integrals to reduce memory footprint
             myfun.deallocate()
             wfn_list.append(myfun.copy())
+
+    print()
+    print(" Search complete... Identified {:5d} unique solutions".format(len(wfn_list)))
+    print("---------------------------------------------------------------")
+    print()
 
     return wfn_list

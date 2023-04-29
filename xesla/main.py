@@ -72,6 +72,7 @@ def main():
 
     # Clean up
     end_time = time.monotonic()
+    print()
     print("===================================================")
     print(" Calculation complete. Thank you for using XESLA!  ")
     print(" Total time = {:5.3f}s".format(timedelta(seconds=(end_time - start_time)).total_seconds()))
