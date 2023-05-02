@@ -9,10 +9,9 @@ from typing import List
 from pygnme import wick, utils, owndata
 from pyscf import scf, fci, __config__, ao2mo, lib, mcscf
 from xesla.io.parser import getlist, getvalue
-#from xesla.wfn.csfs.ConfigurationStateFunctions.CSF import ConfigurationStateFunction
-#from xesla.wfn.csfs.Operators.Operators import get_generic_no_overlap
 from xesla.wfn.CSFBuilder.CGCSF import CGCSF
 from xesla.wfn.CSFBuilder.GCCSF import GCCSF
+from xesla.wfn.CSFBuilder.NoCSF import NoCSF
 from xesla.wfn.CSFBuilder.Operators.Operators import get_generic_no_overlap
 from xesla.utils.linalg import delta_kron, orthogonalise
 from .wavefunction import Wavefunction
@@ -33,9 +32,8 @@ class CSF(Wavefunction):
         self.get_ao_integrals()
 
         # Setup CSF variables
-        if active_space is not None:
-            self.setup_csf(stot, active_space, core, active, g_coupling, permutation, mo_basis, csf_build,
-                           localstots, active_subspaces)
+        self.setup_csf(stot, active_space, core, active, g_coupling, permutation, mo_basis, csf_build,
+                       localstots, active_subspaces)
 
         # Get number of determinants (which is the dimension of the problem)
         # self.nDet = self.csf_instance.n_dets
@@ -120,6 +118,8 @@ class CSF(Wavefunction):
                                       (active_subspaces[0], active_subspaces[1]),
                                       (active_subspaces[2], active_subspaces[3]),
                                       len(self.core), len(self.act))
+        elif csf_build.lower() == 'nocsf':
+            self.csf_instance = NoCSF(self.mol, self.stot, len(self.core), len(self.act), self.mo_basis)
         else:
             import sys
             sys.exit("The requested CSF build is not supported, exiting.")
