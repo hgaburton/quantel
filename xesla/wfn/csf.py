@@ -6,6 +6,7 @@ import numpy as np
 import scipy
 from functools import reduce
 from typing import List
+from pygnme import wick, utils, owndata
 from pyscf import scf, fci, __config__, ao2mo, lib, mcscf
 from xesla.io.parser import getlist, getvalue
 #from xesla.wfn.csfs.ConfigurationStateFunctions.CSF import ConfigurationStateFunction
@@ -89,8 +90,10 @@ class CSF(Wavefunction):
         self.g_coupling  = g_coupling   # Genealogical coupling pattern
         self.permutation = permutation  # Permutation for spin coupling
 
-        self.mo_basis    = mo_basis # Choice of basis for orbital guess
-        self.csf_build   = csf_build # Method for constructing CSFs
+        self.mo_basis           = mo_basis          # Choice of basis for orbital guess
+        self.csf_build          = csf_build         # Method for constructing CSFs
+        self.localstots         = localstots        # Local spins
+        self.active_subspaces   = active_subspaces  # Local active spaces
         self.mat_ci = None
 
         if isinstance(active_space[1], (int, np.integer)):
@@ -113,7 +116,6 @@ class CSF(Wavefunction):
             assert localstots is not None, "Local spin quantum numbers (localstots) undefined"
             assert active_subspaces is not None, "Active subspaces (active_subspaces) undefined"
             assert active_subspaces[0] + active_subspaces[2] == active_space[0], "Mismatched number of active orbitals"
-            assert active_subspaces[1] + active_subspaces[3] == active_space[1], "Mismatched number of active electrons"
             self.csf_instance = CGCSF(self.mol, self.stot, localstots[0], localstots[1],
                                       (active_subspaces[0], active_subspaces[1]),
                                       (active_subspaces[2], active_subspaces[3]),
@@ -128,6 +130,7 @@ class CSF(Wavefunction):
         # Get the Hessian index
         hindices = self.get_hessian_index()
 
+        #self.mo_coeff = permute_out_orbitals(self.mo_coeff)
         # Save coefficients and energy
         np.savetxt(tag+'.mo_coeff', self.mo_coeff, fmt="% 20.16f")
         np.savetxt(tag+'.energy',
@@ -143,6 +146,9 @@ class CSF(Wavefunction):
             outF.write('genealogical_coupling  {:s}\n'.format(self.g_coupling))
             outF.write(('coupling_permutation  '+len(self.permutation)*" {:d}"+"\n").format(*self.permutation))
             outF.write('csf_build              {:s}\n'.format(self.csf_build))
+            outF.write(('localstots            '+len(self.localstots)*" {:d}"+"\n").format(*self.localstots))
+            outF.write(('active_subspaces      '+len(self.active_subspaces)*" {:d}"+"\n").format(*self.active_subspaces))
+
 
     def read_from_disk(self,tag):
         """Read a SS-CASSCF object from disk with prefix 'tag'"""
@@ -171,9 +177,12 @@ class CSF(Wavefunction):
         self.initialise(mo_coeff, None)
 
     def copy(self):
-        # Return a copy of the current object
-        newcsf = CSF(self.mol, self.stot, [self.ncas, self.nelecas], self.core,
-                     self.act, self.g_coupling, self.frozen, self.permutation, self.mo_basis)
+        """Return a copy of the current object"""
+        # When copying, keep the MO coefficients as they are
+        newcsf = CSF(self.mol, self.stot, [self.ncas, self.nelecas], list(np.arange(len(self.core), dtype=int)),
+                     list(np.arange(len(self.core), len(self.core) + len(self.act), dtype=int)),
+                     self.g_coupling, self.frozen, self.permutation, self.mo_basis,
+                     self.csf_build, self.localstots, self.active_subspaces)
         newcsf.initialise(self.mo_coeff, integrals=False)
         return newcsf
 
@@ -190,8 +199,58 @@ class CSF(Wavefunction):
         return get_generic_no_overlap(self.csf_instance.dets_sq, ref.csf_instance.dets_sq, csf_coeffs, ref_coeffs,
                                       cross_overlap_mat)
 
-    def hamiltonian(self, other):
-        raise NotImplementedError
+    def hamiltonian(self, other, thresh=1e-10):
+        # x = self
+        # w = other
+        self.update_integrals()
+        nocc = self.ncore + self.ncas
+        na = self.nelecas[0] + self.ncore
+        nb = self.nelecas[1] + self.ncore
+        h1e  = owndata(self._scf.get_hcore())
+        h2e  = owndata(ao2mo.restore(1, self._scf._eri, self.mol.nao).reshape(self.mol.nao**2, self.mol.nao**2))
+
+        # Setup biorthogonalised orbital pair
+        refxa = wick.reference_state[float](self.nmo, self.nmo, na, self.ncas, self.ncore, owndata(self.mo_coeff))
+        refxb = wick.reference_state[float](self.nmo, self.nmo, nb, self.ncas, self.ncore, owndata(self.mo_coeff))
+        refwa = wick.reference_state[float](self.nmo, self.nmo, na, other.ncas, other.ncore, owndata(other.mo_coeff))
+        refwb = wick.reference_state[float](self.nmo, self.nmo, nb, other.ncas, other.ncore, owndata(other.mo_coeff))
+
+        # Setup paired orbitals
+        orba = wick.wick_orbitals[float, float](refxa, refwa, owndata(self.ovlp))
+        orbb = wick.wick_orbitals[float, float](refxb, refwb, owndata(self.ovlp))
+
+        # Setup matrix builder object
+        mb = wick.wick_uscf[float, float, float](orba, orbb, self.mol.energy_nuc())
+        # Add one- and two-body contributions
+        mb.add_one_body(h1e)
+        mb.add_two_body(h2e)
+
+        # Generate lists of FCI bitsets
+        vxa = utils.fci_bitset_list(na-self.ncore, self.ncas)
+        vxb = utils.fci_bitset_list(nb-self.ncore, self.ncas)
+        vwa = utils.fci_bitset_list(na-other.ncore, other.ncas)
+        vwb = utils.fci_bitset_list(nb-other.ncore, other.ncas)
+
+        s = 0 
+        h = 0
+
+        # Loop over FCI occupation strings
+        for iwa in range(len(vwa)):
+            for iwb in range(len(vwb)):
+                if(abs(owndata(other.csf_instance.ci)[iwa,iwb]) < thresh):
+                    # Skip if coefficient is below threshold
+                    continue
+                for ixa in range(len(vxa)):
+                    for ixb in range(len(vxb)):
+                        if(abs(owndata(self.csf_instance.ci)[ixa,ixb]) < thresh):
+                            # Skip if coefficient is below threshold
+                            continue
+                        # Compute S and H contribution for this pair of determinants
+                        stmp, htmp = mb.evaluate(vxa[ixa], vxb[ixb], vwa[iwa], vwb[iwb])
+                        # Accumulate the Hamiltonian and overlap matrix elements
+                        s += stmp * owndata(other.csf_instance.ci)[iwa,iwb] * owndata(self.csf_instance.ci)[ixa,ixb]
+                        h += htmp * owndata(other.csf_instance.ci)[iwa,iwb] * owndata(self.csf_instance.ci)[ixa,ixb]
+        return s, h
 
     def sanity_check(self):
         '''Need to be run at the start of the kernel to verify that the number of
@@ -215,7 +274,7 @@ class CSF(Wavefunction):
         self.ovlp = self.mol.intor('int1e_ovlp')  # Overlap matrix
         self._scf._eri = self.mol.intor("int2e", aosym="s8")  # Two electron integrals
 
-    def permute_orbitals(self, mo_coeff):
+    def permute_in_orbitals(self, mo_coeff):
         """A method to permute the MO coefficients read in"""
         norbs = mo_coeff.shape[1]
         virs = list(set([i for i in range(norbs)]) - set(self.core + self.act))
@@ -224,11 +283,25 @@ class CSF(Wavefunction):
         vir_orbs = mo_coeff[:, virs]
         return np.hstack([core_orbs, act_orbs, vir_orbs])
 
+    def permute_out_orbitals(self, mo_coeff):
+        """A method to permute the MO coefficients returned"""
+        naos = mo_coeff.shape[0]
+        norbs = mo_coeff.shape[1]
+        virs = list(set([i for i in range(norbs)]) - set(self.core + self.act))
+        inv_perm = np.zeros(len(self.permutation), dtype=int)
+        for i, p in enumerate(self.permutation):
+            inv_perm[p] = i
+        new_coeffs = np.zeros((naos, norbs))
+        new_coeffs[:, self.core] = self.mo_coeff[:, np.arange(len(self.core))]
+        new_coeffs[:, self.act] = self.mo_coeff[:, np.arange(len(self.core), len(self.core) + len(self.act))][:, inv_perm]
+        new_coeffs[:, virs] = self.mo_coeff[:, np.arange(len(self.core) + len(self.act), norbs)]
+        return new_coeffs
+
     def initialise(self, mo_guess=None, mat_ci=None, integrals=True):
         # Save orbital coefficients
         if(not(mo_guess is not None)): mo_guess = self.csf_instance.coeffs.copy()
         mo_guess = orthogonalise(mo_guess, self.ovlp)
-        self.mo_coeff = self.permute_orbitals(mo_guess)
+        self.mo_coeff = self.permute_in_orbitals(mo_guess)
         self.nmo = self.mo_coeff.shape[1]
 
         # Initialise integrals
@@ -236,7 +309,7 @@ class CSF(Wavefunction):
 
     def deallocate(self):
         # Reduce the memory footprint for storing
-        self._eri = None
+        self._scf._eri = None
         self.ppoo = None
         self.popo = None
         self.h1e = None
