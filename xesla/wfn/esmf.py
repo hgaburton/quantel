@@ -127,9 +127,9 @@ class ESMF(Wavefunction):
 
 
     def get_ao_integrals(self):
-        self.enuc       = self._scf.energy_nuc()
-        self.v1e        = self.mol.intor('int1e_nuc')  # Nuclear repulsion matrix elements
-        self.t1e        = self.mol.intor('int1e_kin')  # Kinetic energy matrix elements
+        self.enuc       = 0 * self._scf.energy_nuc()
+        self.v1e        = 0 * self.mol.intor('int1e_nuc')  # Nuclear repulsion matrix elements
+        self.t1e        = 0 * self.mol.intor('int1e_kin')  # Kinetic energy matrix elements
         self.hcore      = self.t1e + self.v1e          # 1-electron matrix elements in the AO basis
         self.norb       = self.hcore.shape[0]
         self.ovlp       = self.mol.intor('int1e_ovlp') # Overlap matrix
@@ -183,31 +183,42 @@ class ESMF(Wavefunction):
 
         self.ham = self.get_ham()
 
+        # Core effective interaction
+        self.V = (2 * np.einsum('pqkk->pq', self.h2e[:,:,:self.na,:self.na], optimize='optimal') 
+                    - np.einsum('pkkq->pq', self.h2e[:,:self.na,:self.na,:], optimize='optimal'))
 
-    def get_rdm1(self):
+
+    def get_rdm1(self, v1, v2, transition=False):
         '''Compute the total 1RDM for the current state'''
+
         ne = self.na
         if(self.with_ref):
-            c0   = self.mat_ci[0,0]
-            t    = 1/np.sqrt(2) * np.reshape(self.mat_ci[1:,0],(self.na, self.nmo - self.na))
+            c1_0   = v1[0]
+            c2_0   = v2[0]
+            t1     = 1/np.sqrt(2) * np.reshape(v1[1:], (self.na, self.nmo - self.na))
+            t2     = 1/np.sqrt(2) * np.reshape(v2[1:], (self.na, self.nmo - self.na))
         else:
-            c0   = 0.0
-            t    = 1/np.sqrt(2) * np.reshape(self.mat_ci[:,0],(self.na, self.nmo - self.na))
+            c1_0   = 0.0
+            c2_0   = 0.0
+            t1     = 1/np.sqrt(2) * np.reshape(v1[:], (self.na, self.nmo - self.na))
+            t2     = 1/np.sqrt(2) * np.reshape(v2[:], (self.na, self.nmo - self.na))
         kron = np.identity(self.nmo)
         dij  = np.identity(ne)
         dab  = np.identity(self.nmo-ne)
 
         # Derive temporary matrices        
-        ttOcc = t.dot(t.T) # (tt)_{ij}
-        ttVir = t.T.dot(t) # (tt)_{ab}
+        ttOcc = t1.dot(t2.T) # (tt)_{ij}
+        ttVir = t2.T.dot(t1) # (tt)_{ab}
 
         # Compute the 1RDM
         dm1 = np.zeros((self.nmo,self.nmo))
-        dm1[:self.na,:self.na] = (np.identity(self.na) - ttOcc)
-        dm1[:self.na,self.na:] = c0 * t
-        dm1[self.na:,:self.na] = c0 * t.T
+        dm1[:self.na,:self.na] = - ttOcc
+        dm1[:self.na,self.na:] = c2_0 * t1
+        dm1[self.na:,:self.na] = c1_0 * t2.T
         dm1[self.na:,self.na:] = ttVir
-        return 2*dm1
+        if(not transition): dm1[:self.na,:self.na] += np.identity(self.na)
+
+        return 2 * dm1
 
 
     def get_rdm12(self):
@@ -392,22 +403,64 @@ class ESMF(Wavefunction):
         self.mat_ci = np.dot(self.mat_ci, scipy.linalg.expm(S - S.T))
 
 
-    def get_gen_fock(self, dm1, dm2, transition=False):
-        """Build generalised Fock matrix"""
-        # Initialise matrix
+    def get_gen_fock(self, v1, v2, transition=False):
+        """Build generalised Fock matrix
+           NOTE: This is a symmetrised version to minimise the number of einsums in 
+                 the computation of transition generalised Fock matrices.
+        """
+        ne = self.na
+        if(self.with_ref):
+            c1_0, c2_0 = v1[0], v2[0]
+            t1     = 1/np.sqrt(2) * np.reshape(v1[1:], (self.na, self.nmo - self.na))
+            t2     = 1/np.sqrt(2) * np.reshape(v2[1:], (self.na, self.nmo - self.na))
+        else:
+            c1_0, c2_0 = 0.0, 0.0
+            t1     = 1/np.sqrt(2) * np.reshape(v1[:], (self.na, self.nmo - self.na))
+            t2     = 1/np.sqrt(2) * np.reshape(v2[:], (self.na, self.nmo - self.na))
+
+        if(transition): dij  = np.zeros((ne,ne))
+        else: dij = np.identity(ne)
+        
+        # Compute the 1RDM
+        gamma = np.zeros((self.nmo, self.nmo))
+        gamma[:ne,:ne] = - t1.dot(t2.T)
+        if(not transition): gamma[:ne,:ne] += np.identity(self.na)
+        gamma[ne:,ne:] = t2.T.dot(t1)
+        if(self.with_ref):
+            gamma[:ne,ne:] = c2_0 * t1
+            gamma[ne:,:ne] = c1_0 * t2.T 
+        # Symmetrise the density matrix
+        gamma = 0.5 * (gamma + gamma.T)
+
+        # Contributions to effective Fock
+        Feff = (  2 * np.einsum('mnpq,qp->mn', self.h2e[:,:ne,:ne,:ne], gamma[:ne,:ne].T) 
+                    - np.einsum('mqpn,pq->mn', self.h2e[:,:ne,:ne,:ne], gamma[:ne,:ne])   
+                + 2 * np.einsum('mnpq,qp->mn', self.h2e[:,:ne,ne:,ne:], gamma[ne:,ne:].T) 
+                    - np.einsum('mqpn,pq->mn', self.h2e[:,ne:,ne:,:ne], gamma[ne:,ne:]))   
+        M = (  2 * np.einsum('mnia,ai->mn', self.h2e[:,:,:ne,ne:], t1.T) 
+                 - np.einsum('main,ia->mn', self.h2e[:,ne:,:ne,:], t1))  
+        N = (  2 * np.einsum('mnai,ia->mn', self.h2e[:,:,ne:,:ne], t2) 
+                 - np.einsum('mian,ai->mn', self.h2e[:,:ne,ne:,:], t2.T))  
+        if(self.with_ref):
+            Feff += 0.5 * (M[:,:ne] * c2_0 + N[:ne,:].T * c1_0)
+            Feff += 0.5 * (N[:,:ne] * c1_0 + M[:ne,:].T * c2_0)
+
+        # Compute actual terms
         F = np.zeros((self.nmo,self.nmo))
+        F += np.dot(gamma, self.h1e + self.V)
+        F[:ne,:] += Feff[:,:ne].T 
+        F[:ne,:] += 0.5 * (np.dot(t1, N[:,ne:].T) + np.dot(t2, M[ne:,:]))
+        if(not transition): F[:ne,:] -= np.dot(dij, self.V[:ne,:])
+        F[ne:,:] += 0.5 * (np.dot(t2.T, M[:,:ne].T) + np.dot(t1.T, N[:ne,:]))
 
-        # One-body contribution
-        F += np.einsum('mq,nq->mn', dm1, self.h1e, optimize='optimal')
-
-        # Two-body contribution
-        F += np.einsum('mqrs,nqrs->mn', dm2, self.h2e, optimize='optimal')
-        return F
+        # We need to add a factor of 2 at the end!
+        return 2 * F
 
 
     def get_orbital_gradient(self):
         """Compute the orbital component of the energy gradient"""
-        g_orb = 2 * self.get_gen_fock(self.dm1, self.dm2, False)
+
+        g_orb = 2 * self.get_gen_fock(self.mat_ci[:,0], self.mat_ci[:,0], False)
         return (g_orb.T - g_orb)[self.rot_idx]
 
 
@@ -428,13 +481,8 @@ class ESMF(Wavefunction):
         H_OCI = np.zeros((self.norb,self.norb,self.nDet-1))
 
         for k in range(1,self.nDet):
-            # Get transition density matrices
-            dm1_ok, dm2_ok = self.get_trdm12(self.mat_ci[:,0], self.mat_ci[:,k])
-            # Get transition density matrices
-            dm1_ko, dm2_ko = self.get_trdm12(self.mat_ci[:,k], self.mat_ci[:,0])
             # Get transition generalised Fock matrix
-            F = self.get_gen_fock(dm1_ok + dm1_ko, dm2_ok + dm2_ko)
-
+            F = 2 * self.get_gen_fock(self.mat_ci[:,k], self.mat_ci[:,0], True)
             # Save component
             H_OCI[:,:,k-1] = 2*(F.T - F)
 
@@ -444,7 +492,7 @@ class ESMF(Wavefunction):
     def get_hessianOrbOrb(self):
         """Compute the orbital-orbital component of the energy Hessian"""
         # Get the generalised Fock matrix
-        F = self.get_gen_fock(self.dm1, self.dm2) 
+        F = self.get_gen_fock(self.mat_ci[:,0], self.mat_ci[:,0]) 
 
         # Kroneckar-delta for later contractions
         dqs = np.identity(self.nmo)
