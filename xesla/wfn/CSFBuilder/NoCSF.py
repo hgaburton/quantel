@@ -13,9 +13,9 @@ from .Operators.Operators import create
 
 
 class NoCSF(GenericCSF):
-    def __init__(self, mol: gto.Mole, stot: float, n_core: int, n_act: int, mo_basis="site"):
+    def __init__(self, mol: gto.Mole, stot: float, n_core: int, mo_basis="site"):
         self.mol = mol
-        super().__init__(stot, mol.spin / 2, n_core, n_act, mol.nelectron)
+        super().__init__(stot, mol.spin / 2, n_core, 0, mol.nelectron)
         self.mo_basis = mo_basis
         self.coeffs = self.get_coeffs(method=self.mo_basis)
 
