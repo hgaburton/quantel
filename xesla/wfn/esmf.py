@@ -81,6 +81,7 @@ class ESMF(Wavefunction):
     def hessian(self):
         ''' This method concatenate the orb-orb, orb-CI and CI-CI part of the Hessian '''
         H_OrbOrb = (self.get_hessianOrbOrb()[:,:,self.rot_idx])[self.rot_idx,:]
+        np.set_printoptions(linewidth=10000)
         H_CICI   = self.get_hessianCICI()
         H_OrbCI  = self.get_hessianOrbCI()[self.rot_idx,:]
 
@@ -127,9 +128,9 @@ class ESMF(Wavefunction):
 
 
     def get_ao_integrals(self):
-        self.enuc       = 0 * self._scf.energy_nuc()
-        self.v1e        = 0 * self.mol.intor('int1e_nuc')  # Nuclear repulsion matrix elements
-        self.t1e        = 0 * self.mol.intor('int1e_kin')  # Kinetic energy matrix elements
+        self.enuc       = self._scf.energy_nuc()
+        self.v1e        = self.mol.intor('int1e_nuc')  # Nuclear repulsion matrix elements
+        self.t1e        = self.mol.intor('int1e_kin')  # Kinetic energy matrix elements
         self.hcore      = self.t1e + self.v1e          # 1-electron matrix elements in the AO basis
         self.norb       = self.hcore.shape[0]
         self.ovlp       = self.mol.intor('int1e_ovlp') # Overlap matrix
@@ -385,6 +386,7 @@ class ESMF(Wavefunction):
         self.rotate_ci(step[self.nrot:])
 
         # Finally, update our integrals for the new coefficients
+        self.canonicalise()
         self.update_integrals()
 
 
@@ -402,6 +404,32 @@ class ESMF(Wavefunction):
         S[1:,0] = step
         self.mat_ci = np.dot(self.mat_ci, scipy.linalg.expm(S - S.T))
 
+
+    def canonicalise(self):
+        """Rotate to canonical CI representation"""
+        if(self.with_ref):
+            c0   = self.mat_ci[0,0]
+            t    = 1/np.sqrt(2) * np.reshape(self.mat_ci[1:,0],(self.na, self.nmo - self.na))
+        else:
+            c0   = 0.0
+            t    = 1/np.sqrt(2) * np.reshape(self.mat_ci[:,0],(self.na, self.nmo - self.na))
+
+        # Get SVD
+        u, s, vt = np.linalg.svd(t)
+        
+        # Transform orbitals
+        self.mo_coeff[:,:self.na] = self.mo_coeff[:,:self.na].dot(u)
+        self.mo_coeff[:,self.na:] = self.mo_coeff[:,self.na:].dot(vt.T)
+
+        for k in range(self.mat_ci.shape[1]):
+            if(self.with_ref):
+                tia = np.reshape(self.mat_ci[1:,k],(self.na, self.nmo - self.na))
+                tia = np.linalg.multi_dot((u.T, tia, vt.T))
+                self.mat_ci[1:,k] = np.reshape(tia,(self.na * (self.nmo - self.na)))
+            else:
+                tia    = np.reshape(self.mat_ci[:,k],(self.na, self.nmo - self.na))
+                tia = np.linalg.multi_dot((u.T, tia, vt.T))
+                self.mat_ci[:,k] = np.reshape(tia,(self.na * (self.nmo - self.na)))
 
     def get_gen_fock(self, v1, v2, transition=False):
         """Build generalised Fock matrix
@@ -491,21 +519,77 @@ class ESMF(Wavefunction):
 
     def get_hessianOrbOrb(self):
         """Compute the orbital-orbital component of the energy Hessian"""
+        # Get number of electrons
+        ne = self.na
+        nmo = self.nmo
+
+        if(self.with_ref):
+            c0 = self.mat_ci[0,0]
+            t  = 1/np.sqrt(2) * np.reshape(self.mat_ci[1:,0], (self.na, self.nmo - self.na))
+        else:
+            c0 = 0.0
+            t  = 1/np.sqrt(2) * np.reshape(self.mat_ci[:,0], (self.na, self.nmo - self.na))
+        # Compute the 1RDM
+        gamma = np.zeros((self.nmo, self.nmo))
+        gamma[:ne,:ne] = np.identity(self.na) - t.dot(t.T)
+        gamma[ne:,ne:] = t.T.dot(t)
+        if(self.with_ref):
+            gamma[:ne,ne:] = c0 * t
+            gamma[ne:,:ne] = c0 * t.T 
+
         # Get the generalised Fock matrix
         F = self.get_gen_fock(self.mat_ci[:,0], self.mat_ci[:,0]) 
 
         # Kroneckar-delta for later contractions
+        dij = np.identity(self.na)
+        dab = np.identity(self.nmo-self.na)
         dqs = np.identity(self.nmo)
 
-        # Build Y intermediate from Helgaker Eq. 10.8.50
-        Y  = np.einsum('prmn,qsmn->pqrs', self.dm2, self.h2e)
-        Y += np.einsum('pmrn,qmns->pqrs', self.dm2, self.h2e)
-        Y += np.einsum('pmnr,qmns->pqrs', self.dm2, self.h2e)
+        # iajb 
+        Y = np.zeros((nmo,nmo,nmo,nmo))
+        Y[:ne,ne:,:ne,ne:]  = np.einsum('ijmn,abmn->iajb', self.dm2[:ne,:ne,:,:], self.h2e[ne:,ne:,:,:])
+        Y[:ne,ne:,:ne,ne:] += np.einsum('imjn,amnb->iajb', self.dm2[:ne,:,:ne,:], self.h2e[ne:,:,:,ne:])
+        Y[:ne,ne:,:ne,ne:] += np.einsum('imnj,amnb->iajb', self.dm2[:ne,:,:,:ne], self.h2e[ne:,:,:,ne:])
+
+        # aibj term
+        Iilkj = self.h2e[:ne,:ne,:ne,:ne]
+        Y[ne:,:ne,ne:,:ne]  = 2 * np.einsum('ab,ij->aibj',gamma[ne:,ne:], self.V[:ne,:ne])
+        Y[ne:,:ne,ne:,:ne] += 2 * np.einsum('la,kb,ilkj->aibj', t, t, 2 * Iilkj - Iilkj.transpose(0,3,2,1))
+
+        # Build intermediate N matrix
+        N = (  2 * np.einsum('mnai,ia->mn', self.h2e[:,:,ne:,:ne], t) 
+                 - np.einsum('mian,ai->mn', self.h2e[:,:ne,ne:,:], t.T))  
+        # iabj term
+        Iaipj = self.h2e[ne:,:ne,:,:ne]
+        Iappj = self.h2e[ne:,:,:,:ne]
+        Y[:ne,ne:,ne:,:ne]  = 2 * np.einsum('ib,aj->iabj', gamma[:ne,ne:], self.V[ne:,:ne])
+        Y[:ne,ne:,ne:,:ne] += 2 * np.einsum('bp,aipj->iabj', 
+                                gamma[ne:,:], 4 * Iaipj - Iaipj.transpose(0,3,2,1) - Iappj[:,:,:ne,:].transpose(0,2,1,3))
+        Y[:ne,ne:,ne:,:ne] += 2 * np.einsum('ib,aj->iabj', t, N[ne:,:ne])
+        Y[:ne,ne:,ne:,:ne] += 2 * np.einsum('ic,kb,ackj->iabj', 
+                                t, t, 2*Iappj[:,ne:,:ne,:] - Iappj[:,:ne,ne:,:].transpose(0,2,1,3))
+        del N
+        # aijb are obtained from symmetry 
+        Y[ne:,:ne,:ne,ne:] = Y[:ne,ne:,ne:,:ne].transpose(2,3,0,1)
 
         # Build last part of Eq 10.8.53
-        tmp   = 2 * np.einsum('pr,qs->pqrs', self.dm1, self.h1e)
-        tmp  -=  np.einsum('pr,qs->pqrs', F + F.T, dqs) 
-        tmp  += 2 * Y
+        tmp = np.zeros((nmo,nmo,nmo,nmo))
+
+        # iajb
+        tmp[:ne,ne:,:ne,ne:]   = 2 * np.einsum('ij,ab->iajb', self.dm1[:ne,:ne], self.h1e[ne:,ne:])
+        for a in range(self.na,self.nmo): tmp[:ne,a,:ne,a]  -= (F + F.T)[:ne,:ne]
+        tmp[:ne,ne:,:ne,ne:]  += 2 * Y[:ne,ne:,:ne,ne:]
+        # aibj
+        tmp[ne:,:ne,ne:,:ne]   = 2 * np.einsum('ab,ij->aibj', self.dm1[ne:,ne:], self.h1e[:ne,:ne])
+        for i in range(self.na): tmp[ne:,i,ne:,i]  -= (F + F.T)[ne:,ne:]
+        tmp[ne:,:ne,ne:,:ne]  += 2 * Y[ne:,:ne,ne:,:ne]
+        # iabj
+        tmp[:ne,ne:,ne:,:ne]   = 2 * np.einsum('ib,aj->iabj', self.dm1[:ne,ne:], self.h1e[ne:,:ne])
+        tmp[:ne,ne:,ne:,:ne]  += 2 * Y[:ne,ne:,ne:,:ne]
+        # aijb
+        tmp[ne:,:ne,:ne,ne:]   = 2 * np.einsum('aj,ib->aijb', self.dm1[ne:,:ne], self.h1e[:ne,ne:])
+        tmp[ne:,:ne,:ne,ne:]  += 2 * Y[ne:,:ne,:ne,ne:]
+        del Y
 
         # Apply the permutation operators and return result
         return tmp - np.einsum('qprs->pqrs', tmp) - np.einsum('pqsr->pqrs', tmp) + np.einsum('qpsr->pqrs', tmp)

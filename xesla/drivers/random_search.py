@@ -83,6 +83,8 @@ def random_search(mol, config):
 
         # Save the solution if it is a new one!
         if new: 
+            if config["wavefunction"]["method"] == "esmf":
+                myfun.canonicalise()
             # Get the prefix for this solution
             count += 1
             tag = "{:04d}".format(count)

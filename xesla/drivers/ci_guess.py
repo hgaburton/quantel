@@ -46,6 +46,7 @@ def ci_guess(mol, config):
     print("\n  Computing initial CI energies (Eh):")
     ref = WFN(mol, **wfnconfig)
     ref.initialise(ref_mo, ref_ci)
+
     ref_e, ref_ci = numpy.linalg.eigh(ref.ham)
     for ind in config["jobcontrol"]["ci_guess"]:
         print("       Initial state {:4d}: {: 16.8f}".format(ind, ref_e[ind]))  
@@ -90,6 +91,9 @@ def ci_guess(mol, config):
 
         # Save the solution if it is a new one!
         if new: 
+            if config["wavefunction"]["method"] == "esmf":
+                myfun.canonicalise()
+            # Get prefix
             count += 1
             tag = "{:04d}".format(count)
             numpy.savetxt(tag+'.mo_coeff', myfun.mo_coeff, fmt="% 20.16f")

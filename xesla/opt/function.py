@@ -122,3 +122,18 @@ class Function(metaclass=ABCMeta):
         eigval, eigvec = np.linalg.eigh(self.hessian)
         step = sum(eigvec[:,i] * angle for i in range(n))
         self.take_step(step)
+
+
+    def check_gradient(self, tol=1e-3):
+        anl = self.gradient
+        num = self.get_numerical_gradient()
+        diff = anl - num
+        print(diff)
+        return np.linalg.norm(diff) / diff.size < tol
+
+    def check_hessian(self, tol=1e-3):
+        anl = self.hessian
+        num = self.get_numerical_hessian()
+        diff = anl - num
+        print(diff)
+        return np.linalg.norm(diff) / diff.size < tol
