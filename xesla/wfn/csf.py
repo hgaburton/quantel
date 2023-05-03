@@ -56,8 +56,10 @@ class CSF(Wavefunction):
         ''' Compute the energy corresponding to a given set of
              one-el integrals, two-el integrals, 1- and 2-RDM '''
         E = self.energy_core
-        E += np.einsum('pq,pq', self.h1eff, self.dm1_cas, optimize="optimal")
-        E += 0.5 * np.einsum('pqrs,pqrs', self.h2eff, self.dm2_cas, optimize="optimal")
+        if self.dm1_cas is not None:
+            E += np.einsum('pq,pq', self.h1eff, self.dm1_cas, optimize="optimal")
+        if self.dm2_cas is not None:
+            E += 0.5 * np.einsum('pqrs,pqrs', self.h2eff, self.dm2_cas, optimize="optimal")
         return E
 
     @property
@@ -357,6 +359,7 @@ class CSF(Wavefunction):
         self.vhf_c = reduce(np.dot, (self.mo_coeff.T, 2 * vj - vk, self.mo_coeff))
 
         if self.csf_instance.n_act == 0:
+            self.energy_core = self.get_energy_core()
             self.dm1_cas, self.dm2_cas = None, None
         else:
             assert self.csf_instance.n_act > 0
@@ -396,6 +399,24 @@ class CSF(Wavefunction):
         orb_step = np.zeros((self.norb, self.norb))
         orb_step[self.rot_idx] = step
         self.mo_coeff = np.dot(self.mo_coeff, scipy.linalg.expm(orb_step - orb_step.T))
+
+    def get_energy_core(self):
+        '''Get core energy in the case of no active orbitals'''
+        ncas = self.ncas
+        assert ncas == 0
+        ncore = nocc = self.ncore
+
+        # Get core and active orbital coefficients
+        mo_core = self.mo_coeff[:, :ncore]
+
+        # Core density matrix (in AO basis)
+        self.core_dm = np.dot(mo_core, mo_core.T) * 2
+
+        # Core energy
+        energy_core = self.enuc
+        energy_core += np.einsum('ij,ji', self.core_dm, self.hcore, optimize="optimal")
+        energy_core += self.vhf_c[:ncore, :ncore].trace()
+        return energy_core
 
     def get_h1eff(self):
         '''CAS space one-electron hamiltonian
