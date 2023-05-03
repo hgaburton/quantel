@@ -31,6 +31,8 @@ class CSF(Wavefunction):
         # Get AO integrals
         self.get_ao_integrals()
 
+        self.frozen = frozen
+
         # Setup CSF variables
         if csf_build.lower() == 'nocsf':
             self.setup_nocsf(stot, core, mo_basis, localstots, active_subspaces)
@@ -42,9 +44,9 @@ class CSF(Wavefunction):
         # self.nDet = self.csf_instance.n_dets
 
         # Save mapping indices for unique orbital rotations
-        self.frozen = frozen
-        self.rot_idx = self.uniq_var_indices(self.norb, self.frozen)
-        self.nrot = np.sum(self.rot_idx)
+        #self.frozen = frozen
+        #self.rot_idx = self.uniq_var_indices(self.norb, self.frozen)
+        #self.nrot = np.sum(self.rot_idx)
 
     @property
     def dim(self):
@@ -126,13 +128,18 @@ class CSF(Wavefunction):
         else:
             import sys
             sys.exit("The requested CSF build is not supported, exiting.")
+        # Save mapping indices for unique orbital rotations
+        self.rot_idx = self.uniq_var_indices(self.norb, self.frozen)
+        self.nrot = np.sum(self.rot_idx)
 
     def setup_nocsf(self, stot: float, core: List[int], mo_basis: 'str' = "site",
                     localstots: List[float] = None, active_subspaces: List[int] = None):
 
         self.stot = stot  # Total S value
         self.core = core  # List of core (doubly occupied) orbitals
+        self.act = []
         self.mo_basis = mo_basis  # Choice of basis for orbital guess
+        self.csf_build = 'nocsf'  # Method for constructing CSFs
         self.localstots = localstots  # Local spins
         self.active_subspaces = active_subspaces  # Local active spaces
         self.mat_ci = None
@@ -140,10 +147,17 @@ class CSF(Wavefunction):
         ncorelec = self.mol.nelectron
         assert ncorelec % 2 == 0
         assert ncorelec >= 0
+        self.nelecas = (0,0)
         self.ncore = ncorelec // 2
+        self.ncas = 0
+        self.g_coupling = None
+        self.permutation = None
 
         # Build NoCSF
         self.csf_instance = NoCSF(self.mol, self.stot, len(self.core), self.mo_basis)
+        # Save mapping indices for unique orbital rotations
+        self.rot_idx = self.uniq_var_indices(self.norb, self.frozen)
+        self.nrot = np.sum(self.rot_idx)
 
     def save_to_disk(self, tag):
         """Save a CSF to disk with prefix 'tag'"""
@@ -214,12 +228,14 @@ class CSF(Wavefunction):
 
         :param ref: A ConfigurationStateFunction object which we are comparing to
         """
-        csf_coeffs = self.csf_instance.csf_coeffs
-        ref_coeffs = ref.csf_instance.csf_coeffs
-        smo = np.einsum("ip,ij,jq->pq", self.mo_coeff, self.ovlp, ref.mo_coeff)
-        cross_overlap_mat = scipy.linalg.block_diag(smo, smo)
-        return get_generic_no_overlap(self.csf_instance.dets_sq, ref.csf_instance.dets_sq, csf_coeffs, ref_coeffs,
-                                      cross_overlap_mat)
+        #csf_coeffs = self.csf_instance.csf_coeffs
+        #ref_coeffs = ref.csf_instance.csf_coeffs
+        #smo = np.einsum("ip,ij,jq->pq", self.mo_coeff, self.ovlp, ref.mo_coeff)
+        #cross_overlap_mat = scipy.linalg.block_diag(smo, smo)
+        #return get_generic_no_overlap(self.csf_instance.dets_sq, ref.csf_instance.dets_sq, csf_coeffs, ref_coeffs,
+        #                              cross_overlap_mat)
+        s, h = self.hamiltonian(ref)
+        return s
 
     def hamiltonian(self, other, thresh=1e-10):
         # x = self
@@ -300,7 +316,10 @@ class CSF(Wavefunction):
         norbs = mo_coeff.shape[1]
         virs = list(set([i for i in range(norbs)]) - set(self.core + self.act))
         core_orbs = mo_coeff[:, self.core]
-        act_orbs = mo_coeff[:, self.act][:, self.permutation]
+        if self.permutation is not None:
+            act_orbs = mo_coeff[:, self.act][:, self.permutation]
+        else:
+            act_orbs = mo_coeff[:, self.act]
         vir_orbs = mo_coeff[:, virs]
         return np.hstack([core_orbs, act_orbs, vir_orbs])
 
@@ -309,13 +328,15 @@ class CSF(Wavefunction):
         naos = mo_coeff.shape[0]
         norbs = mo_coeff.shape[1]
         virs = list(set([i for i in range(norbs)]) - set(self.core + self.act))
-        inv_perm = np.zeros(len(self.permutation), dtype=int)
-        for i, p in enumerate(self.permutation):
-            inv_perm[p] = i
         new_coeffs = np.zeros((naos, norbs))
         new_coeffs[:, self.core] = self.mo_coeff[:, np.arange(len(self.core))]
-        new_coeffs[:, self.act] = self.mo_coeff[:, np.arange(len(self.core), len(self.core) + len(self.act))][:,
-                                  inv_perm]
+        if self.permutation is not None:
+            inv_perm = np.zeros(len(self.permutation), dtype=int)
+            for i, p in enumerate(self.permutation):
+                inv_perm[p] = i
+            new_coeffs[:, self.act] = self.mo_coeff[:, np.arange(len(self.core), len(self.core) + len(self.act))][:, inv_perm]
+        else:
+            new_coeffs[:, self.act] = self.mo_coeff[:, np.arange(len(self.core), len(self.core) + len(self.act))]
         new_coeffs[:, virs] = self.mo_coeff[:, np.arange(len(self.core) + len(self.act), norbs)]
         return new_coeffs
 
