@@ -172,7 +172,6 @@ class CSF(Wavefunction):
         # Setup CSF
         self.setup_csf(stot, active_space, core, active, g_coupling, permutation, None, csf_build,
                        localstots, active_subspaces)
-
         # Initialise object
         self.initialise(mo_coeff, None)
 
