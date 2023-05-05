@@ -316,7 +316,7 @@ class CSF(Wavefunction):
         norbs = mo_coeff.shape[1]
         virs = list(set([i for i in range(norbs)]) - set(self.core + self.act))
         core_orbs = mo_coeff[:, self.core]
-        if self.permutation is not None:
+        if bool(self.permutation):
             act_orbs = mo_coeff[:, self.act][:, self.permutation]
         else:
             act_orbs = mo_coeff[:, self.act]
@@ -330,7 +330,7 @@ class CSF(Wavefunction):
         virs = list(set([i for i in range(norbs)]) - set(self.core + self.act))
         new_coeffs = np.zeros((naos, norbs))
         new_coeffs[:, self.core] = self.mo_coeff[:, np.arange(len(self.core))]
-        if self.permutation is not None:
+        if bool(self.permutation):
             inv_perm = np.zeros(len(self.permutation), dtype=int)
             for i, p in enumerate(self.permutation):
                 inv_perm[p] = i
