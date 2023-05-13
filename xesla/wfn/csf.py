@@ -44,9 +44,8 @@ class CSF(Wavefunction):
         # self.nDet = self.csf_instance.n_dets
 
         # Save mapping indices for unique orbital rotations
-        #self.frozen = frozen
-        #self.rot_idx = self.uniq_var_indices(self.norb, self.frozen)
-        #self.nrot = np.sum(self.rot_idx)
+        self.frozen = frozen
+
 
     @property
     def dim(self):
