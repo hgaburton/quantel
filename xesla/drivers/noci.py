@@ -74,8 +74,9 @@ def noci(wfnlist, lindep_tol=1e-8, plev=1):
     w = eigval[0,:]
     if plev > 0: print(" done")
 
-    # Save eigenvalues to disk
+    # Save eigenvalues and eigenvectors to disk
     numpy.savetxt('noci_energy_list', w,fmt="% 16.10f")
+    numpy.savetxt('noci_evecs', v, fmt="% 8.6f")
 
     print("\n NOCI Eigenvalues")
     print(w)
