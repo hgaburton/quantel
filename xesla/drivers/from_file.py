@@ -56,7 +56,7 @@ def from_file(mol, config):
             myopt = OPT(**optconfig)
             if not myopt.run(myfun, **config["optimiser"]["keywords"]):
                 continue
-
+            
             # Get the Hessian index
             hindices = myfun.get_hessian_index()
             if (hindices[0] != target_index) and (target_index is not None):

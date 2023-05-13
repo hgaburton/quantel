@@ -3,7 +3,7 @@
 import numpy
 from pygnme import utils
 
-def overlap(wfnlist, lindep_tol=1e-8, plev=1):
+def overlap(wfnlist, lindep_tol=1e-8, plev=1, save=True):
     """"Perform a NOCI calculation for wavefunctions defined in wfnlist"""
 
     # Get number of states
@@ -24,7 +24,8 @@ def overlap(wfnlist, lindep_tol=1e-8, plev=1):
     if plev > 0: print(" done")
 
     # Save to disk for safekeeping
-    numpy.savetxt('noci_ov',  Swx, fmt="% 8.6f")
+    if save:
+        numpy.savetxt('noci_ov',  Swx, fmt="% 8.6f")
 
     # Print Hamiltonian and Overlap matrices 
     if plev > 0:
@@ -72,6 +73,10 @@ def noci(wfnlist, lindep_tol=1e-8, plev=1):
     eigval, v = utils.gen_eig_sym(nstate, Hwx, Swx, thresh=1e-8)
     w = eigval[0,:]
     if plev > 0: print(" done")
+
+    # Save eigenvalues and eigenvectors to disk
+    numpy.savetxt('noci_energy_list', w,fmt="% 16.10f")
+    numpy.savetxt('noci_evecs', v, fmt="% 8.6f")
 
     print("\n NOCI Eigenvalues")
     print(w)

@@ -1,0 +1,24 @@
+basis                   sto-3g
+charge                  0
+spin                    0
+
+method                  csf
+noci			true
+overlap_matrix		true
+csf_build		clebschgordon
+active_space            4 4
+core_orbitals           0 1 2 3 4 5
+active_orbitals         7 9 8 6
+genealogical_coupling   ++--
+coupling_permutation    0 1 2 3
+total_spin              1.00
+local_spins		1.00 1.00
+active_subspaces        2 2 2 2
+
+algorithm               mode_control
+convergence             1e-8
+
+guess                   fromfile
+read_dir                ./
+nsample                 1
+

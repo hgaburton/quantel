@@ -26,7 +26,12 @@ CSF inputs:
   coupling_permutation  int int ... : [Required] List of indices for ordering orbitals involved in the spin coupling
   mo_basis                      str : [Optional] Type of orbital guess to use. Default = site
   total_spin                  float : [Required] Total spin value for CSF
-
+  csf_build			str : [Optional] Method for building CSF. Default = genealogical
+  local_spins		float float : [Optional] Used when csf_build = clebschgordon. Total spin value of local bases
+  active_subspaces  	int int ... : [Optional] Used when csf_build = clebschgordon. [o_1, e_1, o_2, e_2]
+						 where o_i = Number of active orbitals on site i and e_i = Number of active electrons on site i.  
+ 
+ 
 ESMF input:
 --------------
   with_ref  bool : [Optional] If False, the closed-shell reference is excluded from wavefunction. Default = True

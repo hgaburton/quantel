@@ -5,7 +5,7 @@
    Authors: 
        Hugh G. A. Burton  2020-
        Antoine Marie      2021
-       Nick Lee           2022-
+       Nicholas Lee       2022-
 """
 
 import sys, argparse, numpy, time
@@ -22,7 +22,7 @@ def write_splash():
     print("  in electronic structure theory.                  ")
     print("                                                   ")
     print("  Written by                                       ")
-    print("     Antoine Marie, Nick Lee,                      ")
+    print("     Antoine Marie, Nicholas Lee,                  ")
     print("     and Hugh G. A. Burton                         ")
     print("===================================================")
 
