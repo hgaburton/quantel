@@ -64,10 +64,13 @@ def from_file(mol, config):
 
             # Compare solution against previously found states
             new = True
-            for prev, otherwfn in enumerate(wfn_list):
-                if 1.0 - abs(myfun.overlap(otherwfn)) < config["jobcontrol"]["dist_thresh"]:
-                    new = False
-                    break
+            if config["jobcontrol"]["skip_ovlp_check"]:
+                pass
+            else:
+                for prev, otherwfn in enumerate(wfn_list):
+                    if 1.0 - abs(myfun.overlap(otherwfn)) < config["jobcontrol"]["dist_thresh"]:
+                        new = False
+                        break
 
             # Save the solution if it is a new one!
             if new: 

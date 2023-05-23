@@ -62,7 +62,7 @@ class Config(dict):
                                                csf_build = getvalue(self.lines,"csf_build",str,True),
                                                localstots = getlist(self.lines,"local_spins",float,False),
                                                active_subspaces = getlist(self.lines,"active_subspaces",int,False),
-                                               lcdir = getvalue(self.lines,"linearcombdir",str,False),
+                                               lcdir = getvalue(self.lines,"linearcombdir",str,False,None),
                                                rel_weights=getlist(self.lines, "relative_weights", int, False)
                                               )
 
@@ -101,7 +101,8 @@ class Config(dict):
         self["jobcontrol"] = dict(guess = getvalue(self.lines,"guess",str,False,default="random").lower(), 
                                   noci  = getbool(self.lines,"noci",False,default=False),
                                   dist_thresh = getvalue(self.lines,"dist_tresh",float,False,default=1e-8),
-                                  ovlp_mat = getbool(self.lines,"overlap_matrix",False,default=False)
+                                  ovlp_mat = getbool(self.lines,"overlap_matrix",False,default=False),
+                                  skip_ovlp_check = getbool(self.lines,"skip_ovlp_check",False,default=False)
                                   ) 
         
         if self["jobcontrol"]["guess"] == "random":

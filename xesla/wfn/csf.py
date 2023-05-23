@@ -83,8 +83,9 @@ class CSF(Wavefunction):
         return (self.get_hessianOrbOrb()[:, :, self.rot_idx])[self.rot_idx, :]
 
     def setup_csf(self, stot: float, active_space: List[int], core: List[int], active: List[int],
-                  g_coupling: str, permutation: List[int], mo_basis: 'str',
-                  csf_build, localstots, active_subspaces, lcdir, rel_weights):
+                  g_coupling: str, permutation: List[int], mo_basis: str = 'genealogical',
+                  csf_build: str = None, localstots: List[int] = None,
+                  active_subspaces: List[int] = None, lcdir: str = None, rel_weights: List[float] = None):
 
         self.ncas = active_space[0]  # Number of active orbitals
         self.stot = stot  # Total S value
@@ -113,7 +114,6 @@ class CSF(Wavefunction):
         assert ncorelec % 2 == 0
         assert ncorelec >= 0
         self.ncore = ncorelec // 2
-
         # Build CSF
         if csf_build.lower() == 'genealogical':
             self.csf_instance = GCCSF(self.mol, self.stot, len(self.core), len(self.act),
@@ -201,7 +201,6 @@ class CSF(Wavefunction):
         # Read the .csf file
         with open(tag + '.csf', 'r') as inF:
             lines = inF.read().splitlines()
-
         stot = getvalue(lines, "total_spin", float, True)
         active_space = getlist(lines, "active_space", int, False)
         core = getlist(lines, "core_orbitals", int, False)
@@ -211,9 +210,8 @@ class CSF(Wavefunction):
         csf_build = getvalue(lines, "csf_build", str, True)
         localstots = getlist(lines, "local_spins", float, False)
         active_subspaces = getlist(lines, "active_subspaces", int, False)
-        lcdir = getvalue(lines, "linearcombdir", str, False),
-        rel_weights = getlist(lines, "relative_weights", int, False)
-
+        lcdir = getvalue(lines, "linearcombdir", str, False, None)
+        rel_weights = getlist(lines, "relative_weights", float, False)
 
         # Setup CSF
         if csf_build.lower() == 'nocsf':
@@ -230,7 +228,7 @@ class CSF(Wavefunction):
         newcsf = CSF(self.mol, self.stot, [self.ncas, self.nelecas], list(np.arange(len(self.core), dtype=int)),
                      list(np.arange(len(self.core), len(self.core) + len(self.act), dtype=int)),
                      self.g_coupling, self.frozen, self.permutation, self.mo_basis,
-                     self.csf_build, self.localstots, self.active_subspaces)
+                     self.csf_build, self.localstots, self.active_subspaces, self.lcdir, self.rel_weights)
         newcsf.initialise(self.mo_coeff, integrals=False)
         return newcsf
 
