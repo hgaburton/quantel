@@ -11,8 +11,8 @@ from pyscf import scf, fci, __config__, ao2mo, lib, mcscf
 from xesla.io.parser import getlist, getvalue
 from xesla.wfn.CSFBuilder.CGCSF import CGCSF
 from xesla.wfn.CSFBuilder.GCCSF import GCCSF
+from xesla.wfn.CSFBuilder.LCCSF import LCCSF
 from xesla.wfn.CSFBuilder.NoCSF import NoCSF
-from xesla.wfn.CSFBuilder.Operators.Operators import get_generic_no_overlap
 from xesla.utils.linalg import delta_kron, orthogonalise
 from .wavefunction import Wavefunction
 
@@ -21,7 +21,8 @@ class CSF(Wavefunction):
     def __init__(self, mol, stot, active_space=None, core: List[int] = None,
                  active: List[int] = None, g_coupling: str = None, frozen: int = 0,
                  permutation: List[int] = None, mo_basis: 'str' = 'site', csf_build: str = 'genealogical',
-                 localstots: List[float] = None, active_subspaces: List[int] = None):
+                 localstots: List[float] = None, active_subspaces: List[int] = None,
+                 lcdir: str = None, rel_weights: List[float] = None):
 
         # Save molecule and reference SCF
         self.mol = mol
@@ -38,7 +39,7 @@ class CSF(Wavefunction):
             self.setup_nocsf(stot, core, mo_basis, localstots, active_subspaces)
         else:
             self.setup_csf(stot, active_space, core, active, g_coupling, permutation, mo_basis, csf_build,
-                           localstots, active_subspaces)
+                           localstots, active_subspaces, lcdir, rel_weights)
 
         # Get number of determinants (which is the dimension of the problem)
         # self.nDet = self.csf_instance.n_dets
@@ -82,9 +83,8 @@ class CSF(Wavefunction):
         return (self.get_hessianOrbOrb()[:, :, self.rot_idx])[self.rot_idx, :]
 
     def setup_csf(self, stot: float, active_space: List[int], core: List[int], active: List[int],
-                  g_coupling: str, permutation: List[int], mo_basis: 'str' = "site",
-                  csf_build: str = 'genealogical', localstots: List[float] = None,
-                  active_subspaces: List[int] = None):
+                  g_coupling: str, permutation: List[int], mo_basis: 'str',
+                  csf_build, localstots, active_subspaces, lcdir, rel_weights):
 
         self.ncas = active_space[0]  # Number of active orbitals
         self.stot = stot  # Total S value
@@ -96,8 +96,10 @@ class CSF(Wavefunction):
 
         self.mo_basis = mo_basis  # Choice of basis for orbital guess
         self.csf_build = csf_build  # Method for constructing CSFs
-        self.localstots = localstots  # Local spins
-        self.active_subspaces = active_subspaces  # Local active spaces
+        self.localstots = localstots  # Local spins if we are doing Clebsch-Gordon coupling
+        self.active_subspaces = active_subspaces  # Local active spaces if we are doing Clebsch-Gordon coupling
+        self.lcdir = lcdir  # Directory for component CSFs if we are using a linear combination
+        self.rel_weights = rel_weights   # Relative weights for each component CSFs if we are using a linear combination
         self.mat_ci = None
 
         if isinstance(active_space[1], (int, np.integer)):
@@ -124,6 +126,8 @@ class CSF(Wavefunction):
                                       (active_subspaces[0], active_subspaces[1]),
                                       (active_subspaces[2], active_subspaces[3]),
                                       len(self.core), len(self.act))
+        elif csf_build.lower() == 'linearcomb':
+            self.csf_instance = LCCSF(self.mol, self.stot, len(self.core), len(self.act), lcdir, rel_weights)
         else:
             import sys
             sys.exit("The requested CSF build is not supported, exiting.")
@@ -132,7 +136,8 @@ class CSF(Wavefunction):
         self.nrot = np.sum(self.rot_idx)
 
     def setup_nocsf(self, stot: float, core: List[int], mo_basis: 'str' = "site",
-                    localstots: List[float] = None, active_subspaces: List[int] = None):
+                    localstots: List[float] = None, active_subspaces: List[int] = None,
+                    lcdir = None, rel_weights = None):
 
         self.stot = stot  # Total S value
         self.core = core  # List of core (doubly occupied) orbitals
@@ -141,6 +146,8 @@ class CSF(Wavefunction):
         self.csf_build = 'nocsf'  # Method for constructing CSFs
         self.localstots = localstots  # Local spins
         self.active_subspaces = active_subspaces  # Local active spaces
+        self.lcdir = lcdir
+        self.rel_weights = rel_weights
         self.mat_ci = None
 
         ncorelec = self.mol.nelectron
@@ -182,6 +189,9 @@ class CSF(Wavefunction):
             outF.write(('localstots            ' + len(self.localstots) * " {:d}" + "\n").format(*self.localstots))
             outF.write(
                 ('active_subspaces      ' + len(self.active_subspaces) * " {:d}" + "\n").format(*self.active_subspaces))
+            outF.write('linearcombdir  {:s}\n'.format(self.lcdir))
+            outF.write(
+                ('relative_weights      ' + len(self.rel_weights) * " {:d}" + "\n").format(*self.rel_weights))
 
     def read_from_disk(self, tag):
         """Read a SS-CASSCF object from disk with prefix 'tag'"""
@@ -201,13 +211,16 @@ class CSF(Wavefunction):
         csf_build = getvalue(lines, "csf_build", str, True)
         localstots = getlist(lines, "local_spins", float, False)
         active_subspaces = getlist(lines, "active_subspaces", int, False)
+        lcdir = getvalue(lines, "linearcombdir", str, False),
+        rel_weights = getlist(lines, "relative_weights", int, False)
+
 
         # Setup CSF
         if csf_build.lower() == 'nocsf':
             self.setup_nocsf(stot, core, None, localstots, active_subspaces)
         else:
             self.setup_csf(stot, active_space, core, active, g_coupling, permutation, None, csf_build,
-                           localstots, active_subspaces)
+                           localstots, active_subspaces, lcdir, rel_weights)
         # Initialise object
         self.initialise(mo_coeff, None)
 
@@ -221,7 +234,50 @@ class CSF(Wavefunction):
         newcsf.initialise(self.mo_coeff, integrals=False)
         return newcsf
 
-    def overlap(self, ref):
+    def overlap(self, other):
+        s = 0
+        h = 0
+        if self.csf_instance == 'linearcomb' and other.csf_instance == 'linearcomb':
+            for i, coeffa in enumerate(self.csf_instance.lccoeffs):
+                for j, coeffb in enumerate(other.csf_instance.lccoeffs):
+                    stemp, htemp = self.csf_instance.wfnlist[i].hamiltonian_eval(other.csf_instance.wfnlist[j])
+                    s += (stemp * coeffa * coeffb)
+        elif self.csf_instance == 'linearcomb':
+            for i, coeffa in enumerate(self.csf_instance.lccoeffs):
+                stemp, htemp = self.csf_instance.wfnlist[i].hamiltonian_eval(other)
+                s += (stemp * coeffa)
+        elif other.csf_instance == 'linearcomb':
+            for i, coeffa in enumerate(other.csf_instance.lccoeffs):
+                stemp, htemp = self.hamiltonian_eval(other.csf_instance.wfnlist[i])
+                s += (stemp * coeffa)
+        else:
+            s, h = self.hamiltonian_eval(other)
+        return s
+
+    def hamiltonian(self, other):
+        s = 0
+        h = 0
+        if self.csf_instance == 'linearcomb' and other.csf_instance == 'linearcomb':
+            for i, coeffa in enumerate(self.csf_instance.lccoeffs):
+                for j, coeffb in enumerate(other.csf_instance.lccoeffs):
+                    stemp, htemp = self.csf_instance.wfnlist[i].hamiltonian_eval(other.csf_instance.wfnlist[j])
+                    s += (stemp * coeffa * coeffb)
+                    h += (htemp * coeffa * coeffb)
+        elif self.csf_instance == 'linearcomb':
+            for i, coeffa in enumerate(self.csf_instance.lccoeffs):
+                stemp, htemp = self.csf_instance.wfnlist[i].hamiltonian_eval(other)
+                s += (stemp * coeffa)
+                h += (htemp * coeffa)
+        elif other.csf_instance == 'linearcomb':
+            for i, coeffa in enumerate(other.csf_instance.lccoeffs):
+                stemp, htemp = self.hamiltonian_eval(other.csf_instance.wfnlist[i])
+                s += (stemp * coeffa)
+                h += (htemp * coeffa)
+        else:
+            s, h = self.hamiltonian_eval(other)
+        return s, h
+
+    def overlap_eval(self, other):
         r"""
         Determines the overlap between the current CSF and a reference CSF.
 
@@ -233,10 +289,10 @@ class CSF(Wavefunction):
         #cross_overlap_mat = scipy.linalg.block_diag(smo, smo)
         #return get_generic_no_overlap(self.csf_instance.dets_sq, ref.csf_instance.dets_sq, csf_coeffs, ref_coeffs,
         #                              cross_overlap_mat)
-        s, h = self.hamiltonian(ref)
+        s, h = self.hamiltonian(other)
         return s
 
-    def hamiltonian(self, other, thresh=1e-10):
+    def hamiltonian_eval(self, other, thresh=1e-10):
         # x = self
         # w = other
         self.update_integrals()

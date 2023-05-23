@@ -61,7 +61,9 @@ class Config(dict):
                                                stot = getvalue(self.lines,"total_spin",float,True),
                                                csf_build = getvalue(self.lines,"csf_build",str,True),
                                                localstots = getlist(self.lines,"local_spins",float,False),
-                                               active_subspaces = getlist(self.lines,"active_subspaces",int,False)
+                                               active_subspaces = getlist(self.lines,"active_subspaces",int,False),
+                                               lcdir = getvalue(self.lines,"linearcombdir",str,False),
+                                               rel_weights=getlist(self.lines, "relative_weights", int, False)
                                               )
 
 
