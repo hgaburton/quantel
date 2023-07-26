@@ -1,15 +1,16 @@
 basis                   6-31g
 charge                  0
 spin                    0
-units                   B
+units                   b
 
 method                  esmf
-active_space            2 2
+with_ref                true
 
 algorithm               eigenvector_following
-convergence             1e-8
-target_index            0
+convergence             1e-7
+target_index            1
 
 guess                   random
 ci_guess                0 1 2
-overlap_matrix          true
+
+noci                    true
