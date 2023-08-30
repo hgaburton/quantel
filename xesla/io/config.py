@@ -47,6 +47,9 @@ class Config(dict):
         if self["wavefunction"]["method"] == "esmf":
             # TODO: Add support for triplet states 
             self["wavefunction"]["esmf"] = dict(ref_allowed = getbool(self.lines,"with_ref",False,True))
+        
+        if self["wavefunction"]["method"] == "pp":
+            self["wavefunction"]["pp"] = dict()
 
         elif self["wavefunction"]["method"] == "casscf":
             self["wavefunction"]["casscf"] = dict(active_space = getlist(self.lines,"active_space",int,True))

@@ -73,13 +73,13 @@ rotate x by 100
 #rotate z by 100
 
 #render gs [lindex \$argv 0].ps
-#render POV3 [lindex \$argv 0].pov 
-render TachyonInternal [lindex \$argv 0].tga
+render POV3 [lindex \$argv 0].pov 
+#render TachyonInternal [lindex \$argv 0].tga
 
 exit
 " > plot.tcl 
 
 vmd -dispdev none -e plot.tcl -args $1 $2 $3
-#rm $1.png &> /dev/null
-#povray +W1024 +H1024 +FN +A +C -D +UA -I$1.pov -O$1.png
+rm $1.png &> /dev/null
+povray +W300 +H300 +FN +A +C -D +UA -I$1.pov -O$1.png
 rm plot.tcl

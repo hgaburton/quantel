@@ -29,6 +29,9 @@ def random_search(mol, config):
     elif config["wavefunction"]["method"] == "csf":
         from xesla.wfn.csf import CSF as WFN
         ndet = 0
+    elif config["wavefunction"]["method"] == "pp":
+        from xesla.wfn.pp import PP as WFN
+        ndet = 0
         
     # Get variables
     nmo  = ref_mo.shape[1]
@@ -62,6 +65,20 @@ def random_search(mol, config):
         except: pass
         myfun = WFN(mol, **wfnconfig)
         myfun.initialise(mo_guess, ci_guess)
+        #grad_anal = myfun.gradient
+        #grad_num  = myfun.get_numerical_gradient()
+        #print("GRAD")
+        #print(grad_anal)
+        #print(grad_num)
+        #print(numpy.linalg.norm(grad_anal-grad_num))
+        #grad_anal = myfun.hessian
+        #grad_num  = myfun.get_numerical_hessian()
+        #print("HESS")
+        #print(grad_anal)
+        #print(grad_num)
+        #print(grad_anal - grad_num)
+        #print(numpy.linalg.norm(grad_anal-grad_num))
+        #quit()
 
         # Run the optimisation
         myopt = OPT(**optconfig)
