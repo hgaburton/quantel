@@ -10,8 +10,8 @@
 
 import sys, argparse, numpy, time, os
 from datetime import datetime, timedelta
-from xesla.io.config import Config
-from xesla.drivers import random_search, ci_guess, from_file, noci, overlap, analyse
+from qland.io.config import Config
+from qland.drivers import random_search, ci_guess, from_file, noci, overlap, analyse
 from pyscf import gto
 
 os.environ["MKL_NUM_THREADS"] = "1"
@@ -19,7 +19,7 @@ os.environ["OMP_NUM_THREADS"] = "1"
 
 def write_splash():
     print("===================================================")
-    print("                      XESLA                        ")
+    print("                      QLand                        ")
     print("===================================================")
     print("  A library for exploring excited-state solutions  ")
     print("  in electronic structure theory.                  ")
@@ -81,6 +81,6 @@ def main():
     end_time = time.monotonic()
     print()
     print("===================================================")
-    print(" Calculation complete. Thank you for using XESLA!  ")
+    print(" Calculation complete. Thank you for using QLand!  ")
     print(" Total time = {:5.3f}s".format(timedelta(seconds=(end_time - start_time)).total_seconds()))
     print("===================================================")

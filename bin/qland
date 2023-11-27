@@ -8,7 +8,7 @@
        Nick Lee           2022-
 """
 
-from xesla.main import main
+from qland.main import main
 
 if __name__=="__main__":
     main()

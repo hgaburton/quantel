@@ -5,9 +5,9 @@ import numpy as np
 import scipy.linalg
 from functools import reduce
 from pyscf import scf, __config__, ao2mo, lo
-from xesla.utils.linalg import delta_kron, orthogonalise
+from qland.utils.linalg import delta_kron, orthogonalise
 from .wavefunction import Wavefunction
-from xesla.gnme.pcid_noci import pcid_coupling
+from qland.gnme.pcid_noci import pcid_coupling
 
 class PP(Wavefunction):
     def __init__(self, mol):

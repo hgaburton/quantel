@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 import numpy
-from xesla.utils.linalg import random_rot
+from qland.utils.linalg import random_rot
 
 def ci_guess(mol, config):
     """Generate wavefunctions using standard CI guess as the starting point"""
@@ -21,11 +21,11 @@ def ci_guess(mol, config):
 
     wfnconfig = config["wavefunction"][config["wavefunction"]["method"]]
     if config["wavefunction"]["method"] == "esmf":
-        from xesla.wfn.esmf import ESMF as WFN
+        from qland.wfn.esmf import ESMF as WFN
         ref_ci = numpy.identity(WFN(mol, **wfnconfig).nDet)
         ndet = ref_ci.shape[1]
     elif config["wavefunction"]["method"] == "casscf":
-        from xesla.wfn.ss_casscf import SS_CASSCF as WFN
+        from qland.wfn.ss_casscf import SS_CASSCF as WFN
         ref_ci = numpy.identity(WFN(mol, **wfnconfig).nDet)
         ndet = ref_ci.shape[1]
     elif config["wavefunction"]["method"] == "csf":
@@ -38,9 +38,9 @@ def ci_guess(mol, config):
     # Select the optimiser
     optconfig = config["optimiser"][config["optimiser"]["algorithm"]]
     if config["optimiser"]["algorithm"] == "eigenvector_following":
-        from xesla.opt.eigenvector_following import EigenFollow as OPT
+        from qland.opt.eigenvector_following import EigenFollow as OPT
     elif config["optimiser"]["algorithm"] == "mode_control":
-        from xesla.opt.mode_controlling import ModeControl as OPT
+        from qland.opt.mode_controlling import ModeControl as OPT
 
     # Get reference MOs and CI vector
     print("\n  Computing initial CI energies (Eh):")

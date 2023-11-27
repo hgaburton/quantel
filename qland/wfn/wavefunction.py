@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 from abc import ABCMeta, abstractmethod, abstractproperty
-from xesla.opt.function import Function
+from qland.opt.function import Function
 
 class Wavefunction(Function,metaclass=ABCMeta):
     """Abstract base class for a wavefunction object"""

@@ -6,8 +6,8 @@ import scipy.linalg
 from functools import reduce
 from pyscf import scf, fci, __config__, ao2mo, lib, mcscf
 from pyscf.mcscf import mc_ao2mo
-from xesla.utils.linalg import delta_kron, orthogonalise
-from xesla.gnme.cas_noci import cas_coupling
+from qland.utils.linalg import delta_kron, orthogonalise
+from qland.gnme.cas_noci import cas_coupling
 from .wavefunction import Wavefunction
 
 class SS_CASSCF(Wavefunction):
