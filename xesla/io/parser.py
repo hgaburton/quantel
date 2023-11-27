@@ -13,7 +13,7 @@ def getvalue(lines, target, typ, required=False, default=None):
     elif default is not None:
         return default
 
-def getlist(lines, target, typ, required=False):
+def getlist(lines, target, typ, required=False, default=None):
     """Get the value of a keyword with a list of arguments"""
     for line in lines:
         if re.match(target, line) is not None:
@@ -21,6 +21,8 @@ def getlist(lines, target, typ, required=False):
     if required:
         errstr = "Keyword '"+target+"' was not found"
         raise ValueError(errstr)
+    elif default is not None:
+        return default
     return []
 
 def getbool(lines, target, required=False, default=None):

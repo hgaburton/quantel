@@ -582,6 +582,9 @@ class SS_CASSCF(Wavefunction):
     def cas_natorb(self, mo_coeff=None, ci=None, eris=None, sort=False, casdm1=None, verbose=None, with_meta_lowdin=True):
         test = mcscf.casci.cas_natorb(self, mo_coeff, ci, eris, sort, casdm1, verbose, True)
         return test
+
+    def canonicalise(self):
+        self.canonicalize_()
     def canonicalize_(self):
         # Compute canonicalised natural orbitals
         ao2mo_level = getattr(__config__, 'mcscf_mc1step_CASSCF_ao2mo_level', 2)

@@ -8,11 +8,14 @@
        Nicholas Lee       2022-
 """
 
-import sys, argparse, numpy, time
+import sys, argparse, numpy, time, os
 from datetime import datetime, timedelta
 from xesla.io.config import Config
-from xesla.drivers import random_search, ci_guess, from_file, noci, overlap
+from xesla.drivers import random_search, ci_guess, from_file, noci, overlap, analyse
 from pyscf import gto
+
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
 
 def write_splash():
     print("===================================================")
@@ -53,7 +56,9 @@ def main():
 
     # Generate wavefunctions 
     wfnlist = None
-    if config["jobcontrol"]["guess"] == "fromfile":
+    if config["jobcontrol"]["analyse"]:
+        analyse(mol, config)
+    elif config["jobcontrol"]["guess"] == "fromfile":
         wfnlist = from_file(mol, config)
     elif config["jobcontrol"]["guess"] == "random":
         wfnlist = random_search(mol, config)
@@ -68,6 +73,8 @@ def main():
         noci(wfnlist, **config["jobcontrol"]["noci_job"])
     elif config["jobcontrol"]["ovlp_mat"]:
         overlap(wfnlist)
+
+
 
 
     # Clean up

@@ -68,3 +68,10 @@ CI guess:
 Read from file:
 ---------------
   read_dir  str str... : [Required] List of directories to search for solutions
+
+==============
+Analysis:
+==============
+  analyse              bool  : [Optional] Determine if solution analysis will be performed. Default = False
+  states             str str : [Optional] Tag name for solutions to be analysed. Default = all
+  orbital_plots      int int : [Required] Range of orbital cube files to be generated (1-indexed).

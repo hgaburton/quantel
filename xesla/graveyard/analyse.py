@@ -4,9 +4,7 @@ import sys, re
 import numpy as np
 from scipy.linalg import expm as scipy_expm
 from pyscf import gto
-from ss_casscf import ss_casscf
-from opt.eigenvector_following import EigenFollow
-from gnme.cas_noci import cas_proj
+from xesla.wfn.ss_casscf import SS_CASSCF as ss_casscf
 from pyscf.tools import cubegen
 
 def random_rot(n, lmin, lmax):
@@ -41,9 +39,9 @@ if __name__ == '__main__':
                 Hind = int(line.split()[-1])
             elif re.match('maxit', line) is not None:
                 maxit = int(line.split()[-1])
-            elif re.match('cas', line) is not None:
-                tmp = list(re.split(r'\s', line)[-1])
-                cas = (int(tmp[1]), int(tmp[3]))
+            elif re.match('active_space', line) is not None:
+                tmp = list(re.split(r'\s+', line))
+                cas = (int(tmp[1]), int(tmp[2]))
             elif re.match('nsample', line) is not None:
                 nsample = int(re.split(r'\s', line)[-1])
             elif re.match('units', line) is not None:
@@ -66,7 +64,7 @@ if __name__ == '__main__':
     myhf = mol.RHF().run()
 
     # Initialise CAS object
-    mycas = ss_casscf(mol, cas[0], cas[1])
+    mycas = ss_casscf(mol, cas)
 
     nmo = myhf.mo_coeff.shape[1]
     ndet = mycas.nDet
@@ -80,7 +78,8 @@ if __name__ == '__main__':
     mycas.canonicalize_()
 
     #for i in range(mycas.ncore,mycas.ncore+mycas.ncas):
-    for i in range(mycas.ncore+mycas.ncas):
+    for i in range(mycas.ncore,mycas.ncore+mycas.ncas):
+        print(i)
     #for i in range(mycas.norb):
         cubegen.orbital(mol, 'mo.{:d}.cube'.format(i), mycas.mo_coeff[:,i])
 

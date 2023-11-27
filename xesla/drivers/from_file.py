@@ -51,6 +51,8 @@ def from_file(mol, config):
             except: pass
             myfun = WFN(mol, **wfnconfig)
             myfun.read_from_disk(old_tag)
+            print(myfun.ncore)
+            print(myfun.mat_ci)
 
             # Run the optimisation
             myopt = OPT(**optconfig)

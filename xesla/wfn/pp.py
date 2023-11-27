@@ -4,7 +4,7 @@
 import numpy as np
 import scipy.linalg
 from functools import reduce
-from pyscf import scf, __config__, ao2mo
+from pyscf import scf, __config__, ao2mo, lo
 from xesla.utils.linalg import delta_kron, orthogonalise
 from .wavefunction import Wavefunction
 from xesla.gnme.pcid_noci import pcid_coupling
@@ -30,6 +30,10 @@ class PP(Wavefunction):
         # Initialise space for amplitudes
         self.t = np.zeros((self.nocc,self.nvir))
         self.z = np.zeros((self.nocc,self.nvir))
+
+        self.amp_idx = np.zeros((self.nocc,self.nvir),dtype=bool)
+        for i in range(self.nocc):
+            self.amp_idx[self.nocc-i-1,i] = True
 
         self.rot_idx    = self.uniq_var_indices()
         self.nrot       = np.sum(self.rot_idx)
@@ -76,6 +80,8 @@ class PP(Wavefunction):
 
     def solve_amplitudes(self):
         """Analytically solve the perfect pairing amplitudes"""
+        told = self.t.copy()
+
         self.Ec = 0
         for ie in range(self.nocc):
             io, iv = self.get_pair_indices(ie)
@@ -90,13 +96,12 @@ class PP(Wavefunction):
             t = (- b + np.sqrt(b * b - 4 * a * c)) / (2 * a) 
             # Get coefficients for z equations
             z = - c / (2 * a * t + b)  
-            # Add contribution to energy
+            # Add contribution to energy 
             self.Ec += t * self.pppp[iv,io,iv,io]
             # Save t and z
             self.t[io,iv-self.nocc] = t
             self.z[io,iv-self.nocc] = z
 
-        self.compute_rdms()
 
     def compute_rdms(self):
         # Compute intermediates
@@ -150,7 +155,24 @@ class PP(Wavefunction):
     @property
     def energy(self):
         """Get the total energy"""
-        return self.E0 + self.Ec
+        E = self.E0
+        L = self.E0
+        for ie in range(self.nocc):
+            io, iv = self.get_pair_indices(ie)
+            
+            # Get coefficients for quadratic
+            a = - self.pppp[iv,io,iv,io]
+            b = (2 * (self.F[iv,iv] - self.F[io,io] - 2 * self.pppp[iv,iv,io,io] + self.pppp[io,iv,iv,io]) 
+                    + self.pppp[iv,iv,iv,iv] + self.pppp[io,io,io,io])
+            c = self.pppp[iv,io,iv,io]
+            
+            # Solve the quadratic, always picking one root
+            t = self.t[io,iv-self.nocc]
+            z = self.z[io,iv-self.nocc]
+            # Add contribution to energy 
+            E += t * self.pppp[iv,io,iv,io]
+            L += t * self.pppp[iv,io,iv,io] + z * (a * t * t + b * t + c)
+        return E # self.E0 + self.Ec
 
     @property
     def dim(self):
@@ -158,31 +180,34 @@ class PP(Wavefunction):
 
     @property
     def gradient(self):
-        F = np.zeros((self.norb,self.norb))
-        F += np.einsum('rp,qr->pq',self.h1e,self.dm1) - np.einsum('qr,rp->pq',self.h1e,self.dm1)
-        F += np.einsum('rpst,qrts->pq',self.pppp, self.dm2) - np.einsum('qrts,rpst->pq', self.pppp, self.dm2)
-        G = (F - F.T)[self.rot_idx]
+        #F = np.zeros((self.norb,self.norb))
+        #F += np.einsum('rp,qr->pq',self.h1e,self.dm1) - np.einsum('qr,rp->pq',self.h1e,self.dm1)
+        #F += np.einsum('rpst,qrts->pq',self.pppp, self.dm2) - np.einsum('qrts,rpst->pq', self.pppp, self.dm2)
+
+        dpq = np.identity(self.norb)
+        F = np.einsum('mq,nq->mn',self.dm1,self.h1e) + np.einsum('mqrs,nqrs->mn',self.dm2,self.pppp)
+        G = 2 * (F - F.T)[self.rot_idx]
         return G
 
     @property
     def hessian(self):
-        print(self.t)
-        Htmp = self.get_numerical_hessian()
-        print(np.linalg.eigvalsh(Htmp))
-        return Htmp
         dpq = np.identity(self.norb)
         H = np.zeros((self.norb,self.norb,self.norb,self.norb))
 
-        Y  = np.einsum('up,su->sp', self.h1e, self.dm1) + np.einsum('su,up->sp', self.h1e, self.dm1)
-        Y += np.einsum('upvt,sutv->sp',self.pppp,self.dm2) + np.einsum('sutv,upvt->sp',self.pppp,self.dm2)
+        Y  = np.einsum('up,su->sp', self.h1e, self.dm1) + np.einsum('up,su->sp', self.dm1, self.h1e)
+        Y += np.einsum('upvt,sutv->sp',self.pppp,self.dm2) + np.einsum('upvt,sutv->sp',self.dm2,self.pppp)
 
-        H += 0.5 * ( np.einsum('qr,sp->pqrs',dpq,Y) + np.einsum('ps,qr->pqrs',dpq,Y) ) 
+        H += 0.5 * ( np.einsum('qr,sp->pqrs',dpq,Y) + np.einsum('qr,sp->pqrs',Y,dpq) ) 
         H -= (np.einsum('sp,qr->pqrs',self.h1e,self.dm1) + np.einsum('qr,sp->pqrs',self.h1e,self.dm1))
         H += np.einsum('upvr,qusv->pqrs',self.pppp,self.dm2) + np.einsum('qusv,upvr->pqrs',self.pppp,self.dm2)
         H -= (np.einsum('sptu,qrut->pqrs',self.pppp,self.dm2) + np.einsum('tpsu,qtur->pqrs',self.pppp,self.dm2))
         H -= (np.einsum('qrut,sptu->pqrs',self.pppp,self.dm2) + np.einsum('qtur,tpsu->pqrs',self.pppp,self.dm2))
 
-        return ((H - H.transpose(0,1,3,2) - H.transpose(1,0,2,3) + H.transpose(1,0,3,2))[:,:,self.rot_idx])[self.rot_idx,:]
+        Ht = np.einsum('pqrs->pqrs',H) - np.einsum('pqsr->pqrs',H)
+        H  = np.einsum('pqrs->pqrs',Ht) - np.einsum('qprs->pqrs',Ht)
+
+        hess = (H[:,:,self.rot_idx])[self.rot_idx,:]
+        return hess
 
     def save_last_step(self):
         self.mo_coeff_save = self.mo_coeff.copy()
@@ -198,41 +223,80 @@ class PP(Wavefunction):
     def take_step(self,step):
         # Save our last position
         self.save_last_step()
-        # Take steps in orbital and CI space
-        self.rotate_orb(step[:self.nrot])
+        # Take steps in orbital space
+        self.rotate_orb(step)
         # Update integrals
         self.update_integrals()
         # Solve amplitude equations
         self.solve_amplitudes()
+        # Compute RDM
+        self.compute_rdms()
         return
 
     def rotate_orb(self,step): 
         orb_step = np.zeros((self.norb,self.norb))
-        orb_step[self.rot_idx] = step
+        orb_step[self.rot_idx] = -step
         self.mo_coeff = np.dot(self.mo_coeff, scipy.linalg.expm(orb_step - orb_step.T))
         return
 
     def overlap(self, other):
-        return None
+        return 0
     def hamiltonian(self, other):
-        return None
+        return 0
 
     def initialise(self, mo_guess, mat_ci=None, integrals=True):
         # Check orthogonalisation
         self.mo_coeff = orthogonalise(mo_guess, self.ovlp)
+        
+#        print(self.nocc)
+#        print(self.mo_coeff)
+##        pm = lo.boys.Boys(self.mol, self.mo_coeff[:,:self.nocc])
+#        pm = lo.PM(self.mol, self.mo_coeff[:,:self.nocc])
+#        pm.init_guess = 'atomic'
+#        Cocc = pm.kernel(verbose=10)
+#
+#        Cvir = lo.vvo.livvo(self.mol, Cocc, self.mo_coeff[:,self.nocc:], verbose=2)
+#        print(Cocc)
+#        print(Cvir)
+#
+#        ov = Cvir.T.dot(self.ovlp).dot(Cocc)
+#        print(Cocc[:,[0]].dot(Cvir[:,[0]].T))
+#        print(ov)
+#        quit()
+         
+
+
         self.nmo = self.mo_coeff.shape[1]
 
         # Initialise integrals
-        if(integrals): self.update_integrals()
+        self.update_integrals()
 
         # Solve the amplitudes
         self.solve_amplitudes()
+        # Compute RDM
+        self.compute_rdms()
 
         return None
 
     def save_to_disk(self, tag):
-        return None
-    def read_from_disk(self, tag):
-        return None
+        # Get the Hessian index
+        hindices = self.get_hessian_index()
 
+        # Save coefficients, CI, and energy
+        np.savetxt(tag+'.mo_coeff', self.mo_coeff, fmt="% 20.16f")
+        np.savetxt(tag+'.amp',      self.t[self.amp_idx], fmt="% 20.16f")
+        np.savetxt(tag+'.energy',   
+                   np.array([[self.energy, hindices[0], hindices[1], 0]]), 
+                   fmt="% 18.12f % 5d % 5d % 12.6f")
 
+    def read_from_disk(self,tag):
+        # Read MO coefficient and CI coefficients
+        mo_coeff = np.genfromtxt(tag+".mo_coeff")
+        # Initialise object
+        self.initialise(mo_coeff)
+        self.t[self.amp_idx] = np.genfromtxt(tag+'.amp')
+
+    def copy(self):
+        new = PP(self.mol)
+        new.initialise(self.mo_coeff)
+        return new

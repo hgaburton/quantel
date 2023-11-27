@@ -22,22 +22,6 @@ color Element {F} green2
 color Type {C} black
 color Surface {Grasp} red
 color Labels {Springs} orange
-color change rgb 19 0.00 1.00 0.22
-color change rgb 0 0.0000 0.4471 0.8078
-color change rgb 1 0.8353 0.0000 0.1961
-color change rgb 2 0.4000 0.4000 0.4000
-color change rgb 3 0.9098 0.4667 0.1333
-# color change rgb 4 1.0 1.0 0.0
-# color change rgb 5 0.5 0.5 0.20000000298
-# color change rgb 6 0.600000023842 0.600000023842 0.600000023842
-color change rgb 7 0.3922 0.6549 0.0431
-# color change rgb 9 1.0 0.600000023842 0.600000023842
-color change rgb 10 0.0000 0.6902 0.7255
-# color change rgb 11 0.649999976158 0.0 0.649999976158
-# color change rgb 12 0.5 0.899999976158 0.40000000596
-# color change rgb 13 0.899999976158 0.40000000596 0.699999988079
-# color change rgb 14 0.5 0.300000011921 0.0
-# color change rgb 15 0.5 0.5 0.75
 
 mol off all
 mol new [lindex \$argv 0] type cube waitfor all
@@ -47,7 +31,6 @@ mol delrep 0 top
 mol representation CPK 0.60000 0.30000 23.000000 21.000000
 mol color Element
 mol selection {all}
-#mol selection {not hydrogen}
 mol material Opaque
 mol addrep top
 mol selupdate 0 top 0
@@ -68,9 +51,9 @@ mol material Orbital
 mol addrep top
 
 scale by [lindex \$argv 2]
-#rotate y by 60
-rotate x by 100
-#rotate z by 100
+#rotate y by 90
+rotate x by -45
+#rotate z by 45
 
 #render gs [lindex \$argv 0].ps
 render POV3 [lindex \$argv 0].pov 
@@ -81,5 +64,5 @@ exit
 
 vmd -dispdev none -e plot.tcl -args $1 $2 $3
 rm $1.png &> /dev/null
-povray +W300 +H300 +FN +A +C -D +UA -I$1.pov -O$1.png
+povray +W600 +H600 +FN +A +C -D +UA -I$1.pov -O$1.png
 rm plot.tcl

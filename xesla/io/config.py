@@ -48,8 +48,11 @@ class Config(dict):
             # TODO: Add support for triplet states 
             self["wavefunction"]["esmf"] = dict(ref_allowed = getbool(self.lines,"with_ref",False,True))
         
-        if self["wavefunction"]["method"] == "pp":
+        elif self["wavefunction"]["method"] == "pp":
             self["wavefunction"]["pp"] = dict()
+
+        elif self["wavefunction"]["method"] == "pcid":
+            self["wavefunction"]["pcid"] = dict()
 
         elif self["wavefunction"]["method"] == "casscf":
             self["wavefunction"]["casscf"] = dict(active_space = getlist(self.lines,"active_space",int,True))
@@ -74,13 +77,13 @@ class Config(dict):
 
         if self["optimiser"]["algorithm"] == "eigenvector_following":
             self["optimiser"]["eigenvector_following"] = dict(minstep = getvalue(self.lines,"minstep",float,False,default=0),
-                                                              rtrust  = getvalue(self.lines,"rstrust",float,False,default=0.15),
+                                                              rtrust  = getvalue(self.lines,"rtrust",float,False,default=0.15),
                                                               maxstep = getvalue(self.lines,"maxstep",float,False,default=numpy.pi),
                                                               hesstol = getvalue(self.lines,"hesstol",float,False,1e-16)
                                                              )
         elif self["optimiser"]["algorithm"] == "mode_control":
             self["optimiser"]["mode_control"] = dict(minstep = getvalue(self.lines,"minstep",float,False,default=0),
-                                                    rtrust  = getvalue(self.lines,"rstrust",float,False,default=0.15),
+                                                    rtrust  = getvalue(self.lines,"rtrust",float,False,default=0.15),
                                                     maxstep = getvalue(self.lines,"maxstep",float,False,default=numpy.pi),
                                                     hesstol = getvalue(self.lines,"hesstol",float,False,1e-16)
                                                     )
@@ -102,8 +105,9 @@ class Config(dict):
         self["jobcontrol"] = dict(guess = getvalue(self.lines,"guess",str,False,default="random").lower(), 
                                   noci  = getbool(self.lines,"noci",False,default=False),
                                   dist_thresh = getvalue(self.lines,"dist_tresh",float,False,default=1e-8),
-                                  ovlp_mat = getbool(self.lines,"overlap_matrix",False,default=False)
-                                  ) 
+                                  ovlp_mat = getbool(self.lines,"overlap_matrix",False,default=False),
+                                  analyse = getbool(self.lines,"analyse",False,default=False)
+                                 ) 
         
         if self["jobcontrol"]["guess"] == "random":
             self["jobcontrol"]["search"] = dict(nsample = getvalue(self.lines,"nsample",int,False,default=10),
@@ -124,4 +128,8 @@ class Config(dict):
             self["jobcontrol"]["noci_job"] = dict(lindep_tol = getvalue(self.lines,"lindep_tol",float,False,default=1e-8), 
                                                   plev = getvalue(self.lines,"plevel",int,False,default=1)
                                                  )
+        if self["jobcontrol"]["analyse"]:
+            self["jobcontrol"]["analyse"] = dict(states = getlist(self.lines,"states",str,False,default=["all"]),
+                                                 orbital_plots = getlist(self.lines, "orbital_plots",int,True)
+                                                )
 

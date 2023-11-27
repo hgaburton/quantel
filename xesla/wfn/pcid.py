@@ -478,3 +478,34 @@ class PCID(Wavefunction):
         #        frozen = np.asarray(frozen)
         #        mask[frozen] = mask[:,frozen] = False
         return mask
+
+    def save_to_disk(self,tag):
+        """Save object to disk with prefix 'tag'"""
+        # Get the Hessian index
+        hindices = self.get_hessian_index()
+
+        # Save coefficients, CI, and energy
+        np.savetxt(tag+'.mo_coeff', self.mo_coeff, fmt="% 20.16f")
+        np.savetxt(tag+'.mat_ci',   self.mat_ci, fmt="% 20.16f")
+        np.savetxt(tag+'.energy',   
+                   np.array([[self.energy, hindices[0], hindices[1], 0]]), 
+                   fmt="% 18.12f % 5d % 5d % 12.6f")
+
+
+    def read_from_disk(self,tag):
+        """Read object from disk with prefix 'tag'"""
+        # Read MO coefficient and CI coefficients
+        mo_coeff = np.genfromtxt(tag+".mo_coeff")
+        ci_coeff = np.genfromtxt(tag+".mat_ci")
+
+        # Initialise object
+        self.initialise(mo_coeff, ci_coeff)
+
+    def overlap(self, them):
+        """Compute the many-body overlap with another CAS waveunction (them)"""
+        return 0# esmf_coupling(self, them, self.ovlp, with_ref=self.with_ref)[0]
+
+    def hamiltonian(self, them):
+        """Compute the many-body Hamiltonian coupling with another CAS wavefunction (them)"""
+        eri = ao2mo.restore(1, self._scf._eri, self.mol.nao).reshape(self.mol.nao**2, self.mol.nao**2)
+        return 0#esmf_coupling(self, them, self.ovlp, self.hcore, eri, self.enuc, with_ref=self.with_ref)
