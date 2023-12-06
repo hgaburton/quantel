@@ -4,8 +4,8 @@
 import numpy as np
 import scipy.linalg
 from pyscf import scf,  __config__, ao2mo
-from qland.utils.linalg import delta_kron, orthogonalise
-from qland.gnme.esmf_noci import esmf_coupling
+from exelsis.utils.linalg import delta_kron, orthogonalise
+from exelsis.gnme.esmf_noci import esmf_coupling
 from .wavefunction import Wavefunction
 
 class ESMF(Wavefunction):

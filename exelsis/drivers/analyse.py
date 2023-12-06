@@ -13,15 +13,15 @@ def analyse(mol, config):
     # Get information about the wavefunction
     wfnconfig = config["wavefunction"][config["wavefunction"]["method"]]
     if config["wavefunction"]["method"] == "esmf":
-        from qland.wfn.esmf import ESMF as WFN
+        from exelsis.wfn.esmf import ESMF as WFN
         ref_ci = numpy.identity(WFN(mol, **wfnconfig).nDet)
         ndet = ref_ci.shape[1]
     elif config["wavefunction"]["method"] == "casscf":
-        from qland.wfn.ss_casscf import SS_CASSCF as WFN
+        from exelsis.wfn.ss_casscf import SS_CASSCF as WFN
         ref_ci = numpy.identity(WFN(mol, **wfnconfig).nDet)
         ndet = ref_ci.shape[1]
     elif config["wavefunction"]["method"] == "csf":
-        from qland.wfn.csf import CSF as WFN
+        from exelsis.wfn.csf import CSF as WFN
         ndet = 0
 
     # Get list of states to be analysed

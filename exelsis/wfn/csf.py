@@ -8,12 +8,12 @@ from functools import reduce
 from typing import List
 from pygnme import wick, utils, owndata
 from pyscf import scf, fci, __config__, ao2mo, lib, mcscf
-from qland.io.parser import getlist, getvalue
-from qland.wfn.CSFBuilder.CGCSF import CGCSF
-from qland.wfn.CSFBuilder.GCCSF import GCCSF
-from qland.wfn.CSFBuilder.NoCSF import NoCSF
-from qland.wfn.CSFBuilder.Operators.Operators import get_generic_no_overlap
-from qland.utils.linalg import delta_kron, orthogonalise
+from exelsis.io.parser import getlist, getvalue
+from exelsis.wfn.CSFBuilder.CGCSF import CGCSF
+from exelsis.wfn.CSFBuilder.GCCSF import GCCSF
+from exelsis.wfn.CSFBuilder.NoCSF import NoCSF
+from exelsis.wfn.CSFBuilder.Operators.Operators import get_generic_no_overlap
+from exelsis.utils.linalg import delta_kron, orthogonalise
 from .wavefunction import Wavefunction
 
 

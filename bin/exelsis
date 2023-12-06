@@ -8,7 +8,7 @@
        Nick Lee           2022-
 """
 
-from qland.main import main
+from exelsis.main import main
 
 if __name__=="__main__":
     main()

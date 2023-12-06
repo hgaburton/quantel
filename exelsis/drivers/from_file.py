@@ -13,23 +13,23 @@ def from_file(mol, config):
     # Get information about the wavefunction
     wfnconfig = config["wavefunction"][config["wavefunction"]["method"]]
     if config["wavefunction"]["method"] == "esmf":
-        from qland.wfn.esmf import ESMF as WFN
+        from exelsis.wfn.esmf import ESMF as WFN
         ref_ci = numpy.identity(WFN(mol, **wfnconfig).nDet)
         ndet = ref_ci.shape[1]
     elif config["wavefunction"]["method"] == "casscf":
-        from qland.wfn.ss_casscf import SS_CASSCF as WFN
+        from exelsis.wfn.ss_casscf import SS_CASSCF as WFN
         ref_ci = numpy.identity(WFN(mol, **wfnconfig).nDet)
         ndet = ref_ci.shape[1]
     elif config["wavefunction"]["method"] == "csf":
-        from qland.wfn.csf import CSF as WFN
+        from exelsis.wfn.csf import CSF as WFN
         ndet = 0
 
     # Select the optimiser
     optconfig = config["optimiser"][config["optimiser"]["algorithm"]]
     if config["optimiser"]["algorithm"] == "eigenvector_following":
-        from qland.opt.eigenvector_following import EigenFollow as OPT
+        from exelsis.opt.eigenvector_following import EigenFollow as OPT
     elif config["optimiser"]["algorithm"] == "mode_control":
-        from qland.opt.mode_controlling import ModeControl as OPT
+        from exelsis.opt.mode_controlling import ModeControl as OPT
 
     # Initialise wavefunction list
     wfn_list = []

@@ -13,21 +13,21 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["OMP_NUM_THREADS"] = "1"
 import sys, argparse, numpy, time
 from datetime import datetime, timedelta
-from qland.io.config import Config
-from qland.drivers import random_search, ci_guess, from_file, noci, overlap, analyse
+from exelsis.io.config import Config
+from exelsis.drivers import random_search, ci_guess, from_file, noci, overlap, analyse
 from pyscf import gto
 
 def write_splash():
-    print("===================================================")
-    print("                      QLand                        ")
-    print("===================================================")
-    print("  A library for exploring excited-state solutions  ")
-    print("  in electronic structure theory.                  ")
-    print("                                                   ")
-    print("  Written by                                       ")
-    print("     Antoine Marie, Nicholas Lee,                  ")
-    print("     and Hugh G. A. Burton                         ")
-    print("===================================================")
+    print("====================================================")
+    print("                      Exelsis                       ")
+    print("====================================================")
+    print("  A library for exploring excited-state solutions   ")
+    print("  in electronic structure theory.                   ")
+    print("                                                    ")
+    print("  Written by                                        ")
+    print("     Antoine Marie, Nicholas Lee,                   ")
+    print("     and Hugh G. A. Burton                          ")
+    print("====================================================")
 
 
 def main():
@@ -77,7 +77,7 @@ def main():
     # Clean up
     end_time = time.monotonic()
     print()
-    print("===================================================")
-    print(" Calculation complete. Thank you for using QLand!  ")
+    print("====================================================")
+    print(" Calculation complete. Thank you for using Exelsis! ")
     print(" Total time = {:5.3f}s".format(timedelta(seconds=(end_time - start_time)).total_seconds()))
-    print("===================================================")
+    print("==-=================================================")
