@@ -2,7 +2,7 @@
 
 import numpy
 from scipy.linalg import expm 
-from qland.utils.linalg import random_rot
+from exelsis.utils.linalg import random_rot
 
 def random_search(mol, config):
     """Perform a random search for multiple solutions"""
@@ -20,22 +20,22 @@ def random_search(mol, config):
     # Get information about the wavefunction defintion
     wfnconfig = config["wavefunction"][config["wavefunction"]["method"]]
     if config["wavefunction"]["method"] == "esmf":
-        from qland.wfn.esmf import ESMF as WFN
+        from exelsis.wfn.esmf import ESMF as WFN
         ref_ci = numpy.identity(WFN(mol, **wfnconfig).nDet)
         ndet = ref_ci.shape[1]
     elif config["wavefunction"]["method"] == "casscf":
-        from qland.wfn.ss_casscf import SS_CASSCF as WFN
+        from exelsis.wfn.ss_casscf import SS_CASSCF as WFN
         ref_ci = numpy.identity(WFN(mol, **wfnconfig).nDet)
         ndet = ref_ci.shape[1]
     elif config["wavefunction"]["method"] == "csf":
-        from qland.wfn.csf import CSF as WFN
+        from exelsis.wfn.csf import CSF as WFN
         ndet = 0
     elif config["wavefunction"]["method"] == "pcid":
-        from qland.wfn.pcid import PCID as WFN
+        from exelsis.wfn.pcid import PCID as WFN
         ref_ci = numpy.identity(WFN(mol, **wfnconfig).nDet)
         ndet = ref_ci.shape[1]
     elif config["wavefunction"]["method"] == "pp":
-        from qland.wfn.pp import PP as WFN
+        from exelsis.wfn.pp import PP as WFN
         ndet = 0
         
     # Get variables
@@ -44,9 +44,9 @@ def random_search(mol, config):
     # Select the optimiser
     optconfig = config["optimiser"][config["optimiser"]["algorithm"]]
     if config["optimiser"]["algorithm"] == "eigenvector_following":
-        from qland.opt.eigenvector_following import EigenFollow as OPT
+        from exelsis.opt.eigenvector_following import EigenFollow as OPT
     elif config["optimiser"]["algorithm"] == "mode_control":
-        from qland.opt.mode_controlling import ModeControl as OPT
+        from exelsis.opt.mode_controlling import ModeControl as OPT
 
     # Set numpy random seed
     numpy.random.seed(config["jobcontrol"]["search"]["seed"])
