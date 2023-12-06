@@ -7,15 +7,15 @@
        Antoine Marie      2021
        Nicholas Lee       2022-
 """
-
-import sys, argparse, numpy, time, os
+# Set environment variables before importing numpy
+import os
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
+import sys, argparse, numpy, time
 from datetime import datetime, timedelta
 from qland.io.config import Config
 from qland.drivers import random_search, ci_guess, from_file, noci, overlap, analyse
 from pyscf import gto
-
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["OMP_NUM_THREADS"] = "1"
 
 def write_splash():
     print("===================================================")
@@ -68,13 +68,10 @@ def main():
         errstr = "No wavefunctions have been defined"
         raise ValueError(errstr)
 
-
     if config["jobcontrol"]["noci"]:
         noci(wfnlist, **config["jobcontrol"]["noci_job"])
     elif config["jobcontrol"]["ovlp_mat"]:
         overlap(wfnlist)
-
-
 
 
     # Clean up

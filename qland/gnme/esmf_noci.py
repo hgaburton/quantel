@@ -34,7 +34,7 @@ def esmf_coupling(esmf1, esmf2, metric, hcore=None, eri=None, enuc=0.0, thresh=1
         t2   = 1/np.sqrt(2) * np.reshape(esmf2.mat_ci[:,0], (esmf2.na, esmf2.nmo - esmf2.na))
 
     # Intialise output
-    Hwx, Swx = 0, 0
+    Hxw, Sxw = 0, 0
 
     # Setup biorthogonalised orbital pair
     refx = wick.reference_state[float](nmo, nmo, nocc, owndata(esmf1.mo_coeff))
@@ -56,8 +56,8 @@ def esmf_coupling(esmf1, esmf2, metric, hcore=None, eri=None, enuc=0.0, thresh=1
 
     # Ref-Ref contribution
     stmp, htmp = mb.evaluate(refx.m_bs, refx.m_bs, refw.m_bs, refw.m_bs)
-    Hwx += htmp * cref1 * cref2
-    Swx += stmp * cref1 * cref2
+    Hxw += htmp * cref1 * cref2
+    Sxw += stmp * cref1 * cref2
 
     # Ref-single contribution
     for i in range(nocc):
@@ -70,13 +70,13 @@ def esmf_coupling(esmf1, esmf2, metric, hcore=None, eri=None, enuc=0.0, thresh=1
 
             # <ia|...|0>
             stmp, htmp = mb.evaluate(bx, refx.m_bs, refw.m_bs, refw.m_bs)
-            Hwx += 2.0 * htmp * t1[i,a] * cref2 * px 
-            Swx += 2.0 * stmp * t1[i,a] * cref2 * px
+            Hxw += 2.0 * htmp * t1[i,a] * cref2 * px 
+            Sxw += 2.0 * stmp * t1[i,a] * cref2 * px
 
             # <0|...|ia>
             stmp, htmp = mb.evaluate(refx.m_bs, refx.m_bs, bx, refw.m_bs)
-            Hwx += 2.0 * htmp * cref1 * t2[i,a] * px
-            Swx += 2.0 * stmp * cref1 * t2[i,a] * px
+            Hxw += 2.0 * htmp * cref1 * t2[i,a] * px
+            Sxw += 2.0 * stmp * cref1 * t2[i,a] * px
 
     # single-single contribution
     for i in range(nocc):
@@ -97,12 +97,12 @@ def esmf_coupling(esmf1, esmf2, metric, hcore=None, eri=None, enuc=0.0, thresh=1
 
                     # same spin
                     stmp, htmp = mb.evaluate(bx, refx.m_bs, bw, refw.m_bs)
-                    Hwx += 2.0 * htmp * t1[i,a] * t2[j,b] * px * pw
-                    Swx += 2.0 * stmp * t1[i,a] * t2[j,b] * px * pw
+                    Hxw += 2.0 * htmp * t1[i,a] * t2[j,b] * px * pw
+                    Sxw += 2.0 * stmp * t1[i,a] * t2[j,b] * px * pw
 
                     # <0|...|ia>
                     stmp, htmp = mb.evaluate(bx, refx.m_bs, refw.m_bs, bw)
-                    Hwx += 2.0 * htmp * t1[i,a] * t2[j,b] * px * pw
-                    Swx += 2.0 * stmp * t1[i,a] * t2[j,b] * px * pw
+                    Hxw += 2.0 * htmp * t1[i,a] * t2[j,b] * px * pw
+                    Sxw += 2.0 * stmp * t1[i,a] * t2[j,b] * px * pw
 
-    return Swx, Hwx
+    return Sxw, Hxw

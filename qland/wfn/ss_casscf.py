@@ -122,7 +122,7 @@ class SS_CASSCF(Wavefunction):
         # Read MO coefficient and CI coefficients
         mo_coeff = np.genfromtxt(tag+".mo_coeff")
         ci_coeff = np.genfromtxt(tag+".mat_ci")
-
+        
         # Initialise object
         self.initialise(mo_coeff, ci_coeff)
 
