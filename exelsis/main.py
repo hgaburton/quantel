@@ -14,7 +14,7 @@ os.environ["OMP_NUM_THREADS"] = "1"
 import sys, argparse, numpy, time
 from datetime import datetime, timedelta
 from exelsis.io.config import Config
-from exelsis.drivers import random_search, ci_guess, from_file, noci, overlap, analyse
+from exelsis.drivers import random_search, ci_guess, from_file, noci, overlap, analyse, ev_linesearch
 from pyscf import gto
 
 def write_splash():
@@ -48,6 +48,7 @@ def main():
     # Read the input file
     config = Config(args.input_file)
     config["molecule"]["atom"] = str(args.molecule_file)
+    config["molecule"]["symmetry"] = True
     config.print()
 
     # Setup PySCF molecule
@@ -64,6 +65,8 @@ def main():
         wfnlist = random_search(mol, config)
     elif config["jobcontrol"]["guess"] == "ciguess":
         wfnlist = ci_guess(mol, config)
+    elif config["jobcontrol"]["guess"] == "evlin":
+        wfnlist = ev_linesearch(mol, config)
     else:
         errstr = "No wavefunctions have been defined"
         raise ValueError(errstr)

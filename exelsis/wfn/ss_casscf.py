@@ -126,10 +126,10 @@ class SS_CASSCF(Wavefunction):
         # Initialise object
         self.initialise(mo_coeff, ci_coeff)
 
-    def copy(self):
+    def copy(self, integrals=False):
         # Return a copy of the current object
         newcas = SS_CASSCF(self.mol, [self.ncas, self.nelecas])
-        newcas.initialise(self.mo_coeff, self.mat_ci, integrals=False)
+        newcas.initialise(self.mo_coeff, self.mat_ci, integrals=integrals)
         return newcas
 
 

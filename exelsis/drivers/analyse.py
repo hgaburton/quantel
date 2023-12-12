@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import sys, re, numpy
+import sys, re, numpy, glob
 from pyscf.tools import cubegen
 
 def analyse(mol, config):
@@ -40,12 +40,17 @@ def analyse(mol, config):
         except: pass
         myfun = WFN(mol, **wfnconfig)
         myfun.read_from_disk(fname)
-        myfun.canonicalise()
 
         # Plot orbitals
         orbrange=config["jobcontrol"]["analyse"]["orbital_plots"]
         for i in range(orbrange[0]-1, orbrange[1]):
             cubegen.orbital(mol, fname+'.mo.{:d}.cube'.format(i+1), myfun.mo_coeff[:,i])
+
+        myfun.canonicalise()
+        # Plot orbitals
+        orbrange=config["jobcontrol"]["analyse"]["orbital_plots"]
+        for i in range(orbrange[0]-1, orbrange[1]):
+            cubegen.orbital(mol, fname+'.no.{:d}.cube'.format(i+1), myfun.mo_coeff[:,i])
 
         s2 = myfun.s2
         hindices = myfun.get_hessian_index()
@@ -64,6 +69,13 @@ def analyse(mol, config):
             outF.write("  ----------------------------------------\n")
             for i in range(myfun.norb):
                 outF.write(" {:5d}  {: 10.6f}  {: 10.6f}\n".format(i+1, myfun.mo_occ[i], myfun.mo_energy[i]))
+            outF.write("  ----------------------------------------\n")
+
+            outF.write("\n  ----------------------------------------\n")
+            outF.write("  CI vector:\n")
+            outF.write("  ----------------------------------------\n")
+            for i in range(myfun.nDet):
+                outF.write(" {:5d}  {: 10.6f}\n".format(i+1, myfun.mat_ci[i,0]))
             outF.write("  ----------------------------------------\n")
 
             outF.write("\n  ----------------------------------------\n")

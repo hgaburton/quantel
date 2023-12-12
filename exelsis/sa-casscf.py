@@ -52,10 +52,9 @@ if __name__ == '__main__':
                 Hind = int(line.split()[-1])
             elif re.match('maxit', line) is not None:
                 maxit = int(line.split()[-1])
-            elif re.match('cas', line) is not None:
-                tmp = re.split(r'\s', line)[-1]
-                tmp2 = tmp[1:-1].split(',')
-                cas = (int(tmp2[0]), int(tmp2[1]))
+            elif re.match('active_space', line) is not None:
+                tmp = re.split(r'\s+', line)
+                cas = (int(tmp[-2]), int(tmp[-1]))
             elif re.match('grid', line) is not None:
                 if re.split(r'\s', line)[-1] == 'full':
                     grid_option = re.split(r'\s', line)[-1]
@@ -75,13 +74,28 @@ if __name__ == '__main__':
 
     mf = scf.RHF(mol)
     mf.kernel()
+    mf.mo_coeff[:,[8,12]] = mf.mo_coeff[:,[12,8]]
     
-    w=np.ones((6,))
+    w=np.ones((4,))
     mc = mcscf.state_average_(mcscf.CASSCF(mf, cas[0], cas[1],), (w/np.sum(w)).tolist())
     mc.verbose = 4 
     mc.kernel()
     mo = mc.mo_coeff
 
+    ci = np.array([x.ravel() for x in mc.ci]).T
+
+
     emc = mc.casci(mo)[0]
 
     print('E(CAS) = %.12f, ref = -75.982521066893' % emc)
+
+    for i in range(4):
+        tag="{:04d}".format(i+1)
+        cisave = ci.copy()
+        cisave[:,[0,i]] = ci[:,[i,0]]
+
+        np.savetxt(tag+'.mo_coeff', mo, fmt="% 20.16f")
+        np.savetxt(tag+'.mat_ci',   cisave, fmt="% 20.16f")
+        np.savetxt(tag+'.energy',   
+                   np.array([[0, 0, 0, 0]]),
+                   fmt="% 18.12f % 5d % 5d % 12.6f")

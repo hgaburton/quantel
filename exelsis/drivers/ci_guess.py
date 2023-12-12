@@ -17,6 +17,7 @@ def ci_guess(mol, config):
     ref_mo = hf.mo_coeff.copy()
     ref_ci = None
     escf   = hf.energy_tot()
+    print(hf.mo_energy)
     print("    RHF total energy (Eh): {: 16.8f}".format(escf))
 
     wfnconfig = config["wavefunction"][config["wavefunction"]["method"]]
@@ -46,6 +47,9 @@ def ci_guess(mol, config):
     print("\n  Computing initial CI energies (Eh):")
     ref = WFN(mol, **wfnconfig)
     ref.initialise(ref_mo, ref_ci)
+    numpy.set_printoptions(linewidth=10000,precision=4,suppress=True,edgeitems=10000)
+    ref_mo[:,[8,12]] = ref_mo[:,[12,8]]
+    print(ref_mo[:,7:20])
 
     ref_e, ref_ci = numpy.linalg.eigh(ref.ham)
     for ind in config["jobcontrol"]["ci_guess"]:
