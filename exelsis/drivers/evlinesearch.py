@@ -91,12 +91,12 @@ def ev_linesearch(mol, config):
                 print("  Solution matches previous solution...",prev+1)
 
         # Attempt to reconverge states
-        for isol, wfn in enumerate(wfn_list):
+        nsearch = len(wfn_list)
+        for isol in range(nsearch):
             # Initialise optimisation object
             try: del myfun
             except: pass
-            myfun = WFN(mol, **wfnconfig)
-            myfun.read_from_disk(old_tag)
+            myfun = wfn_list[isol].copy(integrals=True)
             
             # Get the Hessian
             hess = myfun.hessian

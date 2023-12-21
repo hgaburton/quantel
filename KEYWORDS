@@ -55,6 +55,7 @@ Initial guess:
                                   > random   : Use random initial orbital and CI coefficients
                                   > ci_guess : Start from CIS or CASCI solution (not valid for CSF wavefunction)
                                   > fromfile : Read solutions from disk 
+                                  > evlin    : Perform search along smallest Hessian eigenvalue
 
 Random search:
 --------------
@@ -68,6 +69,14 @@ CI guess:
 Read from file:
 ---------------
   read_dir  str str... : [Required] List of directories to search for solutions
+
+Eigenvector search:
+-------------------
+  read_dir                str str... : [Required] List of directories to search for solutions
+  eigen_index                    int : [Optional] Index of Hessian eigendirection to search along. +ve values correspond
+                                       to eigenvalues > 0, and -ve values correspond to -ve eigenvalues, ordered from 0 outwards. Default = +1.
+  linesearch_grid  float, float, int : [Optional] Rotation values for defining the linesearch grid [ThMin, ThMax, Ngrid]. Default = -pi, pi, 51
+  linesearch_nopt                int : [Optional] Number of stationary points to test along the linesearch. Default = 5
 
 ==============
 Analysis:

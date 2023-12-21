@@ -75,10 +75,14 @@ if __name__ == '__main__':
     mf = scf.RHF(mol)
     mf.kernel()
     mf.mo_coeff[:,[8,12]] = mf.mo_coeff[:,[12,8]]
+    np.set_printoptions(linewidth=10000,edgeitems=10000,precision=4,suppress=True)
+    print(mf.mo_coeff[:,7:13])
     
-    w=np.ones((4,))
+    w=np.ones((7,))
     mc = mcscf.state_average_(mcscf.CASSCF(mf, cas[0], cas[1],), (w/np.sum(w)).tolist())
     mc.verbose = 4 
+    mc.fcisolver.spin = 0
+    mc.fix_spin_(ss=0)
     mc.kernel()
     mo = mc.mo_coeff
 
