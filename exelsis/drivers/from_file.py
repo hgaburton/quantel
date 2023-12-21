@@ -80,10 +80,6 @@ def from_file(mol, config):
                 # Save the object to disck
                 myfun.save_to_disk(tag)
 
-                # Append wavefunction to our list
-                wfn_list.append(myfun.copy())
-                count += 1
-                
                 # Save energy and indices
                 e_list.append(myfun.energy)
                 i_list.append(hindices[0])
