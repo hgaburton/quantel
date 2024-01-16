@@ -14,7 +14,7 @@ os.environ["OMP_NUM_THREADS"] = "1"
 import sys, argparse, numpy, time
 from datetime import datetime, timedelta
 from exelsis.io.config import Config
-from exelsis.drivers import random_search, ci_guess, from_file, noci, overlap, analyse, ev_linesearch
+from exelsis.drivers import random_search, ci_guess, from_file, noci, oscillator_strength, overlap, analyse, ev_linesearch
 from pyscf import gto
 
 def write_splash():
@@ -70,6 +70,9 @@ def main():
     else:
         errstr = "No wavefunctions have been defined"
         raise ValueError(errstr)
+
+    if config["jobcontrol"]["oscillator_strength"]:
+        oscillator_strength(wfnlist, **config["jobcontrol"]["oscillator_job"])
 
     if config["jobcontrol"]["noci"]:
         noci(wfnlist, **config["jobcontrol"]["noci_job"])

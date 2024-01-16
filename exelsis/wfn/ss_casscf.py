@@ -142,7 +142,14 @@ class SS_CASSCF(Wavefunction):
         eri = ao2mo.restore(1, self._scf._eri, self.mol.nao).reshape(self.mol.nao**2, self.mol.nao**2)
         return cas_coupling(self, them, self.ovlp, self.hcore, eri, self.enuc)
 
+    def tdm(self, them):
+        """Compute the transition dipole moment with other CAS wave function (them)"""
+        tdm = np.zeros(3)
+        for i in range(3):
+            s, tdm[i] = cas_coupling(self, them, self.ovlp, self.dip_mat[i], None, self.dip_nuc[i])
+        return s, tdm
 
+        
     def sanity_check(self):
         '''Need to be run at the start of the kernel to verify that the number of 
            orbitals and electrons in the CAS are consistent with the system '''
@@ -166,6 +173,11 @@ class SS_CASSCF(Wavefunction):
         self.norb       = self.hcore.shape[0]
         self.ovlp       = self.mol.intor('int1e_ovlp') # Overlap matrix
         self._scf._eri  = self.mol.intor("int2e", aosym="s8") # Two electron integrals
+
+        # Dipole terms
+        self.mol.set_common_origin([0,0,0])
+        self.dip_nuc = np.einsum('i,ix->x', self.mol.atom_charges(), self.mol.atom_coords())
+        self.dip_mat = self.mol.intor("int1e_r")
 
     def initialise(self, mo_guess, ci_guess, integrals=True):
         # Save orbital coefficients

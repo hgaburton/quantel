@@ -99,3 +99,4 @@ def analyse(mol, config):
                 if(i==0): outF.write(" {:5d}  {: 10.6f}\n".format(i, myfun.energy))
                 else: outF.write(" {:5d}  {: 10.6f}\n".format(i, ci_eig[i-1]))
             outF.write("  ----------------------------------------\n")
+

@@ -8,10 +8,11 @@ General inputs:
 ===============
 Wavefunction:
 ===============
-  method            str : [Required] Type of wavefunction model [casscf|csf|esmf]
-  noci             bool : [Optional] Determine if a NOCI calculation will be performed. Default = False
-  overlap_matrix   bool : [Optional] Determine if a overlap matrix will be computed. Default = False
-  dist_thresh     float : [Optional] Threshold overlap for considering two solution to be distrinct. Default = 1e-8
+  method                str : [Required] Type of wavefunction model [casscf|csf|esmf]
+  noci                 bool : [Optional] Determine if a NOCI calculation will be performed. Default = False
+  overlap_matrix       bool : [Optional] Determine if a overlap matrix will be computed. Default = False
+  dist_thresh         float : [Optional] Threshold overlap for considering two solution to be distrinct. Default = 1e-8
+  oscillator_strength  bool : [Optional] Compute oscillator strengths from a given reference state. Default = False
 
 CASSCF inputs:
 --------------
@@ -30,6 +31,10 @@ CSF inputs:
   local_spins           float float : [Optional] Used when csf_build = clebschgordon. Total spin value of local bases
   active_subspaces      int int ... : [Optional] Used when csf_build = clebschgordon. [o_1, e_1, o_2, e_2]
                                       where o_i = Num. active orbitals on site i and e_i = Num. active electrons on site i.  
+
+Oscillator strengths inputs:
+-----------------------------
+  oscillator_reference    int : [Optional] Index for the initial state, 1-indexed. Default = 1.
  
 ESMF input:
 --------------

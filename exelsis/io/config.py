@@ -104,6 +104,7 @@ class Config(dict):
         """Parse keywords that define how jobs are run"""
         self["jobcontrol"] = dict(guess = getvalue(self.lines,"guess",str,False,default="random").lower(), 
                                   noci  = getbool(self.lines,"noci",False,default=False),
+                                  oscillator_strength = getbool(self.lines,"oscillator_strength",False,default=False),
                                   dist_thresh = getvalue(self.lines,"dist_tresh",float,False,default=1e-8),
                                   ovlp_mat = getbool(self.lines,"overlap_matrix",False,default=False),
                                   analyse = getbool(self.lines,"analyse",False,default=False)
@@ -138,4 +139,8 @@ class Config(dict):
             self["jobcontrol"]["analyse"] = dict(states = getlist(self.lines,"states",str,False,default=["all"]),
                                                  orbital_plots = getlist(self.lines, "orbital_plots",int,True)
                                                 )
+        
+        # Job control for computing oscillator strengths
+        if self["jobcontrol"]["oscillator_strength"]:
+            self["jobcontrol"]["oscillator_job"] = dict(ref_ind = getvalue(self.lines,"oscillator_reference",int,default=1)-1)
 

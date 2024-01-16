@@ -3,6 +3,8 @@
 import numpy
 from pygnme import utils
 
+eh2ev=27.211386245988
+
 def overlap(wfnlist, lindep_tol=1e-8, plev=1, save=True):
     """"Perform a NOCI calculation for wavefunctions defined in wfnlist"""
 
@@ -37,6 +39,8 @@ def overlap(wfnlist, lindep_tol=1e-8, plev=1, save=True):
 
 def noci(wfnlist, lindep_tol=1e-8, plev=1):
     """"Perform a NOCI calculation for wavefunctions defined in wfnlist"""
+
+    oscillator_strengths(wfnlist, 0)
 
     # Get number of states
     nstate = len(wfnlist)
@@ -86,3 +90,47 @@ def noci(wfnlist, lindep_tol=1e-8, plev=1):
     print("\n-----------------------------------------------")
 
     return Hwx, Swx, eigval, v
+
+def oscillator_strength(wfnlist, ref_ind=0, plev=1):
+    """Compute oscillator strengths from a given reference states [ref_ind]"""
+    # Get number of states
+    nstate = len(wfnlist)
+
+    print()
+    print("===============================================")
+    print(" Computing oscillator strengths from solution {:d}".format(ref_ind+1))
+    print("===============================================")
+
+    # Get the reference state and integrals
+    ref_state = wfnlist[ref_ind]
+    ref_state.update_integrals()
+
+    # Loop over the remaining states
+    strengths=[]
+    for i, state_i in enumerate(wfnlist):
+        if(i==ref_ind): continue
+        state_i.update_integrals()
+
+        # Compute excitation energy
+        de = state_i.energy - ref_state.energy 
+        # Compute TDM
+        s, tdm = ref_state.tdm(state_i)
+        # Compute oscillator strength
+        f = 2./3. * de * numpy.dot(tdm,tdm)
+        # Convert excitation energy to eV 
+        de *= eh2ev
+
+        strengths.append((de, f, s))
+
+    # Print the outcome
+    print("{:4s}   {:10s}   {:10s}   {:10s}".format("", "   dE / eV", "   f / au", "   S / au"))
+    print("-----------------------------------------------")
+    strengths.sort()
+    for i, (de, f, s) in enumerate(strengths):
+        print("{: 4d}:  {: 10.6f}   {: 10.6f}   {: 10.6f}".format(i,de,f,s))
+    print("----------------------------------------------------------")
+
+    # Record the output in a file
+    numpy.savetxt('oscillators', numpy.array(strengths)[:,[0,1]], fmt="% 10.6f")
+
+    return 
