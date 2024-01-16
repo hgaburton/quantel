@@ -88,12 +88,38 @@ class SS_CASSCF(Wavefunction):
         return self.fcisolver.spin_square(self.mat_ci[:,0], self.ncas, self.nelecas)[0]
 
     @property
+    def dipole(self):
+        '''Compute the dipole vector'''
+        ncore, nocc = self.ncore, self.ncore + self.ncas
+        # Transform dipole matrices to MO basis
+        dip_mo = np.einsum('xpq,pm,qn->xmn', self.dip_mat, self.mo_coeff, self.mo_coeff)
+        # Nuclear and core contributions
+        dip = self.dip_nuc + 2*np.einsum('ipp->i', dip_mo[:,:ncore,:ncore]) 
+        # Active space contribution
+        dip += np.einsum('ipq,pq->i', dip_mo[:,ncore:nocc,ncore:nocc], self.dm1_cas)
+        return dip
+
+    @property
+    def quadrupole(self):
+        '''Compute the quadrupole tensor'''
+        ncore, nocc = self.ncore, self.ncore + self.ncas
+        # Transform dipole matrices to MO basis
+        quad_mo = np.einsum('xypq,pm,qn->xymn', self.quad_mat, self.mo_coeff, self.mo_coeff)
+        # Nuclear and core contributions
+        quad = self.quad_nuc.copy() 
+        quad += 2*np.einsum('xypp->xy', quad_mo[:,:,:ncore,:ncore]) 
+        # Active space contribution
+        quad += np.einsum('xypq,pq->xy', quad_mo[:,:,ncore:nocc,ncore:nocc], self.dm1_cas)
+        return quad
+
+    @property
     def gradient(self):
         g_orb = self.get_orbital_gradient()
         g_ci  = self.get_ci_gradient()  
 
         # Unpack matrices/vectors accordingly
         return np.concatenate((g_orb, g_ci))
+
 
     @property
     def hessian(self):
@@ -178,6 +204,10 @@ class SS_CASSCF(Wavefunction):
         self.mol.set_common_origin([0,0,0])
         self.dip_nuc = np.einsum('i,ix->x', self.mol.atom_charges(), self.mol.atom_coords())
         self.dip_mat = - self.mol.intor("int1e_r")
+       
+        # Quadrupole terms
+        self.quad_nuc = np.einsum('i,ix,iy->xy', self.mol.atom_charges(), self.mol.atom_coords(), self.mol.atom_coords())
+        self.quad_mat = - self.mol.intor("int1e_rr").reshape((3,3,self.norb,self.norb))
 
     def initialise(self, mo_guess, ci_guess, integrals=True):
         # Save orbital coefficients
