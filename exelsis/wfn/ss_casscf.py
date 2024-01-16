@@ -177,7 +177,7 @@ class SS_CASSCF(Wavefunction):
         # Dipole terms
         self.mol.set_common_origin([0,0,0])
         self.dip_nuc = np.einsum('i,ix->x', self.mol.atom_charges(), self.mol.atom_coords())
-        self.dip_mat = self.mol.intor("int1e_r")
+        self.dip_mat = - self.mol.intor("int1e_r")
 
     def initialise(self, mo_guess, ci_guess, integrals=True):
         # Save orbital coefficients
