@@ -5,7 +5,7 @@ from pyscf.tools import cubegen
 
 def analyse(mol, config):
     """Analyse either all the states or a given state"""
-
+    print()
     print("---------------------------------------------------------------")
     print(" Analysing optimised solution(s)                               ")
     print("---------------------------------------------------------------")

@@ -107,7 +107,8 @@ class Config(dict):
                                   oscillator_strength = getbool(self.lines,"oscillator_strength",False,default=False),
                                   dist_thresh = getvalue(self.lines,"dist_tresh",float,False,default=1e-8),
                                   ovlp_mat = getbool(self.lines,"overlap_matrix",False,default=False),
-                                  analyse = getbool(self.lines,"analyse",False,default=False)
+                                  analyse = getbool(self.lines,"analyse",False,default=False), 
+                                  nevpt2 = getbool(self.lines,"nevpt2",False,default=False)
                                  ) 
         
         if self["jobcontrol"]["guess"] == "random":

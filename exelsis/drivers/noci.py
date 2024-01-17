@@ -125,7 +125,7 @@ def oscillator_strength(wfnlist, ref_ind=0, plev=1):
     # Print the outcome
     print("{:4s}   {:10s}   {:10s}   {:10s}".format("", "   dE / eV", "   f / au", "   S / au"))
     print("-----------------------------------------------")
-    strengths.sort()
+    #strengths.sort()
     for i, (de, f, s) in enumerate(strengths):
         print("{: 4d}:  {: 10.6f}   {: 10.6f}   {: 10.6f}".format(i,de,f,s))
     print("----------------------------------------------------------")

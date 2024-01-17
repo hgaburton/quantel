@@ -32,9 +32,10 @@ def from_file(mol, config):
         from exelsis.opt.mode_controlling import ModeControl as OPT
 
     # Initialise wavefunction list
-    wfn_list = []
-    e_list   = []
-    i_list   = []
+    wfn_list  = []
+    e_list    = []
+    i_list    = []
+    ept2_list = []
 
     # Reconverge target solutions
     target_index = config["optimiser"]["keywords"]["index"]
@@ -56,7 +57,7 @@ def from_file(mol, config):
             myopt = OPT(**optconfig)
             if not myopt.run(myfun, **config["optimiser"]["keywords"]):
                 continue
-            
+
             # Get the Hessian index
             hindices = myfun.get_hessian_index()
             if (hindices[0] != target_index) and (target_index is not None):
@@ -83,6 +84,12 @@ def from_file(mol, config):
                 # Save energy and indices
                 e_list.append(myfun.energy)
                 i_list.append(hindices[0])
+                if(config["jobcontrol"]["nevpt2"]): 
+                    if config["wavefunction"]["method"] != "casscf":
+                        raise ValueError("NEVPT2 is only compatible with CASSCF function")
+                    ept2_list.append(myfun.get_pt2_correction())
+
+
 
                 # Deallocate integrals to reduce memory footprint
                 myfun.deallocate()
@@ -95,6 +102,8 @@ def from_file(mol, config):
 
     numpy.savetxt('energy_list', numpy.array([e_list]),fmt="% 16.10f")
     numpy.savetxt('ind_list', numpy.array([i_list]),fmt="% 5d")
+    if(config["jobcontrol"]["nevpt2"]): 
+        numpy.savetxt('energy_pt2_list', numpy.array([ept2_list]),fmt="% 16.10f")
 
     print()
     print(" Read from file complete... Identified {:5d} unique solutions".format(len(wfn_list)))

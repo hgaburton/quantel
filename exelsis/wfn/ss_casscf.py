@@ -4,7 +4,7 @@
 import numpy as np
 import scipy.linalg
 from functools import reduce
-from pyscf import scf, fci, __config__, ao2mo, lib, mcscf
+from pyscf import scf, fci, __config__, ao2mo, lib, mcscf, mrpt
 from pyscf.mcscf import mc_ao2mo
 from exelsis.utils.linalg import delta_kron, orthogonalise
 from exelsis.gnme.cas_noci import cas_coupling
@@ -130,6 +130,27 @@ class SS_CASSCF(Wavefunction):
 
         return np.block([[H_OrbOrb, H_OrbCI],
                          [H_OrbCI.T, H_CICI]])
+
+    def get_pt2_correction(self):
+        # Turn symmetry off
+        tmp = self.mol.symmetry
+        self.mol.symmetry = False
+
+        # Setup CASSCF object
+        mc = mcscf.CASSCF(self.mol, self.ncas, self.nelecas)
+        mc.verbose = 0
+        mc.mo_coeff = self.mo_coeff.copy()
+        emc = mc.mc1step(mc.mo_coeff,ci0=np.reshape(self.mat_ci[:,0],(self.nDeta,self.nDetb)))[0]
+        assert(abs(emc-self.energy)<1e-6)
+
+        # Setup SC-NEVPT2 calculation
+        mypt = mrpt.NEVPT(mc)
+        mypt.verbose = 0
+
+        # Turn symmetry back on
+        self.mol.symmetry = tmp
+        return self.energy+mypt.kernel()
+
 
     def save_to_disk(self,tag):
         """Save a SS-CASSCF object to disk with prefix 'tag'"""

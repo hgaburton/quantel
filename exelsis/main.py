@@ -57,9 +57,7 @@ def main():
 
     # Generate wavefunctions 
     wfnlist = None
-    if config["jobcontrol"]["analyse"]:
-        analyse(mol, config)
-    elif config["jobcontrol"]["guess"] == "fromfile":
+    if config["jobcontrol"]["guess"] == "fromfile":
         wfnlist = from_file(mol, config)
     elif config["jobcontrol"]["guess"] == "random":
         wfnlist = random_search(mol, config)
@@ -73,6 +71,9 @@ def main():
 
     if config["jobcontrol"]["oscillator_strength"]:
         oscillator_strength(wfnlist, **config["jobcontrol"]["oscillator_job"])
+
+    if config["jobcontrol"]["analyse"]:
+        analyse(mol, config)
 
     if config["jobcontrol"]["noci"]:
         noci(wfnlist, **config["jobcontrol"]["noci_job"])
