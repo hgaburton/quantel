@@ -3,8 +3,9 @@
 
 import numpy as np
 import scipy.linalg
+import copy
 from functools import reduce
-from pyscf import scf, fci, __config__, ao2mo, lib, mcscf, mrpt
+from pyscf import scf, fci, __config__, ao2mo, lib, mcscf, mrpt, gto
 from pyscf.mcscf import mc_ao2mo
 from exelsis.utils.linalg import delta_kron, orthogonalise
 from exelsis.gnme.cas_noci import cas_coupling
@@ -131,6 +132,7 @@ class SS_CASSCF(Wavefunction):
         return np.block([[H_OrbOrb, H_OrbCI],
                          [H_OrbCI.T, H_CICI]])
 
+
     def get_pt2_correction(self):
         # Turn symmetry off
         tmp = self.mol.symmetry
@@ -158,20 +160,39 @@ class SS_CASSCF(Wavefunction):
         hindices = self.get_hessian_index()
 
         # Save coefficients, CI, and energy
-        np.savetxt(tag+'.mo_coeff', self.mo_coeff, fmt="% 20.16f")
+        nocc = self.ncore + self.ncas
+        np.savetxt(tag+'.mo_coeff', self.mo_coeff[:,:nocc], fmt="% 20.16f")
         np.savetxt(tag+'.mat_ci',   self.mat_ci, fmt="% 20.16f")
         np.savetxt(tag+'.energy',   
                    np.array([[self.energy, hindices[0], hindices[1], self.s2]]), 
                    fmt="% 18.12f % 5d % 5d % 12.6f")
 
-    def read_from_disk(self,tag):
+    def read_from_disk(self,tag,basis_old=None):
         """Read a SS-CASSCF object from disk with prefix 'tag'"""
         # Read MO coefficient and CI coefficients
         mo_coeff = np.genfromtxt(tag+".mo_coeff")
         ci_coeff = np.genfromtxt(tag+".mat_ci")
+
+        if(not basis_old is None):
+            mo_coeff = self.orbital_projection(mo_coeff, basis_old)
         
         # Initialise object
         self.initialise(mo_coeff, ci_coeff)
+
+    def orbital_projection(self, C, basis_old):
+        # Build molecule object for old basis
+        mol2 = copy.copy(self.mol)
+        mol2.basis = basis_old
+        mol2.build()
+
+        # Build the projector
+        g21 = gto.intor_cross('int1e_ovlp', self.mol, mol2)
+        g22 = gto.intor_cross('int1e_ovlp', self.mol, self.mol)
+        inv_g22 = np.linalg.inv(g22)
+        P = np.linalg.multi_dot([inv_g22, g21])
+
+        # Build projected orbitals
+        return P.dot(C)
 
     def copy(self, integrals=False):
         # Return a copy of the current object
