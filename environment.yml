@@ -9,3 +9,5 @@ dependencies:
     - scipy
     - boost
     - pytest
+    - libint
+    - ambit
