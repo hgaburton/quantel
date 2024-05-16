@@ -105,13 +105,13 @@ setup(
     description='A hybrid Python/C++ test project',
     long_description='',
     # tell setuptools to look for any packages under 'src'
-    packages=find_packages('src'),
+    packages=find_packages('quantel'),
     # tell setuptools that all packages will be under the 'src' directory
     # and nowhere else
-    package_dir={'':'src'},
+    package_dir={'':'quantel'},
     # add an extension module named 'python_cpp_example' to the package
     # 'python_cpp_example'
-    ext_modules=[CMakeExtension('quantel/quantel')],
+    #ext_modules=[CMakeExtension('quantel')],
     # add custom build_ext command
     cmdclass=dict(build_ext=CMakeBuild),
     test_suite='tests',

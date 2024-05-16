@@ -1,0 +1,3 @@
+conda install pybind11 boost eigen ambit python=3.10.12
+
+install libint separately
