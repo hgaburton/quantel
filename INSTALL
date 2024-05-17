@@ -1,0 +1,15 @@
+## First setup the external libraries
+cd external/
+git clone https://github.com/fmtlib/fmt.git
+
+wget https://github.com/evaleev/libint/releases/download/v2.9.0/libint-2.9.0.tgz
+tar -xvf libint-2.9.0.tgz
+mv libint-2.9.0 libint2
+
+cd ../
+
+## Then setup a build directory and ocmpute
+mkdir build
+cmake ../
+make -j16 install
+cd ../

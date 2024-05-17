@@ -42,11 +42,25 @@ PYBIND11_MODULE(_quantel, m) {
 
      py::class_<Molecule>(m, "Molecule")
           .def(py::init<>())
+          .def(py::init<std::vector<std::tuple<int,double,double,double> > >())
+          .def(py::init<std::vector<std::tuple<std::string,double,double,double> > >())
           .def("add_atom", py::overload_cast<int,double,double,double>(&Molecule::add_atom), 
                "Add an atom using integer nuclear charge")
           .def("add_atom", py::overload_cast<std::string,double,double,double>(&Molecule::add_atom), 
                "Add an atom using element string")
-          .def("print", &Molecule::print, "Print the molecular structure");            
+          .def("set_charge", &Molecule::set_charge, "Set molecular charge")
+          .def("set_spin_multiplicity", py::overload_cast<size_t>(&Molecule::set_spin_multiplicity), 
+               "Set molecular spin multiplicity")
+          .def("set_spin_multiplicity", py::overload_cast<>(&Molecule::set_spin_multiplicity), 
+               "Set default molecular spin multiplicity")
+          .def("print", &Molecule::print, "Print the molecular structure")
+          .def("natom", &Molecule::natom, "Get the number of atoms")
+          .def("nelec", &Molecule::nelec, "Get the number of electrons")
+          .def("nalfa", &Molecule::nalfa, "Get the number of high-spin electrons")
+          .def("nbeta", &Molecule::nbeta, "Get the number of low-spin electrons")
+          .def("charge", &Molecule::charge, "Get the total charge")
+          .def("mult", &Molecule::mult, "Get the spin multiplicity");
+          
 
      py::class_<LibintInterface>(m, "LibintInterface")
           .def(py::init<const std::string, Molecule &>())
