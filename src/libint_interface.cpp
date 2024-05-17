@@ -1,4 +1,5 @@
 #include "libint_interface.h"
+#include "linalg.h"
 
 using namespace libint2;
 
@@ -15,6 +16,9 @@ void LibintInterface::initialize()
     compute_overlap();
     compute_one_electron_matrix();
     compute_two_electron_integrals();
+
+    // Compute the orthogonalisation matrix
+    compute_orthogonalization_matrix();
 }
 
 double LibintInterface::overlap(size_t p, size_t q) 
@@ -189,6 +193,13 @@ void LibintInterface::compute_overlap()
     }
 }
 
+void LibintInterface::compute_orthogonalization_matrix()
+{
+    // Compute the orthogonalisation matrix
+    size_t dim = m_nbsf;
+    m_nmo = orthogonalisation_matrix(m_nbsf, m_S, 1.0e-8, m_X);
+}
+
 
 void LibintInterface::compute_one_electron_matrix()
 {
@@ -239,3 +250,28 @@ void LibintInterface::compute_one_electron_matrix()
         }
     }
 } 
+
+void LibintInterface::build_fock(std::vector<double> &dens, std::vector<double> &fock)
+{
+    // Check dimensions of density matrix
+    assert(dens.size() == m_nbsf * m_nbsf);
+
+    // Resize fock matrix
+    fock.resize(m_nbsf * m_nbsf, 0.0);
+
+    // Loop over basis functions
+    for(size_t p=0; p < m_nbsf; p++)
+    for(size_t q=0; q < m_nbsf; q++)
+    {
+        // One-electron contribution
+        fock[oei_index(p,q)] += oei(p,q,true);
+
+        // Two-electron contribution
+        for(size_t s=0; s < m_nbsf; s++)
+        for(size_t r=0; r < m_nbsf; r++)
+        {
+            // Build fock matrix
+            fock[oei_index(p,q)] += dens[oei_index(s,r)] * (2.0 * tei(p,q,r,s,true,false) - tei(p,q,s,r,true,false));
+        }
+    }
+}

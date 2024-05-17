@@ -65,14 +65,29 @@ PYBIND11_MODULE(_quantel, m) {
      py::class_<LibintInterface>(m, "LibintInterface")
           .def(py::init<const std::string, Molecule &>())
           .def("initalize", &LibintInterface::initialize, "Initialize matrix elements")
+          .def("nbsf", &LibintInterface::nbsf, "Get number of basis functions")
           .def("scalar_potential", &LibintInterface::scalar_potential, "Get value of the scalar potential")
           .def("overlap", &LibintInterface::overlap, "Get element of overlap matrix")
           .def("oei", &LibintInterface::oei, "Get element of one-electron Hamiltonian matrix")
           .def("tei", &LibintInterface::tei, "Get element of two-electron integral array")
+          .def("molecule", &LibintInterface::molecule, "Get molecule object")
+          .def("build_fock", [](LibintInterface &ints, py::array_t<double> &dens) {
+               size_t nbsf = ints.nbsf();
+               auto dens_buf = dens.request();
+               std::vector<double> v_dens((double *) dens_buf.ptr, (double *) dens_buf.ptr + dens_buf.size);
+               std::vector<double> v_fock(v_dens.size(), 0.0);
+               ints.build_fock(v_dens, v_fock);
+               return vec_to_np_array(nbsf,nbsf,v_fock.data()); 
+               },
+               "Build Fock matrix from density matrix")
           .def("overlap_matrix", [](LibintInterface &ints) { 
                return vec_to_np_array(ints.nbsf(), ints.nbsf(), ints.overlap_matrix()); 
                },
                "Return the overlap matrix")
+          .def("orthogonalization_matrix", [](LibintInterface &ints) { 
+               return vec_to_np_array(ints.nbsf(), ints.nbsf(), ints.orthogonalization_matrix()); 
+               },
+               "Return the orthogonalization matrix")
           .def("oei_matrix", [](LibintInterface &ints, bool alpha) { 
                return vec_to_np_array(ints.nbsf(), ints.nbsf(), ints.oei_matrix(alpha)); 
                }, 

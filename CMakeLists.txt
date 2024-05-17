@@ -39,6 +39,16 @@ message(STATUS "SOURCE DIRECTORY=" ${SOURCE_DIR})
 # Tell CMake that headers are also in SOURCE_DIR
 include_directories(${SOURCE_DIR})
 
+# Armadillo
+find_package(BLAS)
+find_package(LAPACK)
+set(ARMADILLO_PATH "${ROOT_DIR}/external/armadillo")
+include(cmake/SetupArmadillo.cmake)
+include_directories($<TARGET_PROPERTY:armadillo,INTERFACE_INCLUDE_DIRECTORIES>)
+set_property(DIRECTORY . APPEND PROPERTY COMPILE_DEFINITIONS
+    $<TARGET_PROPERTY:armadillo,INTERFACE_COMPILE_DEFINITIONS>)
+
+
 # Find third-party packages
 #list(APPEND CMAKE_PREFIX_PATH "lib/")
 find_package(Eigen3)
@@ -50,12 +60,21 @@ find_package(pybind11 CONFIG REQUIRED)
 pybind11_add_module(_quantel ${SOURCES} "${SOURCE_DIR}/bindings.cpp"
     "${SOURCE_DIR}/molecule.cpp"
     "${SOURCE_DIR}/libint_interface.cpp"
+    "${SOURCE_DIR}/linalg.cpp"
     )
 
 add_subdirectory(external/fmt)
 add_subdirectory(external/libint2)
-target_link_libraries(_quantel PRIVATE fmt-header-only)
-target_link_libraries(_quantel PRIVATE libint2 ${Boost_LIBRARIES} ${EIGEN3_LIBRARIES})
+
+
+target_link_libraries(_quantel PRIVATE 
+            fmt-header-only 
+            armadillo 
+            libint2 
+            ${LAPACK_LIBRARIES}
+            ${BLAS_LIBRARIES}
+            ${Boost_LIBRARIES} 
+            ${EIGEN3_LIBRARIES})
 
 # specify open MP flags
 if(USE_OpenMP)

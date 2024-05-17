@@ -7,15 +7,20 @@
 class LibintInterface {
 private:
     const libint2::BasisSet m_basis; //!< The Libint2 basis set
-    const Molecule &m_mol;  
+    const Molecule &m_mol;
 
     // Information about the basis
     size_t m_nbsf; //!< Number of basis functions
+    size_t m_nmo; //!< Number of molecular orbitals
 
     /// Constant scalar potential
     double m_V;
+
     /// Overlap matrix
     std::vector<double> m_S; 
+    /// Orthogonalisation matrix
+    std::vector<double> m_X;
+
     /// One-electron integrals
     std::vector<double> m_oei_a;
     std::vector<double> m_oei_b;
@@ -37,6 +42,9 @@ public:
     { 
         initialize();
     }
+
+    /// Return pointer to m_mol
+    const Molecule &molecule() { return m_mol; }
 
     /// Set the scalar potential
     void set_scalar_potential(double value);
@@ -62,9 +70,11 @@ public:
     /// @param alpha2 spin of electron 2
     void set_tei(size_t p, size_t q, size_t r, size_t s, double value, bool alpha1, bool alpha2);
 
-    /// Get the number of basis functions
-    size_t nbsf() { return m_nbsf; }
-    
+    /// Build fock matrix from restricted density matrix in AO basis
+    /// @param D density matrix
+    /// @param F output fock matrix
+    void build_fock(std::vector<double> &dens, std::vector<double> &fock);
+
     /// Get the value of the scalar potential
     double scalar_potential() { return m_V; }
 
@@ -91,15 +101,17 @@ public:
     /// Get a pointer to the overlap matrix
     double *overlap_matrix() { return m_S.data(); }
 
+    /// Get a pointer to the orthogonalisation matrix
+    double *orthogonalization_matrix() { return m_X.data(); }
+
     /// Get a pointer to the one-electron Hamiltonian matrix
     /// @param alpha spin of the integrals
     double *oei_matrix(bool alpha) { return alpha ? m_oei_a.data() : m_oei_b.data(); }
 
+    /// Get the number of basis functions
+    size_t nbsf() const { return m_nbsf; }
 
-    /** \brief Compute two-electron integrals **/
-    //void two_electron_matrix(four_array<double> &II);
-
-    /** Initialise all relevant variabes **/
+    /// Initialise all relevant variables
     void initialize();
 
 
@@ -108,6 +120,8 @@ private:
     void compute_nuclear_potential();
     /// Compute overlap integrals
     void compute_overlap();
+    /// Compute orthogonalization matrix
+    void compute_orthogonalization_matrix();
     /// Compute the one-electron Hamiltonian integrals
     void compute_one_electron_matrix();
     /// Compute the two-electron integrals

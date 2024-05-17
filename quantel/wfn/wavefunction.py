@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-from abc import ABCMeta, abstractmethod
+from abc import ABCMeta, abstractmethod, abstractproperty
 from exelsis.opt.function import Function
 
 class Wavefunction(Function,metaclass=ABCMeta):
