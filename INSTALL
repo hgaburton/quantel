@@ -6,6 +6,11 @@ wget https://github.com/evaleev/libint/releases/download/v2.9.0/libint-2.9.0.tgz
 tar -xvf libint-2.9.0.tgz
 mv libint-2.9.0 libint2
 
+wget https://sourceforge.net/projects/arma/files/armadillo-12.8.3.tar.xz
+tar -xvf armadillo-12.8.3.tar.xz
+mv armadillo-12.8.3 armadillo
+
+
 cd ../
 
 ## Then setup a build directory and ocmpute

@@ -75,6 +75,11 @@ public:
     /// @param F output fock matrix
     void build_fock(std::vector<double> &dens, std::vector<double> &fock);
 
+    /// Build the JK matrix from the density matrix in the AO basis
+    /// @param D density matrix
+    /// @param JK output JK matrix
+    void build_JK(std::vector<double> &dens, std::vector<double> &JK);
+
     /// Get the value of the scalar potential
     double scalar_potential() { return m_V; }
 
@@ -110,6 +115,9 @@ public:
 
     /// Get the number of basis functions
     size_t nbsf() const { return m_nbsf; }
+
+    /// Get the number of linearly indepdent molecular orbitals
+    size_t nmo() const { return m_nmo; }
 
     /// Initialise all relevant variables
     void initialize();

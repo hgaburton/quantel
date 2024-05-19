@@ -275,3 +275,25 @@ void LibintInterface::build_fock(std::vector<double> &dens, std::vector<double> 
         }
     }
 }
+
+void LibintInterface::build_JK(std::vector<double> &dens, std::vector<double> &JK)
+{
+    // Check dimensions of density matrix
+    assert(dens.size() == m_nbsf * m_nbsf);
+
+    // Resize JK matrix
+    JK.resize(m_nbsf * m_nbsf, 0.0);
+
+    // Loop over basis functions
+    for(size_t p=0; p < m_nbsf; p++)
+    for(size_t q=0; q < m_nbsf; q++)
+    {
+        // Two-electron contribution
+        for(size_t s=0; s < m_nbsf; s++)
+        for(size_t r=0; r < m_nbsf; r++)
+        {
+            // Build JK matrix
+            JK[oei_index(p,q)] += dens[oei_index(s,r)] * (2.0 * tei(p,q,r,s,true,false) - tei(p,q,s,r,true,false));
+        }
+    }
+}
