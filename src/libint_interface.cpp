@@ -107,7 +107,7 @@ void LibintInterface::compute_two_electron_integrals()
         strides[1] = n3 * n4;
         strides[2] = n4;
 
-        // Compute contribution
+        // Compute contribution in chemists notation
         coul_engine.compute(m_basis[s1], m_basis[s2], m_basis[s3], m_basis[s4]);
         const auto *ints = buf_coul[0];
         if(ints == nullptr)
@@ -119,9 +119,10 @@ void LibintInterface::compute_two_electron_integrals()
         for(size_t f3=0; f3 < n3; ++f3)
         for(size_t f4=0; f4 < n4; ++f4)
         {
-            // Save value for aabb block
+            // Save value for aabb block in physicists notation
             double value = ints[f1*strides[0] + f2*strides[1] + f3*strides[2] + f4];
-            set_tei(bf1+f1, bf2+f2, bf3+f3, bf4+f4, value, true, false);
+            // NOTE: Here we convert from chemists to physicists notation
+            set_tei(bf1+f1, bf3+f3, bf2+f2, bf4+f4, value, true, false);
         }
     }
 
@@ -271,7 +272,7 @@ void LibintInterface::build_fock(std::vector<double> &dens, std::vector<double> 
         for(size_t r=0; r < m_nbsf; r++)
         {
             // Build fock matrix
-            fock[oei_index(p,q)] += dens[oei_index(s,r)] * (2.0 * tei(p,q,r,s,true,false) - tei(p,q,s,r,true,false));
+            fock[oei_index(p,q)] += dens[oei_index(s,r)] * (2.0 * tei(p,r,q,s,true,false) - tei(p,r,s,q,true,false));
         }
     }
 }
@@ -293,7 +294,67 @@ void LibintInterface::build_JK(std::vector<double> &dens, std::vector<double> &J
         for(size_t r=0; r < m_nbsf; r++)
         {
             // Build JK matrix
-            JK[oei_index(p,q)] += dens[oei_index(s,r)] * (2.0 * tei(p,q,r,s,true,false) - tei(p,q,s,r,true,false));
+            JK[oei_index(p,q)] += dens[oei_index(s,r)] * (2.0 * tei(p,r,q,s,true,false) - tei(p,r,s,q,true,false));
         }
     }
+}
+
+void LibintInterface::ao_to_mo(
+    std::vector<double> &C1, std::vector<double> &C2, 
+    std::vector<double> &C3, std::vector<double> &C4, 
+    std::vector<double> &eri)
+{
+    // Check dimensions
+    assert(C1.size() % m_nbsf == 0);
+    assert(C2.size() % m_nbsf == 0);
+    assert(C3.size() % m_nbsf == 0);
+    assert(C4.size() % m_nbsf == 0);
+    
+    // Get number of columns of transformation matrices
+    size_t d1 = C1.size() / m_nbsf;
+    size_t d2 = C2.size() / m_nbsf;
+    size_t d3 = C3.size() / m_nbsf;
+    size_t d4 = C4.size() / m_nbsf;
+
+    // Define temporary memory
+    std::vector<double> tmp1(m_nbsf*m_nbsf*m_nbsf*m_nbsf, 0.0);
+    std::vector<double> tmp2(m_nbsf*m_nbsf*m_nbsf*m_nbsf, 0.0);    
+
+    // Transform s index
+    for(size_t mu=0; mu < m_nbsf; mu++)
+    for(size_t nu=0; nu < m_nbsf; nu++)
+    for(size_t sg=0; sg < m_nbsf; sg++)
+    for(size_t ta=0; ta < m_nbsf; ta++)
+    for(size_t s=0; s < d4; s++)
+        tmp1[mu*m_nbsf*m_nbsf*d4 + nu*m_nbsf*d4 + sg*m_nbsf + s] += 
+            tei(mu,nu,sg,ta,true,false) * C4[ta*d4 + s];
+
+    // Transform r index
+    for(size_t mu=0; mu < m_nbsf; mu++)
+    for(size_t nu=0; nu < m_nbsf; nu++)
+    for(size_t sg=0; sg < m_nbsf; sg++)
+    for(size_t r=0; r < d3; r++)
+    for(size_t s=0; s < d4; s++)
+        tmp2[mu*m_nbsf*d3*d4 + nu*d3*d4 + r*d4 + s] += 
+            tmp1[mu*m_nbsf*m_nbsf*d4 + nu*m_nbsf*d4 + sg*m_nbsf + s] * C3[sg*d3 + r];
+
+    // Transform q index
+    std::fill(tmp1.begin(), tmp1.end(), 0.0);
+    for(size_t mu=0; mu < m_nbsf; mu++)
+    for(size_t nu=0; nu < m_nbsf; nu++)
+    for(size_t q=0; q < d2; q++)
+    for(size_t r=0; r < d3; r++)
+    for(size_t s=0; s < d4; s++)
+        tmp1[mu*d2*d3*d4 + q*d3*d4 + r*d4 + s] += 
+            tmp2[mu*m_nbsf*d3*d4 + nu*d3*d4 + r*d4 + s] * C2[nu*d2 + q];
+
+    // Transform s index
+    std::fill(eri.begin(), eri.end(), 0.0);
+    for(size_t mu=0; mu < m_nbsf; mu++)
+    for(size_t p=0; p < d1; p++)
+    for(size_t q=0; q < d2; q++)
+    for(size_t r=0; r < d3; r++)
+    for(size_t s=0; s < d4; s++)
+        eri[p*d2*d3*d4 + q*d3*d4 + r*d4 + s] += 
+            tmp1[mu*d2*d3*d4 + q*d3*d4 + r*d4 + s] * C1[mu*d1 + p];
 }

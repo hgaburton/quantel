@@ -103,6 +103,16 @@ public:
     /// @param alpha2 spin of electron 2
     double tei(size_t p, size_t q, size_t r, size_t s, bool alpha1, bool alpha2);
 
+    /// Perform AO to MO eri transformation
+    /// @param C1 transformation matrix
+    /// @param C2 transformation matrix
+    /// @param C3 transformation matrix
+    /// @param C4 transformation matrix
+    /// @param eri outpur array of two-electron integrals
+    void ao_to_mo(std::vector<double> &C1, std::vector<double> &C2, 
+                  std::vector<double> &C3, std::vector<double> &C4, 
+                  std::vector<double> &eri);
+
     /// Get a pointer to the overlap matrix
     double *overlap_matrix() { return m_S.data(); }
 
@@ -112,6 +122,19 @@ public:
     /// Get a pointer to the one-electron Hamiltonian matrix
     /// @param alpha spin of the integrals
     double *oei_matrix(bool alpha) { return alpha ? m_oei_a.data() : m_oei_b.data(); }
+
+    /// Get a point to the two-electron integral array
+    /// @param alpha1 spin of electron 1
+    /// @param alpha2 spin of electron 2
+    double *tei_array(bool alpha1, bool alpha2) { 
+        if(alpha1 == true and alpha2 == true)
+            return m_tei_aa.data();
+        if(alpha1 == true and alpha2 == false)
+            return m_tei_ab.data();
+        if(alpha1 == false and alpha2 == false)    
+            return m_tei_bb.data();
+        return nullptr;
+    }
 
     /// Get the number of basis functions
     size_t nbsf() const { return m_nbsf; }

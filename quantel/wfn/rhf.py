@@ -3,7 +3,7 @@
 
 import numpy as np
 import scipy.linalg
-from quantel.utils.linalg import delta_kron, orthogonalise
+from quantel.utils.linalg import orthogonalise
 from .wavefunction import Wavefunction
 
 class RHF(Wavefunction):
@@ -27,7 +27,7 @@ class RHF(Wavefunction):
         self.nbeta     = integrals.molecule().nbeta()
 
         # Get number of basis functions and linearly independent orbitals
-        self.norb      = integrals.nbsf()
+        self.nbsf      = integrals.nbsf()
         self.nmo       = integrals.nmo()
 
         # For now, we assume that the number of alpha and beta electrons are the same
@@ -39,6 +39,10 @@ class RHF(Wavefunction):
         self.rot_idx   = self.uniq_var_indices() # Indices for orbital rotations
         self.nrot      = np.sum(self.rot_idx) # Number of orbital rotations
 
+        # Define the orbital energies and coefficients
+        self.mo_coeff         = None
+        self.orbital_energies = None
+
     @property
     def dim(self):
         """Get the number of degrees of freedom"""
@@ -49,14 +53,13 @@ class RHF(Wavefunction):
         """Get the energy of the current RHF state"""
         # Nuclear potential
         E  = self.integrals.scalar_potential()
-        E += np.einsum('pq,pq', self.integrals.oei_matrix(True)+self.fock, self.dens, optimize="optimal")
+        E += np.einsum('pq,pq', self.integrals.oei_matrix(True) + self.fock, self.dens, optimize="optimal")
         return E
 
     @property
     def s2(self):
-        ''' Compute the spin of a given FCI vector '''
-        # TODO Need to implement s2 computation
-        return 0 #self.fcisolver.spin_square(self.mat_ci[:,0], self.ncas, self.nelecas)[0]
+        """Get the spin of the current RHF state"""
+        return 0 # All RHF states have spin 0
 
     @property
     def gradient(self):
@@ -66,9 +69,27 @@ class RHF(Wavefunction):
 
     @property
     def hessian(self):
-        ''' This method concatenate the orb-orb, orb-CI and CI-CI part of the Hessian '''
-        return 0
-    
+        """Compute the internal RHF orbital Hessian"""
+        # Number of occupied and virtual orbitals
+        no = self.nocc
+        nv = self.nmo - self.nocc
+        # Compute Fock matrix in MO basis 
+        Fmo = np.linalg.multi_dot([self.mo_coeff.T, self.fock, self.mo_coeff])
+        # Compute ao_to_mo integral transform
+        eri_pqrs = self.integrals.ao_to_mo(self.mo_coeff,self.mo_coeff,self.mo_coeff,self.mo_coeff)
+        # Initialise Hessian matrix
+        hessian = np.zeros((self.nmo,self.nmo,self.nmo,self.nmo))
+        # Compute Fock contributions
+        for i in range(no):
+            hessian[no:,i,no:,i] += 4 * Fmo[no:,no:]
+        for a in range(no,self.nmo):
+            hessian[a,:no,a,:no] -= 4 * Fmo[:no,:no]
+        # Compute two-electron contributions
+        hessian[no:,:no,no:,:no] += 16 * np.einsum('abij->aibj', eri_pqrs[no:,no:,:no,:no], optimize="optimal")
+        hessian[no:,:no,no:,:no] -=  4 * np.einsum('aibj->aibj', eri_pqrs[no:,:no,no:,:no], optimize="optimal")
+        hessian[no:,:no,no:,:no] -=  4 * np.einsum('aijb->aibj', eri_pqrs[no:,:no,:no,no:], optimize="optimal")
+        # Return suitably shaped array
+        return (hessian[:,:,self.rot_idx])[self.rot_idx,:]
 
     def save_to_disk(self,tag):
         """Save object to disk with prefix 'tag'"""
@@ -93,23 +114,24 @@ class RHF(Wavefunction):
         #self.initialise(mo_coeff, ci_coeff)
 
     def copy(self):
-        # Return a copy of the current object
-        #newcas = ESMF(self.mol, spin=self.spin, ref_allowed=self.with_ref)
-        #newcas.initialise(self.mo_coeff, self.mat_ci, integrals=False)
-        return newcas
+        """Return a copy of the current RHF object"""
+        them = RHF(self.integrals, verbose=self.verbose)
+        them.initialise(self.mo_coeff)
+        return them
 
     def overlap(self, them):
-        """Compute the many-body overlap with another CAS waveunction (them)"""
-        return 0 #esmf_coupling(self, them, self.ovlp, with_ref=self.with_ref)[0]
+        """Compute the (nonorthogonal) many-body overlap with another RHF wavefunction (them)"""
+        raise NotImplementedError("RHF overlap not implemented")
 
     def hamiltonian(self, them):
-        """Compute the many-body Hamiltonian coupling with another CAS wavefunction (them)"""
-        #eri = ao2mo.restore(1, self._scf._eri, self.mol.nao).reshape(self.mol.nao**2, self.mol.nao**2)
-        return 0 #esmf_coupling(self, them, self.ovlp, self.hcore, eri, self.enuc, with_ref=self.with_ref)
+        """Compute the (nonorthogonal) many-body Hamiltonian coupling with another RHF wavefunction (them)"""
+        raise NotImplementedError("RHF Hamiltonian not implemented")
 
     def initialise(self, mo_guess):
         """Initialise the wave function with a set of molecular orbital coefficients"""
+        # Make sure orbitals are orthogonal
         self.mo_coeff = orthogonalise(mo_guess, self.integrals.overlap_matrix())
+        # Update the density and Fock matrices
         self.update()
 
     def update(self):
@@ -118,13 +140,37 @@ class RHF(Wavefunction):
         self.get_fock()
 
     def get_density(self):
-        """Compute the 1RDM for the current state"""
+        """Compute the 1RDM for the current state in AO basis"""
         Cocc = self.mo_coeff[:,:self.nocc]
         self.dens = np.dot(Cocc, Cocc.T)
 
     def get_fock(self):
         """Compute the Fock matrix for the current state"""
         self.fock = self.integrals.build_fock(self.dens)
+
+    def diagonalise_fock(self):
+        """Diagonalise the Fock matrix"""
+        # Get the orthogonalisation matrix
+        X = self.integrals.orthogonalization_matrix()
+        # Project to linearly independent orbitals
+        Ft = np.linalg.multi_dot([X.T, self.fock, X])
+        # Diagonalise the Fock matrix
+        self.orbital_energies, Ct = np.linalg.eigh(Ft)
+        # Transform back to the original basis
+        self.mo_coeff = np.dot(X, Ct)
+        # Update density and Fock matrices
+        self.update()
+
+    def try_fock(self, fock):
+        """Try an extrapolated Fock matrix and update the orbital coefficients"""
+        self.fock = fock
+        self.diagonalise_fock()
+
+    def get_diis_error(self):
+        """Compute the DIIS error vector and DIIS error"""
+        err_vec  = np.linalg.multi_dot([self.fock, self.dens, self.integrals.overlap_matrix()])
+        err_vec -= err_vec.T
+        return err_vec.ravel(), np.linalg.norm(err_vec)
 
     def restore_last_step(self):
         """Restore orbital coefficients to the previous step"""
@@ -144,21 +190,29 @@ class RHF(Wavefunction):
         # Build the anti-symmetric step matrix
         K = np.zeros((self.nmo,self.nmo))
         K[self.rot_idx] = step
-
         # Build the unitary transformation
         Q = scipy.linalg.expm(K - K.T)
-        
         # Transform the coefficients
         self.mo_coeff = np.dot(self.mo_coeff, Q)
-
         # Update the density and fock matrices
         self.update()
 
     def uniq_var_indices(self):
-        """Create a matrix of boolean of size (norb,norb). 
+        """Create a matrix of boolean of size (nbsf,nbsf). 
            A True element means that this rotation should be taken into account during the optimization.
         """
         # Include only occupied-virtual rotations
         mask = np.zeros((self.nmo,self.nmo), dtype=bool)
         mask[self.nocc:,:self.nocc] = True
         return mask
+    
+    def get_orbital_guess(self, method="Core"):
+        """Get a guess for the molecular orbital coefficients"""
+        if(method == "Core"):
+            # Build Fock matrix with zero density
+            self.dens = np.zeros((self.nbsf,self.nbsf))
+            self.get_fock()
+            # Get orbital coefficients by diagonalising Fock matrix
+            self.diagonalise_fock()
+        else:
+            raise NotImplementedError(f"Orbital guess method {method} not implemented")
