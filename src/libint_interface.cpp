@@ -1,3 +1,4 @@
+#include <omp.h>
 #include "libint_interface.h"
 #include "linalg.h"
 
@@ -285,6 +286,7 @@ void LibintInterface::build_JK(std::vector<double> &dens, std::vector<double> &J
     JK.resize(m_nbsf * m_nbsf, 0.0);
 
     // Loop over basis functions
+    #pragma omp parallel for collapse(2)
     for(size_t p=0; p < m_nbsf; p++)
     for(size_t q=0; q < m_nbsf; q++)
     {
@@ -303,6 +305,9 @@ void LibintInterface::ao_to_mo(
     std::vector<double> &C3, std::vector<double> &C4, 
     std::vector<double> &eri)
 {
+    // Tolerance for screening
+    double tol = 1e-14;
+
     // Check dimensions
     assert(C1.size() % m_nbsf == 0);
     assert(C2.size() % m_nbsf == 0);
@@ -318,42 +323,101 @@ void LibintInterface::ao_to_mo(
     // Define temporary memory
     std::vector<double> tmp1(m_nbsf*m_nbsf*m_nbsf*m_nbsf, 0.0);
     std::vector<double> tmp2(m_nbsf*m_nbsf*m_nbsf*m_nbsf, 0.0);    
-
+ 
     // Transform s index
+    #pragma omp parallel for collapse(2)
     for(size_t mu=0; mu < m_nbsf; mu++)
     for(size_t nu=0; nu < m_nbsf; nu++)
-    for(size_t sg=0; sg < m_nbsf; sg++)
-    for(size_t ta=0; ta < m_nbsf; ta++)
-    for(size_t s=0; s < d4; s++)
-        tmp1[mu*m_nbsf*m_nbsf*d4 + nu*m_nbsf*d4 + sg*m_nbsf + s] += 
-            tei(mu,nu,sg,ta,true,false) * C4[ta*d4 + s];
+    {
+        // Define memory buffers
+        double *buff1 = &m_tei_ab[mu*m_nbsf*m_nbsf*m_nbsf + nu*m_nbsf*m_nbsf];
+        double *buff2 = &tmp1[mu*m_nbsf*m_nbsf*d4 + nu*m_nbsf*d4];
+        // Perform inner loop
+        for(size_t sg=0; sg < m_nbsf; sg++)
+        for(size_t ta=0; ta < m_nbsf; ta++)
+        {
+            // Get integral value
+            double Ivalue = buff1[sg*m_nbsf + ta];
+            // Skip if integral is (near) zero
+            if(std::abs(Ivalue) < tol) 
+                continue;
+            // Add contribution to temporary array
+            for(size_t s=0; s < d4; s++)
+                buff2[sg*d4 + s] += Ivalue * C4[ta*d4 + s];
+        }
+    } 
 
     // Transform r index
+    #pragma omp parallel for collapse(2)
     for(size_t mu=0; mu < m_nbsf; mu++)
     for(size_t nu=0; nu < m_nbsf; nu++)
-    for(size_t sg=0; sg < m_nbsf; sg++)
-    for(size_t r=0; r < d3; r++)
-    for(size_t s=0; s < d4; s++)
-        tmp2[mu*m_nbsf*d3*d4 + nu*d3*d4 + r*d4 + s] += 
-            tmp1[mu*m_nbsf*m_nbsf*d4 + nu*m_nbsf*d4 + sg*m_nbsf + s] * C3[sg*d3 + r];
+    {
+        // Define memory buffers
+        double *buff1 = &tmp1[mu*m_nbsf*m_nbsf*d4 + nu*m_nbsf*d4];
+        double *buff2 = &tmp2[mu*m_nbsf*d3*d4 + nu*d3*d4];
+        // Perform inner loop
+        for(size_t sg=0; sg < m_nbsf; sg++)
+        for(size_t s=0; s < d4; s++)
+        {
+            // Get integral value
+            double Ivalue = buff1[sg*d4 + s];
+            // Skip if integral is (near) zero
+            if(std::abs(Ivalue) < tol) 
+                continue;   
+            // Add contribution to temporary array
+            for(size_t r=0; r < d3; r++)
+                buff2[r*d4 + s] += Ivalue * C3[sg*d3 + r];
+        }
+    }
 
-    // Transform q index
+    // Transform q index. 
     std::fill(tmp1.begin(), tmp1.end(), 0.0);
+    #pragma omp parallel for collapse(2)
     for(size_t mu=0; mu < m_nbsf; mu++)
-    for(size_t nu=0; nu < m_nbsf; nu++)
     for(size_t q=0; q < d2; q++)
-    for(size_t r=0; r < d3; r++)
-    for(size_t s=0; s < d4; s++)
-        tmp1[mu*d2*d3*d4 + q*d3*d4 + r*d4 + s] += 
-            tmp2[mu*m_nbsf*d3*d4 + nu*d3*d4 + r*d4 + s] * C2[nu*d2 + q];
+    {
+        // Define memory buffers
+        double *buff1 = &tmp2[mu*m_nbsf*d3*d4];
+        double *buff2 = &tmp1[mu*d2*d3*d4+q*d3*d4];
 
-    // Transform s index
+        // Perform inner loop
+        for(size_t nu=0; nu < m_nbsf; nu++)
+        for(size_t r=0; r < d3; r++)
+        for(size_t s=0; s < d4; s++)
+        {
+            // Get integral value
+            double Ivalue = buff1[nu*d3*d4 + r*d4 + s];
+            // Skip if integral is (near) zero
+            if(std::abs(Ivalue) < tol) 
+                continue;
+            // Add contribution to temporary array
+            buff2[r*d4 + s] += Ivalue * C2[nu*d2 + q];
+        }
+    }
+
+    // Transform p index
     std::fill(eri.begin(), eri.end(), 0.0);
-    for(size_t mu=0; mu < m_nbsf; mu++)
+    #pragma omp parallel for collapse(2)
     for(size_t p=0; p < d1; p++)
     for(size_t q=0; q < d2; q++)
-    for(size_t r=0; r < d3; r++)
-    for(size_t s=0; s < d4; s++)
-        eri[p*d2*d3*d4 + q*d3*d4 + r*d4 + s] += 
-            tmp1[mu*d2*d3*d4 + q*d3*d4 + r*d4 + s] * C1[mu*d1 + p];
+    {
+        // Define memory buffers
+        double *buff1 = &eri[p*d2*d3*d4 + q*d3*d4];
+        for(size_t mu=0; mu < m_nbsf; mu++)
+        {
+            double *buff2 = &tmp1[mu*d2*d3*d4];
+            // Perform inner loop
+            for(size_t r=0; r < d3; r++)
+            for(size_t s=0; s < d4; s++)
+            {
+                // Get integral value
+                double Ivalue = buff2[q*d3*d4 + r*d4 + s];
+                // Skip if integral is (near) zero
+                if(std::abs(Ivalue) < tol) 
+                    continue;
+                // Add contribution to output array
+                buff1[r*d4 + s] += Ivalue * C1[mu*d1 + p];
+            }
+        }
+    }
 }

@@ -7,6 +7,7 @@
 
 #include "libint_interface.h"
 #include "molecule.h"
+#include "determinant.h"
 
 namespace py = pybind11;
 using namespace pybind11::literals;
@@ -66,7 +67,15 @@ PYBIND11_MODULE(_quantel, m) {
           .def("nbeta", &Molecule::nbeta, "Get the number of low-spin electrons")
           .def("charge", &Molecule::charge, "Get the total charge")
           .def("mult", &Molecule::mult, "Get the spin multiplicity");
-          
+
+     py::class_<Determinant>(m, "Determinant")
+          .def(py::init<>(), "Default constructor")
+          .def(py::init<std::vector<bool>, std::vector<bool> >(), 
+               "Constructor with occupation vectors")
+          .def("__str__", &Determinant::str, "Return a string representation of the determinant")
+          .def("__lt__", &Determinant::operator(), "Comparison operator")
+          .def("get_excitation", &Determinant::get_excitation, "Apply single excitation operator to the determinant")
+          ;          
 
      py::class_<LibintInterface>(m, "LibintInterface")
           .def(py::init<const std::string, Molecule &>())

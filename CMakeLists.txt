@@ -61,6 +61,7 @@ pybind11_add_module(_quantel ${SOURCES} "${SOURCE_DIR}/bindings.cpp"
     "${SOURCE_DIR}/molecule.cpp"
     "${SOURCE_DIR}/libint_interface.cpp"
     "${SOURCE_DIR}/linalg.cpp"
+    "${SOURCE_DIR}/determinant.cpp"
     )
 
 add_subdirectory(external/fmt)
@@ -80,7 +81,7 @@ target_link_libraries(_quantel PRIVATE
 if(USE_OpenMP)
   find_package(OpenMP REQUIRED)
   if(OpenMP_CXX_FOUND)
-      target_link_libraries(_quantel libint2 PUBLIC OpenMP::OpenMP_CXX)
+      target_link_libraries(_quantel PUBLIC OpenMP::OpenMP_CXX)
   endif()
 endif(USE_OpenMP)
 
