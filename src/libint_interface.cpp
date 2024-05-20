@@ -7,7 +7,7 @@ using namespace libint2;
 void LibintInterface::initialize()
 {
     // Save number of basis functions
-    m_nbsf = m_basis.size();
+    m_nbsf = m_basis.nbf();
 
     // Compute nuclear potential
     compute_nuclear_potential();
@@ -78,19 +78,18 @@ void LibintInterface::compute_two_electron_integrals()
     auto shell2bf = m_basis.shell2bf();
     size_t strides[3];
 
-    // Setup array dimensions
-    size_t dim = m_nbsf * m_nbsf * m_nbsf * m_nbsf;
-    m_tei_aa.resize(dim, 0.0);
-    m_tei_ab.resize(dim, 0.0);
-    m_tei_bb.resize(dim, 0.0);
+    // Resize and zero the two-electron integral arrays
+    m_tei_aa.resize(m_nbsf*m_nbsf*m_nbsf*m_nbsf, 0.0);
+    m_tei_ab.resize(m_nbsf*m_nbsf*m_nbsf*m_nbsf, 0.0);
+    m_tei_bb.resize(m_nbsf*m_nbsf*m_nbsf*m_nbsf, 0.0);
 
     // Compute integrals
     Engine coul_engine(Operator::coulomb, m_basis.max_nprim(), m_basis.max_l());
     const auto &buf_coul = coul_engine.results();
-    for(size_t s1=0; s1 < m_nbsf; ++s1)
-    for(size_t s2=0; s2 < m_nbsf; ++s2)
-    for(size_t s3=0; s3 < m_nbsf; ++s3)
-    for(size_t s4=0; s4 < m_nbsf; ++s4)
+    for(size_t s1=0; s1 < m_basis.size(); ++s1)
+    for(size_t s2=0; s2 < m_basis.size(); ++s2)
+    for(size_t s3=0; s3 < m_basis.size(); ++s3)
+    for(size_t s4=0; s4 < m_basis.size(); ++s4)
     {
         // Start of each shell
         size_t bf1 = shell2bf[s1];
@@ -165,14 +164,14 @@ void LibintInterface::compute_overlap()
     // Get information about shells
     auto shell2bf = m_basis.shell2bf();
 
-    // Resize and zero vector storage
+    // Resize and zero the overlap matrix
     m_S.resize(m_nbsf*m_nbsf, 0.0);
 
     // Evaluate overlap matrix elements
     Engine ov_engine(Operator::overlap, m_basis.max_nprim(), m_basis.max_l());
     const auto &buf_ov = ov_engine.results();
-    for(size_t s1=0; s1 < m_nbsf; ++s1)
-    for(size_t s2=0; s2 < m_nbsf; ++s2)
+    for(size_t s1=0; s1 < m_basis.size(); ++s1)
+    for(size_t s2=0; s2 < m_basis.size(); ++s2)
     {
         // Compute values for this shell set
         ov_engine.compute(m_basis[s1], m_basis[s2]);
@@ -207,9 +206,9 @@ void LibintInterface::compute_one_electron_matrix()
     // Setup S dimensions
     auto shell2bf = m_basis.shell2bf();
 
-    // Resize hcore matrix
+    // Resize and zero vector storage
     m_oei_a.resize(m_nbsf*m_nbsf, 0.0);
-    m_oei_b.resize(m_nbsf*m_nbsf, 0.0);    
+    m_oei_b.resize(m_nbsf*m_nbsf, 0.0);
 
     // Setup kinetic energy engine
     Engine kin_engine(Operator::kinetic, m_basis.max_nprim(), m_basis.max_l());
@@ -221,8 +220,8 @@ void LibintInterface::compute_one_electron_matrix()
     const auto &buf_nuc = nuc_engine.results();
 
     // Loop over shell pairs
-    for(size_t s1=0; s1 < m_nbsf; ++s1)
-    for(size_t s2=0; s2 < m_nbsf; ++s2)
+    for(size_t s1=0; s1 < m_basis.size(); ++s1)
+    for(size_t s2=0; s2 < m_basis.size(); ++s2)
     {
         // Compute values for this shell set
         kin_engine.compute(m_basis[s1], m_basis[s2]);
@@ -240,9 +239,9 @@ void LibintInterface::compute_one_electron_matrix()
         {
             // Extract the value from the integral buffers
             double value = 0.0;
-            if( !(ke_ints == nullptr) ) 
+            if(not (ke_ints == nullptr)) 
                 value += ke_ints[f1*n2+f2];
-            if( !(pe_ints == nullptr) ) 
+            if(not (pe_ints == nullptr)) 
                 value += pe_ints[f1*n2+f2];
        
             // Set alfa and beta term

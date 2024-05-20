@@ -159,11 +159,19 @@ private:
     void compute_two_electron_integrals();
 
     /// Get index-for one-electron quantity
-    size_t oei_index(size_t p, size_t q) { 
+    size_t oei_index(size_t p, size_t q) 
+    { 
+        assert(p<m_nbsf);
+        assert(q<m_nbsf);
         return p * m_nbsf + q; 
     }
     /// Get index-for two-electron quantity
-    size_t tei_index(size_t p, size_t q, size_t r, size_t s) { 
+    size_t tei_index(size_t p, size_t q, size_t r, size_t s) 
+    {
+        assert(p<m_nbsf);
+        assert(q<m_nbsf);
+        assert(r<m_nbsf);
+        assert(s<m_nbsf);
         return p * m_nbsf * m_nbsf * m_nbsf +q * m_nbsf * m_nbsf + r * m_nbsf + s;
     }
 };
