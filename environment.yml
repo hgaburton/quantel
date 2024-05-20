@@ -11,3 +11,4 @@ dependencies:
     - pytest
     - libint
     - ambit
+    - h5py

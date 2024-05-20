@@ -3,6 +3,7 @@
 
 import numpy as np
 import scipy.linalg
+import h5py
 from quantel.utils.linalg import orthogonalise
 from .wavefunction import Wavefunction
 
@@ -73,45 +74,59 @@ class RHF(Wavefunction):
         # Number of occupied and virtual orbitals
         no = self.nocc
         nv = self.nmo - self.nocc
+
         # Compute Fock matrix in MO basis 
         Fmo = np.linalg.multi_dot([self.mo_coeff.T, self.fock, self.mo_coeff])
+
         # Compute ao_to_mo integral transform
         eri_pqrs = self.integrals.ao_to_mo(self.mo_coeff,self.mo_coeff,self.mo_coeff,self.mo_coeff)
+
         # Initialise Hessian matrix
         hessian = np.zeros((self.nmo,self.nmo,self.nmo,self.nmo))
+
         # Compute Fock contributions
         for i in range(no):
             hessian[no:,i,no:,i] += 4 * Fmo[no:,no:]
         for a in range(no,self.nmo):
             hessian[a,:no,a,:no] -= 4 * Fmo[:no,:no]
+
         # Compute two-electron contributions
         hessian[no:,:no,no:,:no] += 16 * np.einsum('abij->aibj', eri_pqrs[no:,no:,:no,:no], optimize="optimal")
         hessian[no:,:no,no:,:no] -=  4 * np.einsum('aibj->aibj', eri_pqrs[no:,:no,no:,:no], optimize="optimal")
         hessian[no:,:no,no:,:no] -=  4 * np.einsum('aijb->aibj', eri_pqrs[no:,:no,:no,no:], optimize="optimal")
+
         # Return suitably shaped array
         return (hessian[:,:,self.rot_idx])[self.rot_idx,:]
 
     def save_to_disk(self,tag):
         """Save object to disk with prefix 'tag'"""
-        # Get the Hessian index
-        #hindices = self.get_hessian_index()
+        # Canonicalise orbitals
+        self.canoncialize_orbitals()
+    
+        print("save_to_disk")
+        print(self.mo_coeff)
+        print(self.orbital_energies)
+        print(self.energy)
 
-        # Save coefficients, CI, and energy
-        #np.savetxt(tag+'.mo_coeff', self.mo_coeff, fmt="% 20.16f")
-        #np.savetxt(tag+'.mat_ci',   self.mat_ci, fmt="% 20.16f")
-        #np.savetxt(tag+'.energy',   
-        #           np.array([[self.energy, hindices[0], hindices[1], self.s2]]), 
-        #           fmt="% 18.12f % 5d % 5d % 12.6f")
-
+        # Save hdf5 file with MO coefficients, orbital energies, energy, and spin
+        with h5py.File(tag+".hdf5", "w") as F:
+            F.create_dataset("mo_coeff", data=self.mo_coeff)
+            F.create_dataset("orbital_energies", data=self.orbital_energies)
+            F.create_dataset("energy", data=self.energy)
+            F.create_dataset("s2", data=self.s2)    
+        
+        # Save numpy txt file with energy and Hessian indices
+        hindices = self.get_hessian_index()
+        with open(tag+".solution", "w") as F:
+            F.write(f"{self.energy:18.12f} {hindices[0]:5d} {hindices[1]:5d} {self.s2:12.6f}\n")
 
     def read_from_disk(self,tag):
         """Read object from disk with prefix 'tag'"""
-        # Read MO coefficient and CI coefficients
-        #mo_coeff = np.genfromtxt(tag+".mo_coeff")
-        #ci_coeff = np.genfromtxt(tag+".mat_ci")
-
+        # Read MO coefficients from hdf5 file
+        with h5py.File(tag+".hdf5", "r") as F:
+            mo_read = F["mo_coeff"][:]
         # Initialise object
-        #self.initialise(mo_coeff, ci_coeff)
+        self.initialise(mo_read)
 
     def copy(self):
         """Return a copy of the current RHF object"""
@@ -147,6 +162,22 @@ class RHF(Wavefunction):
     def get_fock(self):
         """Compute the Fock matrix for the current state"""
         self.fock = self.integrals.build_fock(self.dens)
+
+    def canoncialize_orbitals(self):
+        """Diagonalise the occupied and virtual blocks of the Fock matrix"""
+        # Initialise orbital energies
+        self.orbital_energies = np.zeros(self.nmo)
+        # Get Fock matrix in MO basis
+        Fmo = np.linalg.multi_dot([self.mo_coeff.T, self.fock, self.mo_coeff])
+        # Extract occupied and virtual blocks
+        Focc = Fmo[:self.nocc,:self.nocc]
+        Fvir = Fmo[self.nocc:,self.nocc:]
+        # Diagonalise the occupied and virtual blocks
+        self.orbital_energies[:self.nocc], Qocc = np.linalg.eig(Focc)
+        self.orbital_energies[self.nocc:], Qvir = np.linalg.eig(Fvir)
+        # Build the canonical MO coefficients
+        self.mo_coeff[:,:self.nocc] = np.dot(self.mo_coeff[:,:self.nocc], Qocc)
+        self.mo_coeff[:,self.nocc:] = np.dot(self.mo_coeff[:,self.nocc:], Qvir)
 
     def diagonalise_fock(self):
         """Diagonalise the Fock matrix"""
