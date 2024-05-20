@@ -101,14 +101,9 @@ class RHF(Wavefunction):
     def save_to_disk(self,tag):
         """Save object to disk with prefix 'tag'"""
         # Canonicalise orbitals
-        self.canoncialize_orbitals()
-    
-        print("save_to_disk")
-        print(self.mo_coeff)
-        print(self.orbital_energies)
-        print(self.energy)
-
-        # Save hdf5 file with MO coefficients, orbital energies, energy, and spin
+        self.canonicalize()
+ 
+         # Save hdf5 file with MO coefficients, orbital energies, energy, and spin
         with h5py.File(tag+".hdf5", "w") as F:
             F.create_dataset("mo_coeff", data=self.mo_coeff)
             F.create_dataset("orbital_energies", data=self.orbital_energies)
@@ -163,7 +158,7 @@ class RHF(Wavefunction):
         """Compute the Fock matrix for the current state"""
         self.fock = self.integrals.build_fock(self.dens)
 
-    def canoncialize_orbitals(self):
+    def canonicalize(self):
         """Diagonalise the occupied and virtual blocks of the Fock matrix"""
         # Initialise orbital energies
         self.orbital_energies = np.zeros(self.nmo)
