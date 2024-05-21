@@ -2,6 +2,7 @@
 #define DETERMINANT_H
 
 #include <cassert>
+#include <algorithm>
 #include <vector>
 #include <string>
 #include <tuple>
@@ -26,16 +27,31 @@ public:
     /// Comparison operator
     bool operator< (const Determinant &rhs) const
     {
-        return str() < rhs.str();
+        return bitstring() > rhs.bitstring();
     }
 
     /// Return a string representation of the determinant
     std::string str() const;
 
+    /// Return a bitstring representation of the determinant (alfa then beta)
+    std::string bitstring() const;
+
+    /// Return the number of orbitals
+    size_t nmo() const { return m_nmo; }
+
+    /// Return the number of electrons
+    size_t nelec() const { return nalfa() + nbeta(); };
+    /// Return the number of alpha electrons
+    size_t nalfa() const
+        { return std::count(m_occ_alfa.begin(), m_occ_alfa.end(), true); };
+    /// Return the number of beta electrons
+    size_t nbeta() const
+        { return std::count(m_occ_beta.begin(), m_occ_beta.end(), true); };
+
     /// Apply single excitation operator to the determinant
     /// \param excitation Tuple containing the indices of the excitation
     /// \param alpha Boolean flag indicating alpha or beta excitation
-    std::tuple<Determinant, int> get_excitation(std::tuple<int,int> excitation, bool alpha);
+    std::tuple<Determinant, int> get_excitation(std::tuple<int,int> excitation, bool alpha) const;
 
 private:
     /// Alfa occupation vector

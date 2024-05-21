@@ -23,7 +23,7 @@ public:
     }
 
     /// Get the value of the scalar potential
-    double scalar_potential() { return m_V; }
+    double scalar_potential() const { return m_V; }
 
     /// Get an element of the one-electron Hamiltonian matrix
     /// @param p integral index for bra

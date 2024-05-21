@@ -315,7 +315,7 @@ void LibintInterface::tei_ao_to_mo(
     assert(C4.size() % m_nbsf == 0);
 
     // Access relevant two-electron integrals
-    double *v_tei = tei_array(alpha1, alpha2);
+    double *v_tei = tei_array(alpha1,alpha2);
     
     // Get number of columns of transformation matrices
     size_t d1 = C1.size() / m_nbsf;

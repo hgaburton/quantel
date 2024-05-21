@@ -25,11 +25,33 @@ std::string Determinant::str() const
     return det_str(m_occ_alfa, m_occ_beta, m_nmo);
 }
 
-std::tuple<Determinant, int> Determinant::get_excitation(std::tuple<int,int> excitation, bool alpha)
+std::string Determinant::bitstring() const
+{
+    std::string outstr = "";
+    // Alpha occupation
+    for(size_t i = 0; i < m_nmo; i++) 
+    {
+        if(m_occ_alfa[i]) 
+            outstr += "1";
+        else 
+            outstr += "0";
+    }
+    // Beta occupation
+    for(size_t i = 0; i < m_nmo; i++) 
+    {
+        if(m_occ_beta[i]) 
+            outstr += "1";
+        else 
+            outstr += "0";
+    }
+    return outstr;
+}
+
+std::tuple<Determinant, int> Determinant::get_excitation(std::tuple<int,int> excitation, bool alpha) const
 {
     // Get the indices of the excitation
-    int p = std::get<0>(excitation); // Hole index
-    int q = std::get<1>(excitation); // Particle index
+    int p = std::get<1>(excitation); // Hole index
+    int q = std::get<0>(excitation); // Particle index
 
     // Check that the indices are valid
     assert(p >= 0 and p < m_nmo);

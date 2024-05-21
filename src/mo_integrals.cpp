@@ -13,7 +13,7 @@ void MOintegrals::initialize()
     compute_tei(false,false);
 }
 
-double MOintegrals::oei(size_t p, size_t q, bool alpha)
+double MOintegrals::oei(size_t p, size_t q, bool alpha) 
 {
     return alpha ? m_oei_a[oei_index(p,q)] : m_oei_b[oei_index(p,q)];
 }
@@ -27,6 +27,8 @@ double MOintegrals::tei(size_t p, size_t q, size_t r, size_t s, bool alpha1, boo
         return m_tei_ab[index];
     if(alpha1 == false and alpha2 == false)    
         return m_tei_bb[index];
+    if(alpha1 == false and alpha2 == true)
+        return m_tei_ab[tei_index(q,p,s,r)];
     return 0;
 }
 

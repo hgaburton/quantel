@@ -14,6 +14,12 @@
 namespace py = pybind11;
 using namespace pybind11::literals;
 
+py::array_t<double,py::array::c_style> vec_to_np_array(size_t m, double *data)
+{
+     py::array_t<double,py::array::c_style> array(m,data);
+     return array.reshape({m});
+}
+
 py::array_t<double,py::array::c_style> vec_to_np_array(size_t m, size_t n, double *data)
 {
      py::array_t<double,py::array::c_style> array(m*n,data);
@@ -76,15 +82,31 @@ PYBIND11_MODULE(_quantel, m) {
                "Constructor with occupation vectors")
           .def("__str__", &Determinant::str, "Return a string representation of the determinant")
           .def("__lt__", &Determinant::operator<, "Comparison operator")
+          .def("bitstring", &Determinant::bitstring, "Return a bitstring representation of the determinant")
+          .def("nmo", &Determinant::nmo, "Return the number of orbitals")
+          .def("nelec", &Determinant::nelec, "Return the number of electrons")
+          .def("nalfa", &Determinant::nalfa, "Return the number of high-spin electrons")
+          .def("nbeta", &Determinant::nbeta, "Return the number of low-spin electrons")
           .def("get_excitation", &Determinant::get_excitation, "Apply single excitation operator to the determinant")
           ;          
 
      py::class_<CIexpansion>(m, "CIexpansion")
-          .def(py::init<>(), "Default constructor")
-          .def(py::init<std::vector<Determinant> >(), "Initialise from a list of determinants")
-          .def(py::init<std::vector<Determinant>, std::vector<double> >(), 
-               "Initialise from a list of determinants and coefficients")
-          .def("print", &CIexpansion::print, py::arg("thresh") = 1e-6, "Print the CI vector")
+          .def(py::init<MOintegrals &>(), "Initialise CI expansion from MO integrals")
+          .def("define_space", &CIexpansion::define_space, 
+               "Define CI space from a list of determinants")
+          .def("ndet", &CIexpansion::ndet, "Get the number of determinants")
+          .def("sigma_vector", [](CIexpansion &ci, py::array_t<double> &V)
+               {
+                    size_t ndet = ci.ndet();
+                    auto Vbuf = V.request();
+                    std::vector<double> v_V((double *) Vbuf.ptr, (double *) Vbuf.ptr + Vbuf.size);
+                    std::vector<double> sigma(ndet, 0.0);
+                    ci.sigma_vector(v_V, sigma);
+                    return vec_to_np_array(ndet, sigma.data());
+               },
+               "Compute the one-electron part of the sigma vector")
+          .def("print", &CIexpansion::print, "Print the determinant list")
+          .def("print_vector", &CIexpansion::print_vector, "Print a CI vector")
           ;
 
      py::class_<MOintegrals>(m, "MOintegrals")
