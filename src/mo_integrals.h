@@ -95,7 +95,6 @@ private:
     /// Compute two-electron integrals
     void compute_tei(bool alpha1, bool alpha2);
 
-
     /// Get index-for one-electron quantity
     size_t oei_index(size_t p, size_t q) 
     { 

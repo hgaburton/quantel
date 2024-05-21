@@ -436,11 +436,6 @@ void LibintInterface::oei_ao_to_mo(
     // Get number of columns of transformation matrices
     size_t d1 = C1.size() / m_nbsf;
     size_t d2 = C2.size() / m_nbsf;
-    std::cout << "d1: " << d1 << " d2: " << d2 << std::endl;
-    // Print orbital coefficients
-    for(size_t mu=0; mu < m_nbsf; mu++)
-    for(size_t p=0; p < d1; p++)
-            std::cout << "C1[" << mu << "," << p << "] = " << C1[mu*d1+p] << std::endl;
 
     // Get alfa or beta one-electron integrals
     std::vector<double> &oei = alpha ? m_oei_a : m_oei_b;
