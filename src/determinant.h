@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <tuple>
+#include "excitation.h"
 
 class Determinant {
 public:
@@ -49,9 +50,13 @@ public:
         { return std::count(m_occ_beta.begin(), m_occ_beta.end(), true); };
 
     /// Apply single excitation operator to the determinant
-    /// \param excitation Tuple containing the indices of the excitation
-    /// \param alpha Boolean flag indicating alpha or beta excitation
-    std::tuple<Determinant, int> get_excitation(std::tuple<int,int> excitation, bool alpha) const;
+    /// \param Epq Excitation operator
+    std::tuple<Determinant, int> get_excitation(Excitation Epq) const;
+
+    /// Apply double excitation operator to the determinant
+    /// \param Evec Vector of excitation operators
+    std::tuple<Determinant, int> get_multiple_excitations(std::vector<Excitation> Evec) const;
+
 
 private:
     /// Alfa occupation vector

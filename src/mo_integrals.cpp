@@ -70,6 +70,7 @@ void MOintegrals::compute_oek(bool alpha)
 {
     std::vector<double> &K = alpha ? m_Ka : m_Kb;
     K.resize(m_nmo*m_nmo,0.0);
+    
     #pragma omp parallel for collapse(2)
     for(size_t p=0; p<m_nmo; p++)
     for(size_t s=0; s<m_nmo; s++)

@@ -10,6 +10,8 @@
 #include "ci_expansion.h"
 #include "determinant.h"
 #include "mo_integrals.h"
+#include "excitation.h"
+#include "ci_space.h"
 
 namespace py = pybind11;
 using namespace pybind11::literals;
@@ -76,6 +78,13 @@ PYBIND11_MODULE(_quantel, m) {
           .def("charge", &Molecule::charge, "Get the total charge")
           .def("mult", &Molecule::mult, "Get the spin multiplicity");
 
+     py::class_<Excitation>(m, "Excitation")
+          .def(py::init<int,int,bool>(), "Constructor with hole, particle and spin")
+          .def_readwrite("hole", &Excitation::hole, "Hole index")
+          .def_readwrite("particle", &Excitation::particle, "Particle index")
+          .def_readwrite("spin", &Excitation::spin, "Spin of the excitation");
+
+
      py::class_<Determinant>(m, "Determinant")
           .def(py::init<>(), "Default constructor")
           .def(py::init<std::vector<bool>, std::vector<bool> >(), 
@@ -88,11 +97,22 @@ PYBIND11_MODULE(_quantel, m) {
           .def("nalfa", &Determinant::nalfa, "Return the number of high-spin electrons")
           .def("nbeta", &Determinant::nbeta, "Return the number of low-spin electrons")
           .def("get_excitation", &Determinant::get_excitation, "Apply single excitation operator to the determinant")
-          ;          
+          ; 
+
+     py::class_<CIspace>(m, "CIspace")
+          .def(py::init<size_t,size_t,size_t,std::string>(), "Constructor with number of electrons and orbitals")
+          .def("print", &CIspace::print, "Print the CI space")
+          .def("print_vector", &CIspace::print_vector, "Print a CI vector")
+          .def("ndet", &CIspace::ndet, "Get the number of determinants")
+          .def("ndeta", &CIspace::ndeta, "Get the number of alpha determinants")
+          .def("ndetb", &CIspace::ndetb, "Get the number of beta determinants")
+          .def("nalfa", &CIspace::nalfa, "Get the number of high-spin electrons")
+          .def("nbeta", &CIspace::nbeta, "Get the number of low-spin electrons")
+          .def("nmo", &CIspace::nmo, "Get the number of molecular orbitals")
+          ;         
 
      py::class_<CIexpansion>(m, "CIexpansion")
-          .def(py::init<MOintegrals &, size_t, size_t>(), "Initialise FCI expansion")
-          .def("build_space", &CIexpansion::build_space, "Define FCI space")
+          .def(py::init<MOintegrals &, CIspace &>(), "Initialise FCI expansion")
           .def("ndet", &CIexpansion::ndet, "Get the number of determinants")
           .def("sigma_vector", [](CIexpansion &ci, py::array_t<double> &V)
                {
@@ -104,8 +124,6 @@ PYBIND11_MODULE(_quantel, m) {
                     return vec_to_np_array(ndet, sigma.data());
                },
                "Compute the one-electron part of the sigma vector")
-          .def("print", &CIexpansion::print, "Print the determinant list")
-          .def("print_vector", &CIexpansion::print_vector, "Print a CI vector")
           ;
 
      py::class_<MOintegrals>(m, "MOintegrals")
@@ -130,6 +148,8 @@ PYBIND11_MODULE(_quantel, m) {
                     return vec_to_np_array(nmo,nmo,nmo,nmo,mo_ints.tei_array(alpha1, alpha2)); 
                },
                "Return two-electron integral array")
+          .def("nbsf", &MOintegrals::nbsf, "Get the number of basis functions")
+          .def("nmo", &MOintegrals::nmo, "Get the number of molecular orbitals")
           ;
 
      py::class_<LibintInterface>(m, "LibintInterface")

@@ -47,11 +47,12 @@ std::string Determinant::bitstring() const
     return outstr;
 }
 
-std::tuple<Determinant, int> Determinant::get_excitation(std::tuple<int,int> excitation, bool alpha) const
+std::tuple<Determinant, int> Determinant::get_excitation(Excitation Epq) const
 {
     // Get the indices of the excitation
-    int p = std::get<1>(excitation); // Hole index
-    int q = std::get<0>(excitation); // Particle index
+    int p = Epq.hole; // Hole index
+    int q = Epq.particle; // Particle index
+    bool alpha = Epq.spin; // Spin of the excitation
 
     // Check that the indices are valid
     assert(p >= 0 and p < m_nmo);
@@ -89,4 +90,17 @@ std::tuple<Determinant, int> Determinant::get_excitation(std::tuple<int,int> exc
         return std::make_tuple(Determinant(occ,m_occ_beta), phase);
     else
         return std::make_tuple(Determinant(m_occ_alfa,occ), phase);
+}
+
+std::tuple<Determinant, int> Determinant::get_multiple_excitations(std::vector<Excitation> Evec) const
+{
+    Determinant newdet(*this);
+    int phase = 1;
+    for(auto &Epq : Evec) 
+    {
+        auto [newdet_, phase_] = newdet.get_excitation(Epq);
+        newdet = newdet_;
+        phase *= phase_;
+    }
+    return std::make_tuple(newdet, phase);
 }
