@@ -91,9 +91,8 @@ PYBIND11_MODULE(_quantel, m) {
           ;          
 
      py::class_<CIexpansion>(m, "CIexpansion")
-          .def(py::init<MOintegrals &>(), "Initialise CI expansion from MO integrals")
-          .def("define_space", &CIexpansion::define_space, 
-               "Define CI space from a list of determinants")
+          .def(py::init<MOintegrals &, size_t, size_t>(), "Initialise FCI expansion")
+          .def("build_space", &CIexpansion::build_space, "Define FCI space")
           .def("ndet", &CIexpansion::ndet, "Get the number of determinants")
           .def("sigma_vector", [](CIexpansion &ci, py::array_t<double> &V)
                {

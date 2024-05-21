@@ -72,8 +72,13 @@ std::tuple<Determinant, int> Determinant::get_excitation(std::tuple<int,int> exc
 
     // Compute phase from number of occupied orbitals between p and q in spin space
     int phase = 1;
-    for(size_t i=p+1; i < q; i++) 
-        if(occ[i]) phase *= -1; 
+    if(q > p) {
+        for(size_t i=p+1; i < q; i++) 
+            if(occ[i]) phase *= -1; 
+    } else {
+        for(size_t i=q+1; i < p; i++) 
+            if(occ[i]) phase *= -1;
+    }
 
     // Apply the excitation
     occ[p] = false;

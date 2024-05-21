@@ -31,6 +31,12 @@ public:
     /// @param alpha spin of the integral
     double oei(size_t p, size_t q, bool alpha);
 
+    /// Get an element of the effective one-electron matrix
+    /// @param p integral index for bra
+    /// @param q integral index for ket
+    /// @param alpha spin of the integral
+    double oek(size_t p, size_t q, bool alpha);
+
     /// Get an element of the two-electron integrals <pq||rs>
     /// @param p integral index
     /// @param q integral index
@@ -77,6 +83,9 @@ private:
 
     /// Scalar potential 
     double m_V;
+    /// Effective one-electron terms
+    std::vector<double> m_Ka;
+    std::vector<double> m_Kb;
     /// One-electron MO integrals
     std::vector<double> m_oei_a;
     std::vector<double> m_oei_b;
@@ -94,6 +103,8 @@ private:
     void compute_oei(bool alpha);
     /// Compute two-electron integrals
     void compute_tei(bool alpha1, bool alpha2);
+    /// Compute the effective one-electron matrix
+    void compute_oek(bool alpha);
 
     /// Get index-for one-electron quantity
     size_t oei_index(size_t p, size_t q) 

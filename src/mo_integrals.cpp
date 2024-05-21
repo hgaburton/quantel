@@ -11,11 +11,19 @@ void MOintegrals::initialize()
     compute_tei(true,true);
     compute_tei(true,false);
     compute_tei(false,false);
+    /// Compute effective one-electron matrix
+    compute_oek(true);
+    compute_oek(false);
 }
 
 double MOintegrals::oei(size_t p, size_t q, bool alpha) 
 {
     return alpha ? m_oei_a[oei_index(p,q)] : m_oei_b[oei_index(p,q)];
+}
+
+double MOintegrals::oek(size_t p, size_t q, bool alpha) 
+{
+    return alpha ? m_Ka[oei_index(p,q)] : m_Kb[oei_index(p,q)];
 }
 
 double MOintegrals::tei(size_t p, size_t q, size_t r, size_t s, bool alpha1, bool alpha2)
@@ -56,4 +64,18 @@ void MOintegrals::compute_tei(bool alpha1, bool alpha2)
     std::vector<double> &v_tei = alpha1 ? (alpha2 ? m_tei_aa : m_tei_ab) : m_tei_bb;
     // Compute transformation
     m_ints.tei_ao_to_mo(v_C1,v_C2,v_C1,v_C2,v_tei,alpha1,alpha2);
+}
+
+void MOintegrals::compute_oek(bool alpha)
+{
+    std::vector<double> &K = alpha ? m_Ka : m_Kb;
+    K.resize(m_nmo*m_nmo,0.0);
+    #pragma omp parallel for collapse(2)
+    for(size_t p=0; p<m_nmo; p++)
+    for(size_t s=0; s<m_nmo; s++)
+    {   
+        double &val = K[oei_index(p,s)];
+        for(size_t r=0; r<m_nmo; r++)
+            val += tei(p,r,r,s,alpha,alpha);
+    }
 }
