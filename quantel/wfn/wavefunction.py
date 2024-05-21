@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-from abc import ABCMeta, abstractmethod, abstractproperty
+from abc import ABCMeta, abstractmethod
 from quantel.opt.function import Function
 
 class Wavefunction(Function,metaclass=ABCMeta):

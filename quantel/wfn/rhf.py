@@ -78,8 +78,13 @@ class RHF(Wavefunction):
         # Compute Fock matrix in MO basis 
         Fmo = np.linalg.multi_dot([self.mo_coeff.T, self.fock, self.mo_coeff])
 
+        # Get occupied and virtual orbital coefficients
+        Cocc = self.mo_coeff[:,:no].copy()
+        Cvir = self.mo_coeff[:,no:].copy()
+
         # Compute ao_to_mo integral transform
-        eri_pqrs = self.integrals.ao_to_mo(self.mo_coeff,self.mo_coeff,self.mo_coeff,self.mo_coeff)
+        eri_abij = self.integrals.ao_to_mo(Cvir,Cvir,Cocc,Cocc)
+        eri_aibj = self.integrals.ao_to_mo(Cvir,Cocc,Cvir,Cocc)
 
         # Initialise Hessian matrix
         hessian = np.zeros((self.nmo,self.nmo,self.nmo,self.nmo))
@@ -91,9 +96,9 @@ class RHF(Wavefunction):
             hessian[a,:no,a,:no] -= 4 * Fmo[:no,:no]
 
         # Compute two-electron contributions
-        hessian[no:,:no,no:,:no] += 16 * np.einsum('abij->aibj', eri_pqrs[no:,no:,:no,:no], optimize="optimal")
-        hessian[no:,:no,no:,:no] -=  4 * np.einsum('aibj->aibj', eri_pqrs[no:,:no,no:,:no], optimize="optimal")
-        hessian[no:,:no,no:,:no] -=  4 * np.einsum('aijb->aibj', eri_pqrs[no:,:no,:no,no:], optimize="optimal")
+        hessian[no:,:no,no:,:no] += 16 * np.einsum('abij->aibj', eri_abij, optimize="optimal")
+        hessian[no:,:no,no:,:no] -=  4 * np.einsum('aibj->aibj', eri_aibj, optimize="optimal")
+        hessian[no:,:no,no:,:no] -=  4 * np.einsum('abji->aibj', eri_abij, optimize="optimal")
 
         # Return suitably shaped array
         return (hessian[:,:,self.rot_idx])[self.rot_idx,:]

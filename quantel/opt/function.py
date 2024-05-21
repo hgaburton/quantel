@@ -77,6 +77,7 @@ class Function(metaclass=ABCMeta):
         """Finite difference Hessian matrix for debugging"""
         Hess = np.zeros((self.dim, self.dim))
         for i in range(self.dim):
+            print(i, self.dim)
             for j in range(i,self.dim):
                 x1 = np.zeros(self.dim)
                 x2 = np.zeros(self.dim)
