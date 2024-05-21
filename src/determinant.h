@@ -24,7 +24,7 @@ public:
     }
 
     /// Comparison operator
-    bool operator() (const Determinant &rhs) const
+    bool operator< (const Determinant &rhs) const
     {
         return str() < rhs.str();
     }

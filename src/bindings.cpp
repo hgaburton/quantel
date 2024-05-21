@@ -6,8 +6,10 @@
 #include <libint2/initialize.h>
 
 #include "libint_interface.h"
-#include "molecule.h"
+#include "molecule.h"    
+#include "ci_expansion.h"
 #include "determinant.h"
+#include "mo_integrals.h"
 
 namespace py = pybind11;
 using namespace pybind11::literals;
@@ -73,9 +75,41 @@ PYBIND11_MODULE(_quantel, m) {
           .def(py::init<std::vector<bool>, std::vector<bool> >(), 
                "Constructor with occupation vectors")
           .def("__str__", &Determinant::str, "Return a string representation of the determinant")
-          .def("__lt__", &Determinant::operator(), "Comparison operator")
+          .def("__lt__", &Determinant::operator<, "Comparison operator")
           .def("get_excitation", &Determinant::get_excitation, "Apply single excitation operator to the determinant")
           ;          
+
+     py::class_<CIexpansion>(m, "CIexpansion")
+          .def(py::init<>(), "Default constructor")
+          .def(py::init<std::vector<Determinant> >(), "Initialise from a list of determinants")
+          .def(py::init<std::vector<Determinant>, std::vector<double> >(), 
+               "Initialise from a list of determinants and coefficients")
+          .def("print", &CIexpansion::print, py::arg("thresh") = 1e-6, "Print the CI vector")
+          ;
+
+     py::class_<MOintegrals>(m, "MOintegrals")
+          .def(py::init([](py::array_t<double> &C1, py::array_t<double> &C2, LibintInterface &ints) 
+               {
+                    auto C1_buf = C1.request();
+                    auto C2_buf = C2.request();
+                    std::vector<double> v_C1((double *) C1_buf.ptr, (double *) C1_buf.ptr + C1_buf.size);
+                    std::vector<double> v_C2((double *) C2_buf.ptr, (double *) C2_buf.ptr + C2_buf.size);
+                    return new MOintegrals(v_C1,v_C2,ints);
+               }),
+               "Initialise MO integrals from MO coefficients and LibintInterface object")
+          .def("oei_matrix", [](MOintegrals &mo_ints, bool alpha) 
+               { 
+                    size_t nmo = mo_ints.nmo();
+                    return vec_to_np_array(nmo,nmo,mo_ints.oei_matrix(alpha)); 
+               }, 
+               "Return one-electron Hamiltonian matrix in MO basis")
+          .def("tei_array", [](MOintegrals &mo_ints, bool alpha1, bool alpha2) 
+               { 
+                    size_t nmo = mo_ints.nmo();
+                    return vec_to_np_array(nmo,nmo,nmo,nmo,mo_ints.tei_array(alpha1, alpha2)); 
+               },
+               "Return two-electron integral array")
+          ;
 
      py::class_<LibintInterface>(m, "LibintInterface")
           .def(py::init<const std::string, Molecule &>())
@@ -117,9 +151,10 @@ PYBIND11_MODULE(_quantel, m) {
                return vec_to_np_array(ints.nbsf(), ints.nbsf(), ints.oei_matrix(alpha)); 
                }, 
                "Return one-electron Hamiltonian matrix")
-          .def("ao_to_mo", [](LibintInterface &ints, 
+          .def("tei_ao_to_mo", [](LibintInterface &ints, 
                py::array_t<double> &C1, py::array_t<double> &C2, 
-               py::array_t<double> &C3, py::array_t<double> &C4) 
+               py::array_t<double> &C3, py::array_t<double> &C4, 
+               bool alpha1, bool alpha2) 
                {
                     size_t nbsf = ints.nbsf();
                     // Get the buffer for the numpy arrays
@@ -140,15 +175,38 @@ PYBIND11_MODULE(_quantel, m) {
                     // Allocate memory for the MO integrals
                     std::vector<double> v_eri(d1*d2*d3*d4, 0.0);
                     // Perform the transformation
-                    ints.ao_to_mo(v_C1,v_C2,v_C3,v_C4,v_eri);
+                    ints.tei_ao_to_mo(v_C1,v_C2,v_C3,v_C4,v_eri,alpha1,alpha2);
                     // Return the MO integrals as a numpy array
                     return vec_to_np_array(d1,d2,d3,d4,v_eri.data()); 
                },
                "Perform AO to MO transformation"
           )
+          .def("oei_ao_to_mo", [](LibintInterface &ints, 
+               py::array_t<double> &C1, py::array_t<double> &C2, bool alpha) 
+               {
+                    size_t nbsf = ints.nbsf();
+                    // Get the buffer for the numpy arrays
+                    auto C1_buf = C1.request();
+                    auto C2_buf = C2.request();
+                    // Get the dimensions of the transformation matrices
+                    size_t d1 = C1_buf.shape[1];
+                    size_t d2 = C2_buf.shape[1];
+                    // Get the data from the numpy arrays
+                    std::vector<double> v_C1((double *) C1_buf.ptr, (double *) C1_buf.ptr + C1_buf.size);
+                    std::vector<double> v_C2((double *) C2_buf.ptr, (double *) C2_buf.ptr + C2_buf.size);
+                    // Allocate memory for the MO integrals
+                    std::vector<double> v_oei(d1*d2, 0.0);
+                    // Perform the transformation
+                    ints.oei_ao_to_mo(v_C1,v_C2,v_oei,alpha);
+                    // Return the MO integrals as a numpy array
+                    return vec_to_np_array(d1,d2,v_oei.data()); 
+               },
+               "Perform AO to MO transformation for one-electron integrals"
+          )
           .def("tei_array", [](LibintInterface &ints, bool alpha1, bool alpha2) { 
                size_t nbsf = ints.nbsf();
                return vec_to_np_array(nbsf, nbsf, nbsf, nbsf, ints.tei_array(alpha1, alpha2)); 
                },
-               "Return two-electron integral array");
+               "Return two-electron integral array")
+          ;
 }

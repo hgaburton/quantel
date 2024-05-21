@@ -109,9 +109,19 @@ public:
     /// @param C3 transformation matrix
     /// @param C4 transformation matrix
     /// @param eri outpur array of two-electron integrals
-    void ao_to_mo(std::vector<double> &C1, std::vector<double> &C2, 
+    /// @param alpha1 spin of electron 1
+    /// @param alpha2 spin of electron 2
+    void tei_ao_to_mo(std::vector<double> &C1, std::vector<double> &C2, 
                   std::vector<double> &C3, std::vector<double> &C4, 
-                  std::vector<double> &eri);
+                  std::vector<double> &eri, bool alpha1, bool alpha2);
+
+    /// Perform AO to MO transformation for one-electron integrals
+    /// @param C1 transformation matrix
+    /// @param C2 transformation matrix
+    /// @param oei_mo output array of one-electron integrals
+    /// @param alpha spin of the integrals
+    void oei_ao_to_mo(std::vector<double> &C1, std::vector<double> &C2, 
+                      std::vector<double> &oei_mo, bool alpha);
 
     /// Get a pointer to the overlap matrix
     double *overlap_matrix() { return m_S.data(); }

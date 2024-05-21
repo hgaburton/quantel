@@ -300,10 +300,10 @@ void LibintInterface::build_JK(std::vector<double> &dens, std::vector<double> &J
     }
 }
 
-void LibintInterface::ao_to_mo(
+void LibintInterface::tei_ao_to_mo(
     std::vector<double> &C1, std::vector<double> &C2, 
     std::vector<double> &C3, std::vector<double> &C4, 
-    std::vector<double> &eri)
+    std::vector<double> &eri, bool alpha1, bool alpha2)
 {
     // Tolerance for screening
     double tol = 1e-14;
@@ -313,6 +313,9 @@ void LibintInterface::ao_to_mo(
     assert(C2.size() % m_nbsf == 0);
     assert(C3.size() % m_nbsf == 0);
     assert(C4.size() % m_nbsf == 0);
+
+    // Access relevant two-electron integrals
+    double *v_tei = tei_array(alpha1, alpha2);
     
     // Get number of columns of transformation matrices
     size_t d1 = C1.size() / m_nbsf;
@@ -330,7 +333,7 @@ void LibintInterface::ao_to_mo(
     for(size_t nu=0; nu < m_nbsf; nu++)
     {
         // Define memory buffers
-        double *buff1 = &m_tei_ab[mu*m_nbsf*m_nbsf*m_nbsf + nu*m_nbsf*m_nbsf];
+        double *buff1 = &v_tei[mu*m_nbsf*m_nbsf*m_nbsf + nu*m_nbsf*m_nbsf];
         double *buff2 = &tmp1[mu*m_nbsf*m_nbsf*d4 + nu*m_nbsf*d4];
         // Perform inner loop
         for(size_t sg=0; sg < m_nbsf; sg++)
@@ -396,7 +399,7 @@ void LibintInterface::ao_to_mo(
     }
 
     // Transform p index
-    std::fill(eri.begin(), eri.end(), 0.0);
+    eri.resize(d1*d2*d3*d4, 0.0);
     #pragma omp parallel for collapse(2)
     for(size_t p=0; p < d1; p++)
     for(size_t q=0; q < d2; q++)
@@ -419,5 +422,54 @@ void LibintInterface::ao_to_mo(
                 buff1[r*d4 + s] += Ivalue * C1[mu*d1 + p];
             }
         }
+    }
+}
+
+void LibintInterface::oei_ao_to_mo(
+    std::vector<double> &C1, std::vector<double> &C2, 
+    std::vector<double> &oei_mo, bool alpha)
+{
+    // Check dimensions
+    assert(C1.size() % m_nbsf == 0);
+    assert(C2.size() % m_nbsf == 0);
+
+    // Get number of columns of transformation matrices
+    size_t d1 = C1.size() / m_nbsf;
+    size_t d2 = C2.size() / m_nbsf;
+    std::cout << "d1: " << d1 << " d2: " << d2 << std::endl;
+    // Print orbital coefficients
+    for(size_t mu=0; mu < m_nbsf; mu++)
+    for(size_t p=0; p < d1; p++)
+            std::cout << "C1[" << mu << "," << p << "] = " << C1[mu*d1+p] << std::endl;
+
+    // Get alfa or beta one-electron integrals
+    std::vector<double> &oei = alpha ? m_oei_a : m_oei_b;
+
+    // Perform first loop
+    std::vector<double> tmp(m_nbsf*d2, 0.0);
+    #pragma omp parallel for collapse(2)
+    for(size_t mu=0; mu < m_nbsf; mu++)
+    for(size_t q=0; q < d2; q++)
+    { 
+        // Get source buffer
+        double *buff = &oei[mu*m_nbsf];
+        // Get destination 
+        double &dest = tmp[mu*d2+q];
+        // Perform inner loop
+        for(size_t nu=0; nu < m_nbsf; nu++)
+            dest += buff[nu] * C2[nu*d2+q];
+    }    
+
+    // Perform second loop
+    oei_mo.resize(d1*d2, 0.0);
+    #pragma omp parallel for collapse(2)
+    for(size_t p=0; p < d1; p++)
+    for(size_t q=0; q < d2; q++)
+    {
+        // Get destination
+        double &dest = oei_mo[p*d2+q];
+        // Perform inner loop
+        for(size_t mu=0; mu < m_nbsf; mu++)
+            dest += tmp[mu*d2+q] * C1[mu*d1+p];
     }
 }

@@ -11,6 +11,7 @@ mol = quantel.Molecule([["H",0.0,0.0,0.0],
                         ["H",0.0,1.0,0.0],
                         ["H",0.0,0.0,1.0],
                         ["H",0.0,1.0,1.0]])
+print(mol.natom())
 mol.print()
 
 # Initialise interface to Libint2
@@ -48,3 +49,8 @@ print(wfn.fock)
 
 # Save the output to disk with tag '0001'
 wfn.save_to_disk('0001')
+
+C = wfn.mo_coeff
+hcore = ints.oei_matrix(True)
+print(ints.oei_ao_to_mo(C,C,True))
+print(np.linalg.multi_dot([C.T, hcore, C]))

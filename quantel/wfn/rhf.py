@@ -83,8 +83,8 @@ class RHF(Wavefunction):
         Cvir = self.mo_coeff[:,no:].copy()
 
         # Compute ao_to_mo integral transform
-        eri_abij = self.integrals.ao_to_mo(Cvir,Cvir,Cocc,Cocc)
-        eri_aibj = self.integrals.ao_to_mo(Cvir,Cocc,Cvir,Cocc)
+        eri_abij = self.integrals.tei_ao_to_mo(Cvir,Cvir,Cocc,Cocc,True,False)
+        eri_aibj = self.integrals.tei_ao_to_mo(Cvir,Cocc,Cvir,Cocc,True,False)
 
         # Initialise Hessian matrix
         hessian = np.zeros((self.nmo,self.nmo,self.nmo,self.nmo))
