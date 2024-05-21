@@ -11,9 +11,12 @@ mol = quantel.Molecule([["H",0.0,0.0,0.0],
                         ["H",0.0,1.0,0.0],
                         ["H",0.0,0.0,1.0],
                         ["H",0.0,1.0,1.0]])
+mol.print()
 
 # Initialise interface to Libint2
 ints = quantel.LibintInterface("6-31g",mol)
+print("Overlap matrix in AO basis:")
+print(ints.overlap_matrix())
 
 # Initialise RHF object from integrals
 wfn = RHF(ints)
@@ -22,8 +25,8 @@ wfn = RHF(ints)
 mo_guess = np.random.rand(wfn.nbsf, wfn.nmo)
 wfn.initialise(mo_guess)
 
-# Run eigenvector-following to target index-2 saddle point
-EigenFollow().run(wfn, index=5)
+# Run eigenvector-following to target a minimum
+EigenFollow().run(wfn, index=0)
 
 # Psuedo-canonicalise the result
 wfn.canonicalize()
