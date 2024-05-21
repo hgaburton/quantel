@@ -7,7 +7,7 @@
 
 class Molecule {
 protected:
-    size_t m_natom; //!< Number of atoms
+    size_t m_natom = 0; //!< Number of atoms
     
     int m_charge = 0; //!< Total charge
     size_t m_mult; //!< Spin multiplicity
@@ -23,7 +23,7 @@ public:
     virtual ~Molecule() { }
 
     /** \brief Default constructor **/
-    Molecule() { m_natom = 0; }
+    Molecule() { }
 
     /// \brief Create molecule from list of atom tuples
     /// \param atoms List of tuples containing atomic number and coordinates
