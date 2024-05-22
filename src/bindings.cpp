@@ -78,25 +78,11 @@ PYBIND11_MODULE(_quantel, m) {
           .def("charge", &Molecule::charge, "Get the total charge")
           .def("mult", &Molecule::mult, "Get the spin multiplicity");
 
-     py::class_<Excitation>(m, "Excitation")
-          .def(py::init<int,int,bool>(), "Constructor with hole, particle and spin")
-          .def_readwrite("hole", &Excitation::hole, "Hole index")
-          .def_readwrite("particle", &Excitation::particle, "Particle index")
-          .def_readwrite("spin", &Excitation::spin, "Spin of the excitation");
-
-
      py::class_<Determinant>(m, "Determinant")
           .def(py::init<>(), "Default constructor")
-          .def(py::init<std::vector<bool>, std::vector<bool> >(), 
+          .def(py::init<std::vector<uint8_t>, std::vector<uint8_t> >(), 
                "Constructor with occupation vectors")
-          .def("__str__", &Determinant::str, "Return a string representation of the determinant")
           .def("__lt__", &Determinant::operator<, "Comparison operator")
-          .def("bitstring", &Determinant::bitstring, "Return a bitstring representation of the determinant")
-          .def("nmo", &Determinant::nmo, "Return the number of orbitals")
-          .def("nelec", &Determinant::nelec, "Return the number of electrons")
-          .def("nalfa", &Determinant::nalfa, "Return the number of high-spin electrons")
-          .def("nbeta", &Determinant::nbeta, "Return the number of low-spin electrons")
-          .def("get_excitation", &Determinant::get_excitation, "Apply single excitation operator to the determinant")
           ; 
 
      py::class_<CIspace>(m, "CIspace")
@@ -250,4 +236,6 @@ PYBIND11_MODULE(_quantel, m) {
                },
                "Return two-electron integral array")
           ;
+
+     m.def("det_str", &det_str,"Print the determinant");
 }

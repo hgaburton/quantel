@@ -28,8 +28,8 @@ public:
     /// Print the determinant list
     virtual void print() const 
     {
-        for(auto &det : m_dets)
-            std::cout << det.first.str() << std::endl;
+        for(auto &[det, index] : m_dets)
+            std::cout << det_str(det) << ": " << index << std::endl;
     }
 
     /// Print a CI vector
@@ -39,7 +39,7 @@ public:
         for(auto &[det, ind] : m_dets)
         {
             if(std::abs(ci_vec[ind]) > tol) 
-                fmt::print("{:>s}: {:>10.6f}\n", det.str(), ci_vec[ind]);;
+                fmt::print("{:>s}: {:>10.6f}\n", det_str(det), ci_vec[ind]);;
         }   
     }
 
@@ -54,9 +54,12 @@ public:
     size_t nmo() const { return m_nmo; }
 
     /// 1-electron memory map
-    std::map<Excitation, std::vector<std::tuple<size_t,size_t,int> > > m_map1;
-    /// 2-electron memory map
-    std::map<std::tuple<Excitation,Excitation>, std::vector<std::tuple<size_t,size_t,int> > > m_map2;
+    std::map<Eph, std::vector<std::tuple<size_t,size_t,int> > > m_map_a;
+    std::map<Eph, std::vector<std::tuple<size_t,size_t,int> > > m_map_b;
+    /// 2-electron memory maps
+    std::map<Epphh, std::vector<std::tuple<size_t,size_t,int> > > m_map_aa;
+    std::map<Epphh, std::vector<std::tuple<size_t,size_t,int> > > m_map_ab;
+    std::map<Epphh, std::vector<std::tuple<size_t,size_t,int> > > m_map_bb;
     /// Determinant list
     std::map<Determinant,int> m_dets;
 
@@ -76,7 +79,8 @@ private:
     /// Build determinants
     void build_fci_determinants();
     /// Build memory maps
-    void build_memory_map(bool alpha);
+    void build_memory_map1(bool alpha);
+    void build_memory_map2(bool alpha1, bool alpha2);
 };
 
 #endif // CI_SPACE_H

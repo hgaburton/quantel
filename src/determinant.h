@@ -17,7 +17,7 @@ public:
     Determinant() { }
 
     /// Constructor with occupation vectors
-    Determinant(std::vector<bool> occ_alfa, std::vector<bool> occ_beta) :
+    Determinant(std::vector<uint8_t> occ_alfa, std::vector<uint8_t> occ_beta) :
         m_occ_alfa(occ_alfa), m_occ_beta(occ_beta)
     { 
         // Check dimensions
@@ -26,46 +26,36 @@ public:
     }
 
     /// Comparison operator
-    bool operator< (const Determinant &rhs) const
+    bool operator< (const Determinant &rhs) const 
     {
-        return bitstring() > rhs.bitstring();
+        if(m_occ_alfa > rhs.m_occ_alfa) return true;
+        if(m_occ_alfa < rhs.m_occ_alfa) return false;
+        if(m_occ_beta > rhs.m_occ_beta) return true;
+        return false;
     }
 
-    /// Return a string representation of the determinant
-    std::string str() const;
-
-    /// Return a bitstring representation of the determinant (alfa then beta)
-    std::string bitstring() const;
-
-    /// Return the number of orbitals
-    size_t nmo() const { return m_nmo; }
-
-    /// Return the number of electrons
-    size_t nelec() const { return nalfa() + nbeta(); };
-    /// Return the number of alpha electrons
-    size_t nalfa() const
-        { return std::count(m_occ_alfa.begin(), m_occ_alfa.end(), true); };
-    /// Return the number of beta electrons
-    size_t nbeta() const
-        { return std::count(m_occ_beta.begin(), m_occ_beta.end(), true); };
-
     /// Apply single excitation operator to the determinant
-    /// \param Epq Excitation operator
-    std::tuple<Determinant, int> get_excitation(Excitation Epq) const;
+    /// \param Eqp Excitation operator
+    /// \param alpha True if alpha excitation, false if beta
+    int apply_excitation(Eph &Eqp, bool alpha);
 
     /// Apply double excitation operator to the determinant
-    /// \param Evec Vector of excitation operators
-    std::tuple<Determinant, int> get_multiple_excitations(std::vector<Excitation> Evec) const;
+    /// \param Eqp First excitation operator
+    /// \param Esr Second excitation operator
+    /// \param alpha1 Spin of the first excitation
+    /// \param alpha2 Spin of the second excitation
+    int apply_excitation(Epphh &Epqrs, bool alpha1, bool alpha2);
 
-
-private:
     /// Alfa occupation vector
-    std::vector<bool> m_occ_alfa;
+    std::vector<uint8_t> m_occ_alfa;
     /// Beta occupation vector
-    std::vector<bool> m_occ_beta;
+    std::vector<uint8_t> m_occ_beta;
+
     /// Number of orbitals
     size_t m_nmo = 0;
-    
 };
+
+/// @brief Print a determinant
+std::string det_str(const Determinant &det);
 
 #endif // DETERMINANT_H

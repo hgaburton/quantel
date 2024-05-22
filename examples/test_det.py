@@ -10,12 +10,15 @@ np.random.seed(7)
 mol = quantel.Molecule([["H",0.0,0.0,0.0],
                         ["H",0.0,0.0,1.0],
                         ["H",0.0,0.0,2.0],
-                        ["H",0.0,0.0,3.0]])
+                        ["H",0.0,0.0,3.0],
+                        ["H",0.0,0.0,4.0],
+                        ["H",0.0,0.0,5.0]])
 print(mol.natom())
+no = 3
 mol.print()
 
 # Initialise interface to Libint2
-ints = quantel.LibintInterface("6-31g",mol)
+ints = quantel.LibintInterface("sto-3g",mol)
 
 # Initialise RHF object from integrals
 wfn = RHF(ints)
@@ -32,18 +35,14 @@ print(wfn.mo_coeff)
 nmo = ints.nmo()
 wfn.canonicalize()
 C = wfn.mo_coeff.copy()
-no=2
 
 # Construct MO integral objectPerform MO transfrom
 mo_ints = quantel.MOintegrals(C,C,ints)
 #print(mo_ints.oei_matrix(True))
 
 # Check the mo_ints are all good
-print("mo_ints.oei_matrix(True)")
 h1a = mo_ints.oei_matrix(True)
-print(h1a)
 h1b = mo_ints.oei_matrix(False)
-print(h1b)
 h2aa = mo_ints.tei_array(True,True)
 h2ab = mo_ints.tei_array(True,False)
 h2bb = mo_ints.tei_array(False,False)
@@ -51,23 +50,24 @@ h2bb = mo_ints.tei_array(False,False)
 en = ints.scalar_potential()
 en += np.einsum('pp',h1a[:no,:no])
 en += np.einsum('pp',h1b[:no,:no])
-print(en)
 en += 0.5 * np.einsum('pqpq',h2aa[:no,:no,:no,:no])
 en += 0.5 * np.einsum('pqpq',h2ab[:no,:no,:no,:no])
 en += 0.5 * np.einsum('qpqp',h2ab[:no,:no,:no,:no])
 en += 0.5 * np.einsum('pqpq',h2bb[:no,:no,:no,:no])
 
 # Build CI object
-cispace = quantel.CIspace(nmo,2,2,'FCI')
+cispace = quantel.CIspace(nmo,no,no,'FCI')
 cimanip = quantel.CIexpansion(mo_ints,cispace)
 vec = np.zeros(cispace.ndet())
 vec[0] = 1.0
+print("\nCI vector")
 cispace.print_vector(vec,1e-10)
 sig = cimanip.sigma_vector(vec)
-print(sig)
+print("\nSigma vector")
 cispace.print_vector(sig,1e-10)
-print("Sig",np.dot(sig, vec))
-print("Npy",en)
+
+print(f"\nEnergy from np.einsum    = {en: 16.10f}")
+print(f"Energy from sigma vector = {np.dot(sig, vec): 16.10f}")
 quit()
 
 # Define the CI space

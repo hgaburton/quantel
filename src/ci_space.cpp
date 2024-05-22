@@ -1,4 +1,5 @@
 #include "ci_space.h"
+#include <omp.h>
 
 void CIspace::initialize(std::string citype)
 {
@@ -7,19 +8,23 @@ void CIspace::initialize(std::string citype)
         build_fci_determinants();
     else 
         throw std::runtime_error("CI space type not implemented");
+        
     // Build memory maps
-    build_memory_map(true);
-    build_memory_map(false);
+    build_memory_map1(true);
+    build_memory_map1(false);
+    build_memory_map2(true, true);
+    build_memory_map2(true, false);
+    build_memory_map2(false, false);
 }
 
 void CIspace::build_fci_determinants()
 { 
     // Populate m_det with FCI space
     m_ndet = 0;
-    std::vector<bool> occ_alfa(m_nmo,false);
-    std::vector<bool> occ_beta(m_nmo,false);
-    std::fill_n(occ_alfa.begin(), m_nalfa, true);
-    std::fill_n(occ_beta.begin(), m_nbeta, true);
+    std::vector<uint8_t> occ_alfa(m_nmo,false);
+    std::vector<uint8_t> occ_beta(m_nmo,false);
+    std::fill_n(occ_alfa.begin(), m_nalfa, 1);
+    std::fill_n(occ_beta.begin(), m_nbeta, 1);
     do {
         m_ndeta++;
         do {
@@ -29,103 +34,76 @@ void CIspace::build_fci_determinants()
     } while(std::prev_permutation(occ_alfa.begin(), occ_alfa.end()));
 }
 
-void CIspace::build_memory_map(bool alpha)
+void CIspace::build_memory_map1(bool alpha)
 {
-    // Populate m_map with connected determinants
-    for(size_t p=0; p<m_nmo; p++)
-    for(size_t q=p; q<m_nmo; q++)
-    {
-        // Pair keys
-        Excitation key1_pq = {p,q,alpha};
-        Excitation key1_qp = {q,p,alpha};
-        // Initialise map vectors
-        m_map1[key1_pq] = std::vector<std::tuple<size_t,size_t,int> >();
-        if(p!=q) m_map1[key1_qp] = std::vector<std::tuple<size_t,size_t,int> >();
+    // Get relevant memory map
+    auto &m_map = alpha ? m_map_a : m_map_b;
 
-        // Make an exitation
-        Excitation Epq = {p,q,alpha};
-        // Loop over determinants
-        for(auto &[detJ, indJ] : m_dets)
-        {
-            // Get alfa excitation
-            auto detI = detJ.get_excitation(Epq);
-            size_t indI = m_dets[std::get<0>(detI)];
-            double phase = std::get<1>(detI);
-            if(phase != 0) 
-            {
-                m_map1[key1_pq].push_back(std::make_tuple(indJ,indI,phase));
-                if(p!=q) m_map1[key1_qp].push_back(std::make_tuple(indI,indJ,phase));
-            }
-        } 
-    }
-
-/*
     // Populate m_map with connected determinants
+    #pragma omp parallel for collapse(2)
     for(size_t p=0; p<m_nmo; p++)
     for(size_t q=0; q<m_nmo; q++)
     {
-        // Pair keys
-        Excitation key1_alfa = {p,q,true};
-        Excitation key1_beta = {p,q,false};
-        // Initialise map vectors
-        m_map1[key1_alfa] = std::vector<std::tuple<size_t,size_t,int> >();
-        m_map1[key1_beta] = std::vector<std::tuple<size_t,size_t,int> >();
         // Make an exitation
-        Excitation Epq_alfa = {p,q,true};
-        Excitation Epq_beta = {p,q,false};
+        Eph Epq = {p,q};
+        // Initialise map vectors
+        #pragma omp critical 
+        {
+            m_map[Epq] = std::vector<std::tuple<size_t,size_t,int> >();
+        }
+
         // Loop over determinants
         for(auto &[detJ, indJ] : m_dets)
         {
+            // Get copy of determinant
+            Determinant detI = detJ;
             // Get alfa excitation
-            auto det_a = detJ.get_excitation(Epq_alfa);
-            if(std::get<1>(det_a) != 0) 
-                m_map1[key1_alfa].push_back(
-                    std::make_tuple(indJ,m_dets[std::get<0>(det_a)],std::get<1>(det_a)));
-            // Get beta excitation
-            auto det_b = detJ.get_excitation(Epq_beta);
-            if(std::get<1>(det_b) != 0) 
-                m_map1[key1_beta].push_back(
-                    std::make_tuple(indJ,m_dets[std::get<0>(det_b)],std::get<1>(det_b)));
+            int phase = detI.apply_excitation(Epq,alpha);
+            if(phase != 0) 
+                m_map[Epq].push_back(std::make_tuple(indJ,m_dets[detI],phase));
         } 
     }
+}
 
-        // Loop over second pair of indices
-        for(size_t r=0; r<m_nmo; r++)
-        for(size_t s=0; s<m_nmo; s++)
+void CIspace::build_memory_map2(bool alpha1, bool alpha2)
+{
+    // Get relevant memory map
+    auto &m_map = alpha1 ? (alpha2 ? m_map_aa : m_map_ab) : m_map_bb;
+
+    // Populate m_map with connected determinants
+    #pragma omp parallel for collapse(4)
+    for(size_t p=0; p<m_nmo; p++)
+    for(size_t q=0; q<m_nmo; q++)
+    for(size_t r=0; r<m_nmo; r++)
+    for(size_t s=0; s<m_nmo; s++)
+    {
+        // Consider only unique pairs
+        size_t pq = p*m_nmo + q;
+        size_t rs = r*m_nmo + s;
+        if(pq > rs) continue;
+
+        Epphh Epqrs = {p,q,r,s};
+        Epphh Erspq = {r,s,p,q};
+
+        // Initialise map vectors
+        #pragma omp critical 
         {
-            // Pair keys
-            Excitation key2_alfa = {r,s,true};
-            Excitation key2_beta = {r,s,false};
-            auto key_aa = std::make_tuple(key1_alfa,key2_alfa);
-            auto key_ab = std::make_tuple(key1_alfa,key2_beta);
-            auto key_bb = std::make_tuple(key1_beta,key2_beta);
-            // Initialise map vectors
-            m_map2[key_aa] = std::vector<std::tuple<size_t,size_t,int> >();
-            m_map2[key_ab] = std::vector<std::tuple<size_t,size_t,int> >();
-            m_map2[key_bb] = std::vector<std::tuple<size_t,size_t,int> >();
-            // Make second exitation
-            Excitation Ers_alfa = {r,s,true};
-            Excitation Ers_beta = {r,s,false};
-            // Loop over determinants
-            for(auto &[detJ, indJ] : m_dets)
+            m_map[Epqrs] = std::vector<std::tuple<size_t,size_t,int> >();
+            if(Epqrs!=Erspq)
+                m_map[Erspq] = std::vector<std::tuple<size_t,size_t,int> >();
+        }
+
+        // Loop over determinants
+        for(auto &[detJ, indJ] : m_dets)
+        {
+            Determinant detI = detJ;
+            int phase = detI.apply_excitation(Epqrs,alpha2,alpha1);
+            if(phase != 0) 
             {
-                // Get alfa-alfa excitation
-                auto det_aa = detJ.get_multiple_excitations({Ers_alfa,Epq_alfa});
-                if(std::get<1>(det_aa) != 0) 
-                    m_map2[key_aa].push_back(
-                        std::make_tuple(indJ,m_dets[std::get<0>(det_aa)],std::get<1>(det_aa)));
-                // Get alfa-beta excitation
-                auto det_ab = detJ.get_multiple_excitations({Ers_beta,Epq_alfa});
-                if(std::get<1>(det_ab) != 0) 
-                    m_map2[key_ab].push_back(
-                        std::make_tuple(indJ,m_dets[std::get<0>(det_ab)],std::get<1>(det_ab)));
-                // Get beta-beta excitation
-                auto det_bb = detJ.get_multiple_excitations({Ers_beta,Epq_beta});
-                if(std::get<1>(det_bb) != 0) 
-                    m_map2[key_bb].push_back(
-                        std::make_tuple(indJ,m_dets[std::get<0>(det_bb)],std::get<1>(det_bb)));
-            }   
+                m_map[Epqrs].push_back(std::make_tuple(indJ,m_dets[detI],phase));
+                if(Epqrs!=Erspq)
+                    m_map[Erspq].push_back(std::make_tuple(m_dets[detI],indJ,phase));
+            }
         }
     }
-*/
 }

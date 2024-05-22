@@ -31,15 +31,18 @@ void CIexpansion::sigma_scalar(std::vector<double> &ci_vec, std::vector<double> 
 
 void CIexpansion::sigma_one_electron(std::vector<double> &ci_vec, std::vector<double> &sigma, bool alpha)
 {
+    // Get relevant memory map
+    auto &m_map = alpha ? m_hilbert_space.m_map_a : m_hilbert_space.m_map_b;
+
     // Get one-electron integrals
     for(size_t p=0; p<m_nmo; p++)
     for(size_t q=0; q<m_nmo; q++)
     {
         // Pair key and connections
-        Excitation key = {p,q,alpha};
-        auto connect = m_hilbert_space.m_map1[key];
+        Eph key = {p,q};
+        auto connect = m_map[key];
         // Get one-electron integral
-        double hpq = m_ints.oei(p,q,alpha);
+        double hpq = m_ints.oei(p,q,alpha) - 0.00 * m_ints.oek(p,q,alpha);
         // Loop over connections
         for(auto &[indJ, indI, phase] : connect)
             sigma[indI] += phase * hpq * ci_vec[indJ];
@@ -52,49 +55,31 @@ void CIexpansion::sigma_two_electron(
     assert(alpha1 >= alpha2);
     double tol = 1e-14;
 
+    // Get relevant memory map
+    auto &m_map = (alpha1 == alpha2) ? m_hilbert_space.m_map_aa : 
+                  (alpha1 ? m_hilbert_space.m_map_ab : m_hilbert_space.m_map_bb);
+
     // Scaling factor for same spin terms is 1/4 due to antisymmetrisation
     double scale = (alpha1 == alpha2) ? 0.25 : 1.0;
 
-    // Account for effective two-electron integrals
-    if(alpha1 == alpha2) 
-    {
-        // Get one-electron integrals
-        for(size_t p=0; p<m_nmo; p++)
-        for(size_t q=0; q<m_nmo; q++)
-        {
-            // Pair key and connections
-            Excitation key = {p,q,alpha1};
-            auto connect = m_hilbert_space.m_map1[key];
-            // Get one-electron integral
-            double Kpq = scale * m_ints.oek(p,q,alpha1);
-            // Loop over connections
-            for(auto &[indJ, indI, phase] : connect)
-                sigma[indI] -= phase * Kpq * ci_vec[indJ];
-        }
-    }
-
-    /*
     for(size_t p=0; p<m_nmo; p++)
     for(size_t r=0; r<m_nmo; r++)
+    for(size_t q=0; q<m_nmo; q++)
+    for(size_t s=0; s<m_nmo; s++)
     {
-        // Second excitation key
-        Excitation key1 = {p,r,alpha1};
-        for(size_t q=0; q<m_nmo; q++)
-        for(size_t s=0; s<m_nmo; s++)
-        {
-            // Get two-electron integral
-            double vpqrs = scale * m_ints.tei(p,q,r,s,alpha1,alpha2);
-            if(std::abs(vpqrs) < tol) continue;
-            // First excitation key
-            Excitation key2 = {q,s,alpha2};
-            auto connect = m_hilbert_space.m_map2[std::make_tuple(key1,key2)];
-            // Loop over connections
-            for(auto &[indJ, indI, phase] : connect)
-                sigma[indI] += phase * vpqrs * ci_vec[indJ];
-        }
+        // Get two-electron integral
+        double vpqrs = scale * m_ints.tei(p,q,r,s,alpha1,alpha2);
+        if(std::abs(vpqrs) < tol) continue;
+        // First excitation key
+        Epphh Epqrs = {p,q,r,s};
+        auto connect = m_map[Epqrs];
+        // Loop over connections
+        for(auto &[indJ, indI, phase] : connect)
+            sigma[indI] += phase * vpqrs * ci_vec[indJ];
     }
-    */
+    return;
     
+/*
     // Implementation with D vector method
     // Build D vector
     std::vector<double> Dqs(m_nmo*m_nmo*m_ndet,0.0);
@@ -141,4 +126,5 @@ void CIexpansion::sigma_two_electron(
         for(auto &[indK, indI, phase] : connect)
             sigma[indI] += phase * buff[indK];
     }
+*/
 }

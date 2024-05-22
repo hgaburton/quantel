@@ -1,18 +1,16 @@
 #include "determinant.h"
+#include <iostream>
 
-static std::string det_str(const std::vector<bool> &occ_alfa, const std::vector<bool> &occ_beta, const size_t nmo)
+std::string det_str(const Determinant &det)
 { 
-    assert(occ_alfa.size() == nmo); 
-    assert(occ_beta.size() == nmo);
-
     std::string outstr = "";
-    for(size_t i = 0; i < nmo; i++) 
+    for(size_t i = 0; i < det.m_nmo; i++) 
     {
-        if(occ_alfa[i] and occ_beta[i]) 
+        if(det.m_occ_alfa[i]==1 and det.m_occ_beta[i]==1) 
             outstr += "2";
-        else if(occ_alfa[i]) 
+        else if(det.m_occ_alfa[i]==1) 
             outstr += "a";
-        else if(occ_beta[i]) 
+        else if(det.m_occ_beta[i]==1) 
             outstr += "b";
         else 
             outstr += "0";
@@ -20,87 +18,96 @@ static std::string det_str(const std::vector<bool> &occ_alfa, const std::vector<
     return outstr;
 }
 
-std::string Determinant::str() const
-{
-    return det_str(m_occ_alfa, m_occ_beta, m_nmo);
-}
-
-std::string Determinant::bitstring() const
-{
-    std::string outstr = "";
-    // Alpha occupation
-    for(size_t i = 0; i < m_nmo; i++) 
-    {
-        if(m_occ_alfa[i]) 
-            outstr += "1";
-        else 
-            outstr += "0";
-    }
-    // Beta occupation
-    for(size_t i = 0; i < m_nmo; i++) 
-    {
-        if(m_occ_beta[i]) 
-            outstr += "1";
-        else 
-            outstr += "0";
-    }
-    return outstr;
-}
-
-std::tuple<Determinant, int> Determinant::get_excitation(Excitation Epq) const
+int Determinant::apply_excitation(Eph &Eqp, bool alpha)
 {
     // Get the indices of the excitation
-    int p = Epq.hole; // Hole index
-    int q = Epq.particle; // Particle index
-    bool alpha = Epq.spin; // Spin of the excitation
+    const size_t &p = Eqp.hole; // Hole index
+    const size_t &q = Eqp.particle; // Particle index
 
     // Check that the indices are valid
-    assert(p >= 0 and p < m_nmo);
-    assert(q >= 0 and q < m_nmo);
+    assert(p < m_nmo);
+    assert(q < m_nmo);
 
     // Get relevant occupation vector
-    std::vector<bool> occ = alpha ? m_occ_alfa : m_occ_beta;
+    uint8_t *occ = alpha ? m_occ_alfa.data() : m_occ_beta.data();
 
-    if(not occ[p]) 
-        // If hole orbital is unoccupied, return the current determinant with no weight
-        return std::make_tuple(Determinant(m_occ_alfa,m_occ_beta), 0);
-    else if(p == q) 
-        // If the indices are the same, return the current determinant with sign +1
-        return std::make_tuple(Determinant(m_occ_alfa,m_occ_beta), 1);
-    else if(occ[q])     
-        // If the particle orbital is occupied, return the current determinant with no weight
-        return std::make_tuple(Determinant(m_occ_alfa,m_occ_beta), 0);
+    if(occ[p]==0) 
+        return 0;
+    else if(p==q) 
+        return 1;
+    else if (occ[q] == 1)
+        return 0;
 
-    // Compute phase from number of occupied orbitals between p and q in spin space
-    int phase = 1;
-    if(q > p) {
-        for(size_t i=p+1; i < q; i++) 
-            if(occ[i]) phase *= -1; 
-    } else {
-        for(size_t i=q+1; i < p; i++) 
-            if(occ[i]) phase *= -1;
-    }
+    // Number of occupied orbitals between p and q
+    int count = 0;
+    size_t start = std::min(p,q);
+    size_t end   = std::max(p,q);
+    for(size_t i=start+1; i<end; i++) 
+        count += occ[i];
 
     // Apply the excitation
-    occ[p] = false;
-    occ[q] = true;
+    occ[p] = 0;
+    occ[q] = 1;
 
-    // Return new determinant
-    if(alpha)
-        return std::make_tuple(Determinant(occ,m_occ_beta), phase);
+    // Apply the phase
+    if(count % 2 == 1) 
+        return -1;
     else
-        return std::make_tuple(Determinant(m_occ_alfa,occ), phase);
+        return 1;
 }
 
-std::tuple<Determinant, int> Determinant::get_multiple_excitations(std::vector<Excitation> Evec) const
+int Determinant::apply_excitation(
+    Epphh &Epqrs, bool alpha1, bool alpha2)
 {
-    Determinant newdet(*this);
-    int phase = 1;
-    for(auto &Epq : Evec) 
-    {
-        auto [newdet_, phase_] = newdet.get_excitation(Epq);
-        newdet = newdet_;
-        phase *= phase_;
-    }
-    return std::make_tuple(newdet, phase);
+    // Get the indices of the excitation
+    const size_t &p = Epqrs.particle1; // Particle 1 index
+    const size_t &q = Epqrs.particle2; // Particle 2 index
+    const size_t &r = Epqrs.hole1; // Hole 1 index
+    const size_t &s = Epqrs.hole2; // Hole 2 index
+    
+    // Check that the indices are valid
+    assert(p < m_nmo);
+    assert(q < m_nmo);
+    assert(r < m_nmo);
+    assert(s < m_nmo);
+
+    // Get relevant occupation vector
+    uint8_t *occ1 = alpha1 ? m_occ_alfa.data() : m_occ_beta.data();
+    uint8_t *occ2 = alpha2 ? m_occ_alfa.data() : m_occ_beta.data();
+
+    // Operator defined as
+    // Epqrs = a_p1^+ a_q2^+ a_s2 a_r1
+
+    // Initialise phase
+    size_t phase_exp = 0;
+
+    // Apply first operator
+    if(occ1[r]==0) return 0;
+    occ1[r] = 0;
+    for(size_t i=r+1; i<m_nmo; i++) 
+        phase_exp += occ1[i];
+
+    // Apply second operator
+    if(occ2[s]==0) return 0;
+    occ2[s] = 0;
+    for(size_t i=s+1; i<m_nmo; i++) 
+        phase_exp += occ2[i];
+    
+    // Apply third operator
+    if(occ2[q]==1) return 0;
+    occ2[q] = 1;
+    for(size_t i=q+1; i<m_nmo; i++) 
+        phase_exp += occ2[i];
+
+    // Apply fourth operator
+    if(occ1[p]==1) return 0;
+    occ1[p] = 1;
+    for(size_t i=p+1; i<m_nmo; i++) 
+        phase_exp += occ1[i];
+
+    // Get the phase
+    if(phase_exp % 2 == 1) 
+        return -1;
+    else
+        return 1;
 }
