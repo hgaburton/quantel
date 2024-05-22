@@ -76,7 +76,7 @@ private:
     /// Build determinants
     void build_fci_determinants();
     /// Build memory maps
-    void build_memory_maps();
+    void build_memory_map(bool alpha);
 };
 
 #endif // CI_SPACE_H

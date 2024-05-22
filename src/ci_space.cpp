@@ -8,7 +8,8 @@ void CIspace::initialize(std::string citype)
     else 
         throw std::runtime_error("CI space type not implemented");
     // Build memory maps
-    build_memory_maps();
+    build_memory_map(true);
+    build_memory_map(false);
 }
 
 void CIspace::build_fci_determinants()
@@ -28,8 +29,37 @@ void CIspace::build_fci_determinants()
     } while(std::prev_permutation(occ_alfa.begin(), occ_alfa.end()));
 }
 
-void CIspace::build_memory_maps()
+void CIspace::build_memory_map(bool alpha)
 {
+    // Populate m_map with connected determinants
+    for(size_t p=0; p<m_nmo; p++)
+    for(size_t q=p; q<m_nmo; q++)
+    {
+        // Pair keys
+        Excitation key1_pq = {p,q,alpha};
+        Excitation key1_qp = {q,p,alpha};
+        // Initialise map vectors
+        m_map1[key1_pq] = std::vector<std::tuple<size_t,size_t,int> >();
+        if(p!=q) m_map1[key1_qp] = std::vector<std::tuple<size_t,size_t,int> >();
+
+        // Make an exitation
+        Excitation Epq = {p,q,alpha};
+        // Loop over determinants
+        for(auto &[detJ, indJ] : m_dets)
+        {
+            // Get alfa excitation
+            auto detI = detJ.get_excitation(Epq);
+            size_t indI = m_dets[std::get<0>(detI)];
+            double phase = std::get<1>(detI);
+            if(phase != 0) 
+            {
+                m_map1[key1_pq].push_back(std::make_tuple(indJ,indI,phase));
+                if(p!=q) m_map1[key1_qp].push_back(std::make_tuple(indI,indJ,phase));
+            }
+        } 
+    }
+
+/*
     // Populate m_map with connected determinants
     for(size_t p=0; p<m_nmo; p++)
     for(size_t q=0; q<m_nmo; q++)
@@ -58,7 +88,7 @@ void CIspace::build_memory_maps()
                     std::make_tuple(indJ,m_dets[std::get<0>(det_b)],std::get<1>(det_b)));
         } 
     }
-/*
+
         // Loop over second pair of indices
         for(size_t r=0; r<m_nmo; r++)
         for(size_t s=0; s<m_nmo; s++)
