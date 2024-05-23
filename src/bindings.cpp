@@ -7,7 +7,6 @@
 
 #include "libint_interface.h"
 #include "molecule.h"    
-#include "ci_expansion.h"
 #include "determinant.h"
 #include "mo_integrals.h"
 #include "excitation.h"
@@ -85,8 +84,11 @@ PYBIND11_MODULE(_quantel, m) {
           .def("__lt__", &Determinant::operator<, "Comparison operator")
           ; 
 
+     py::class_<Eph>(m, "Eph").def(py::init<size_t,size_t>(), "Constructor with indices");
+     py::class_<Epphh>(m, "Epphh").def(py::init<size_t,size_t,size_t,size_t>(), "Constructor with indices");
+
      py::class_<CIspace>(m, "CIspace")
-          .def(py::init<size_t,size_t,size_t,std::string>(), "Constructor with number of electrons and orbitals")
+          .def(py::init<MOintegrals &,size_t,size_t,std::string>(), "Constructor with number of electrons and orbitals")
           .def("print", &CIspace::print, "Print the CI space")
           .def("print_vector", &CIspace::print_vector, "Print a CI vector")
           .def("ndet", &CIspace::ndet, "Get the number of determinants")
@@ -95,22 +97,25 @@ PYBIND11_MODULE(_quantel, m) {
           .def("nalfa", &CIspace::nalfa, "Get the number of high-spin electrons")
           .def("nbeta", &CIspace::nbeta, "Get the number of low-spin electrons")
           .def("nmo", &CIspace::nmo, "Get the number of molecular orbitals")
-          ;         
-
-     py::class_<CIexpansion>(m, "CIexpansion")
-          .def(py::init<MOintegrals &, CIspace &>(), "Initialise FCI expansion")
-          .def("ndet", &CIexpansion::ndet, "Get the number of determinants")
-          .def("sigma_vector", [](CIexpansion &ci, py::array_t<double> &V)
+          .def("H_on_vec", [](CIspace &ci, py::array_t<double> &V)
                {
                     size_t ndet = ci.ndet();
                     auto Vbuf = V.request();
                     std::vector<double> v_V((double *) Vbuf.ptr, (double *) Vbuf.ptr + Vbuf.size);
                     std::vector<double> sigma(ndet, 0.0);
-                    ci.sigma_vector(v_V, sigma);
+                    ci.H_on_vec(v_V, sigma);
                     return vec_to_np_array(ndet, sigma.data());
                },
                "Compute the one-electron part of the sigma vector")
-          ;
+          .def("build_Hmat", [](CIspace &ci) 
+               {
+                    size_t ndet = ci.ndet();
+                    std::vector<double> Hmat(ndet*ndet,0.0);
+                    ci.build_Hmat(Hmat);
+                    return vec_to_np_array(ndet,ndet,Hmat.data());
+               },
+               "Build the Hamiltonian matrix")
+          ;         
 
      py::class_<MOintegrals>(m, "MOintegrals")
           .def(py::init([](py::array_t<double> &C1, py::array_t<double> &C2, LibintInterface &ints) 

@@ -60,10 +60,10 @@ int Determinant::apply_excitation(
     Epphh &Epqrs, bool alpha1, bool alpha2)
 {
     // Get the indices of the excitation
-    const size_t &p = Epqrs.particle1; // Particle 1 index
-    const size_t &q = Epqrs.particle2; // Particle 2 index
-    const size_t &r = Epqrs.hole1; // Hole 1 index
-    const size_t &s = Epqrs.hole2; // Hole 2 index
+    size_t p = Epqrs.particle1; // Particle 1 index
+    size_t q = Epqrs.particle2; // Particle 2 index
+    size_t r = Epqrs.hole1; // Hole 1 index
+    size_t s = Epqrs.hole2; // Hole 2 index
     
     // Check that the indices are valid
     assert(p < m_nmo);
@@ -80,30 +80,41 @@ int Determinant::apply_excitation(
 
     // Initialise phase
     size_t phase_exp = 0;
+    if(alpha1 == alpha2)
+    {
+        if(p>q) 
+        {   
+            std::swap(p,q);
+            phase_exp += 1;
+        }
+        if(r>s) 
+        {   
+            std::swap(r,s);
+            phase_exp += 1;
+        }
+    }
 
-    // Apply first operator
+    // Remove electrons operator
     if(occ1[r]==0) return 0;
     occ1[r] = 0;
-    for(size_t i=r+1; i<m_nmo; i++) 
-        phase_exp += occ1[i];
-
-    // Apply second operator
     if(occ2[s]==0) return 0;
     occ2[s] = 0;
-    for(size_t i=s+1; i<m_nmo; i++) 
+
+    // Count number of occupied orbitals between p and r
+    size_t start = std::min(p,r);
+    size_t end   = std::max(p,r);
+    for(size_t i=start+1; i<end; i++) 
+        phase_exp += occ1[i];
+    // Count number of occupied orbitals between q and s
+    start = std::min(q,s);
+    end   = std::max(q,s);
+    for(size_t i=start+1; i<end; i++) 
         phase_exp += occ2[i];
-    
-    // Apply third operator
+    // Add electrons back in
     if(occ2[q]==1) return 0;
     occ2[q] = 1;
-    for(size_t i=q+1; i<m_nmo; i++) 
-        phase_exp += occ2[i];
-
-    // Apply fourth operator
     if(occ1[p]==1) return 0;
     occ1[p] = 1;
-    for(size_t i=p+1; i<m_nmo; i++) 
-        phase_exp += occ1[i];
 
     // Get the phase
     if(phase_exp % 2 == 1) 

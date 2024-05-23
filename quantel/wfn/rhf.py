@@ -178,6 +178,7 @@ class RHF(Wavefunction):
         # Build the canonical MO coefficients
         self.mo_coeff[:,:self.nocc] = np.dot(self.mo_coeff[:,:self.nocc], Qocc)
         self.mo_coeff[:,self.nocc:] = np.dot(self.mo_coeff[:,self.nocc:], Qvir)
+        self.update()
 
     def diagonalise_fock(self):
         """Diagonalise the Fock matrix"""

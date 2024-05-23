@@ -60,7 +60,13 @@ void CIspace::build_memory_map1(bool alpha)
             // Get alfa excitation
             int phase = detI.apply_excitation(Epq,alpha);
             if(phase != 0) 
-                m_map[Epq].push_back(std::make_tuple(indJ,m_dets[detI],phase));
+            {
+                // If the detI is in the CI space, add connection to the map
+                try {
+                    size_t indI = m_dets.at(detI);
+                    m_map[Epq].push_back(std::make_tuple(indJ,indI,phase));
+                } catch(const std::out_of_range& e) { }
+            }
         } 
     }
 }
@@ -71,17 +77,41 @@ void CIspace::build_memory_map2(bool alpha1, bool alpha2)
     auto &m_map = alpha1 ? (alpha2 ? m_map_aa : m_map_ab) : m_map_bb;
 
     // Populate m_map with connected determinants
-    #pragma omp parallel for collapse(4)
+    //#pragma omp parallel for collapse(4)
     for(size_t p=0; p<m_nmo; p++)
     for(size_t q=0; q<m_nmo; q++)
     for(size_t r=0; r<m_nmo; r++)
     for(size_t s=0; s<m_nmo; s++)
     {
+        // Let's go blind 
+        Epphh Epqrs = {p,q,r,s};
+        #pragma omp critical 
+        {
+            m_map[Epqrs] = std::vector<std::tuple<size_t,size_t,int> >();
+        }
+        // Loop over determinants
+        for(auto &[detJ, indJ] : m_dets)
+        {
+            Determinant detI = detJ;
+            int phase = detI.apply_excitation(Epqrs,alpha1,alpha2);
+            if(phase != 0) 
+            {
+                std::cout << p << q << r << s << " " << phase << std::endl;
+                std::cout << det_str(detJ) << std::endl;
+                std::cout << det_str(detI) << std::endl;
+                std::cout << phase << std::endl;
+                // If the detI is in the CI space, add connection to the map
+                try {
+                    size_t indI = m_dets.at(detI);
+                    m_map[Epqrs].push_back(std::make_tuple(indJ,indI,phase));
+                } catch(const std::out_of_range& e) { }
+            }
+        }
+        /*
         // Consider only unique pairs
         size_t pq = p*m_nmo + q;
         size_t rs = r*m_nmo + s;
         if(pq > rs) continue;
-
         Epphh Epqrs = {p,q,r,s};
         Epphh Erspq = {r,s,p,q};
 
@@ -97,13 +127,151 @@ void CIspace::build_memory_map2(bool alpha1, bool alpha2)
         for(auto &[detJ, indJ] : m_dets)
         {
             Determinant detI = detJ;
-            int phase = detI.apply_excitation(Epqrs,alpha2,alpha1);
+            int phase = detI.apply_excitation(Epqrs,alpha1,alpha2);
             if(phase != 0) 
             {
-                m_map[Epqrs].push_back(std::make_tuple(indJ,m_dets[detI],phase));
-                if(Epqrs!=Erspq)
-                    m_map[Erspq].push_back(std::make_tuple(m_dets[detI],indJ,phase));
+                // If the detI is in the CI space, add connection to the map
+                try {
+                    size_t indI = m_dets.at(detI);
+                    m_map[Epqrs].push_back(std::make_tuple(indJ,indI,phase));
+                    if(Epqrs!=Erspq)
+                        m_map[Erspq].push_back(std::make_tuple(indI,indJ,phase));
+                        
+                } catch(const std::out_of_range& e) { }
             }
         }
+        */
+    }
+}
+
+
+void CIspace::H_on_vec(std::vector<double> &ci_vec, std::vector<double> &sigma)
+{
+    // Check size of input
+    assert(ci_vec.size() == m_ndet);
+    // Resize output
+    sigma.resize(m_ndet,0.0);
+
+    // Compute scalar part of sigma vector
+    H0_on_vec(ci_vec, sigma);
+    // Get one-electron part of sigma vector
+    H1_on_vec(ci_vec, sigma, true);
+    H1_on_vec(ci_vec, sigma, false);
+    // Get one-electron part of sigma vector
+    H2_on_vec(ci_vec, sigma, true, false);
+    H2_on_vec(ci_vec, sigma, true, true);
+    H2_on_vec(ci_vec, sigma, false, false);
+}
+
+void CIspace::H0_on_vec(std::vector<double> &ci_vec, std::vector<double> &sigma)
+{
+    double v_scalar = m_ints.scalar_potential();
+    for(size_t ind=0; ind<m_ndet; ind++)
+        sigma[ind] += ci_vec[ind] * v_scalar;
+}
+
+void CIspace::H1_on_vec(
+    std::vector<double> &ci_vec, std::vector<double> &sigma, bool alpha)
+{
+    // Get relevant memory map
+    auto &m_map = alpha ? m_map_a : m_map_b;
+
+    // Get one-electron integrals
+    for(size_t p=0; p<m_nmo; p++)
+    for(size_t q=0; q<m_nmo; q++)
+    {
+        // Get one-electron integral
+        double hpq = m_ints.oei(p,q,alpha);
+        // Loop over connections
+        for(auto &[indJ, indI, phase] : m_map.at({p,q}))
+            sigma[indI] += phase * hpq * ci_vec[indJ];
+    }
+}
+
+void CIspace::H2_on_vec(
+    std::vector<double> &ci_vec, std::vector<double> &sigma, bool alpha1, bool alpha2)
+{
+    assert(alpha1 >= alpha2);
+    double tol = 1e-14;
+
+    // Get relevant memory map
+    auto &m_map = (alpha1 == alpha2) ? m_map_aa : (alpha1 ? m_map_ab : m_map_bb);
+
+    // Scaling factor for same spin terms is 1/4 due to antisymmetrisation
+    double scale = (alpha1 == alpha2) ? 0.25 : 1.0;
+
+    for(size_t p=0; p<m_nmo; p++)
+    for(size_t r=0; r<m_nmo; r++)
+    for(size_t q=0; q<m_nmo; q++)
+    for(size_t s=0; s<m_nmo; s++)
+    {
+        // Get two-electron integral
+        double vpqrs = scale * m_ints.tei(p,q,r,s,alpha1,alpha2);
+        //if(std::abs(vpqrs) < tol) continue;
+        // Loop over connections
+        for(auto &[indJ, indI, phase] : m_map.at({p,q,r,s}))
+            sigma[indI] += phase * vpqrs * ci_vec[indJ];
+    }
+}
+
+void CIspace::build_Hmat(std::vector<double> &Hmat)
+{
+    // Check size of output
+    assert(Hmat.size() == m_ndet*m_ndet);
+    // Scalar component
+    build_H0(Hmat);
+    // One-electron component
+    build_H1(Hmat,true);
+    build_H1(Hmat,false);
+    // Two-electron component
+    build_H2(Hmat,true,false);
+    build_H2(Hmat,true,true);
+    build_H2(Hmat,false,false);
+} 
+
+void CIspace::build_H0(std::vector<double> &H0)
+{
+    // Diagonal scalar part
+    double v_scalar = m_ints.scalar_potential();
+    for(size_t I=0; I<m_ndet; I++)
+        H0[I*m_ndet+I] += v_scalar;
+}
+
+void CIspace::build_H1(std::vector<double> &H1, bool alpha)
+{
+    // Get relevant memory map
+    auto &m_map = alpha ? m_map_a : m_map_b;
+
+    // Get one-electron integrals
+    for(size_t p=0; p<m_nmo; p++)
+    for(size_t q=0; q<m_nmo; q++)
+    {
+        double hpq = m_ints.oei(p,q,alpha);
+        for(auto &[indJ, indI, phase] : m_map.at({p,q}))
+        {
+            H1[indI*m_ndet+indJ] += phase * hpq;
+        }
+
+    }
+}
+
+void CIspace::build_H2(std::vector<double> &H2, bool alpha1, bool alpha2)
+{
+    assert(alpha1 >= alpha2);
+    double tol = 1e-14;
+
+    // Get relevant memory map
+    auto &m_map = (alpha1 == alpha2) ? m_map_aa : (alpha1 ? m_map_ab : m_map_bb);
+    // Scaling factor for same spin terms is 1/4 due to antisymmetrisation
+    double scale = (alpha1 == alpha2) ? 0.25 : 1.0;
+
+    for(size_t p=0; p<m_nmo; p++)
+    for(size_t r=0; r<m_nmo; r++)
+    for(size_t q=0; q<m_nmo; q++)
+    for(size_t s=0; s<m_nmo; s++)
+    {
+        double vpqrs = scale * m_ints.tei(p,q,r,s,alpha1,alpha2);
+        for(auto &[indJ, indI, phase] : m_map.at({p,q,r,s}))
+            H2[indI*m_ndet+indJ] += phase * vpqrs;
     }
 }

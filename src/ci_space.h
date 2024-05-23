@@ -9,6 +9,7 @@
 #include <cassert>
 #include "determinant.h"
 #include "excitation.h"
+#include "mo_integrals.h"
 #include "fmt/core.h"
 
 /// \brief Container for information about a CI space
@@ -19,8 +20,8 @@ public:
     virtual ~CIspace() { }
 
     /// Constructor
-    CIspace(size_t nmo, size_t nalfa, size_t nbeta, std::string citype="FCI") :
-        m_nmo(nmo), m_nalfa(nalfa), m_nbeta(nbeta)
+    CIspace(MOintegrals &mo_ints, size_t nalfa, size_t nbeta, std::string citype="FCI") :
+        m_ints(mo_ints), m_nmo(mo_ints.nmo()), m_nalfa(nalfa), m_nbeta(nbeta)
     { 
         initialize(citype);
     }
@@ -53,17 +54,19 @@ public:
     /// Get the number of molecular orbitals
     size_t nmo() const { return m_nmo; }
 
-    /// 1-electron memory map
-    std::map<Eph, std::vector<std::tuple<size_t,size_t,int> > > m_map_a;
-    std::map<Eph, std::vector<std::tuple<size_t,size_t,int> > > m_map_b;
-    /// 2-electron memory maps
-    std::map<Epphh, std::vector<std::tuple<size_t,size_t,int> > > m_map_aa;
-    std::map<Epphh, std::vector<std::tuple<size_t,size_t,int> > > m_map_ab;
-    std::map<Epphh, std::vector<std::tuple<size_t,size_t,int> > > m_map_bb;
-    /// Determinant list
-    std::map<Determinant,int> m_dets;
+    /// @brief Compute the sigma vector
+    /// @param ci_vec 
+    /// @param sigma 
+    void H_on_vec(std::vector<double> &ci_vec, std::vector<double> &sigma);
+
+    /// @brief Compute the Hamiltonian matrix
+    /// @param Hmat
+    void build_Hmat(std::vector<double> &Hmat);
 
 private:
+    /// MO integrals
+    MOintegrals &m_ints;
+
     /// Number of determinants
     size_t m_ndet = 0;
     size_t m_ndeta = 0;
@@ -74,6 +77,23 @@ private:
     /// Number of molecular orbitals
     size_t m_nmo = 0;
 
+    /// 1-electron memory map
+    std::map<Eph, std::vector<std::tuple<size_t,size_t,int> > > m_map_a;
+    std::map<Eph, std::vector<std::tuple<size_t,size_t,int> > > m_map_b;
+    /// 2-electron memory maps
+    std::map<Epphh, std::vector<std::tuple<size_t,size_t,int> > > m_map_aa;
+    std::map<Epphh, std::vector<std::tuple<size_t,size_t,int> > > m_map_ab;
+    std::map<Epphh, std::vector<std::tuple<size_t,size_t,int> > > m_map_bb;
+    /// Determinant list
+    std::map<Determinant,int> m_dets;
+
+    /// Compute scalar part of sigma vector
+    void H0_on_vec(std::vector<double> &ci_vec, std::vector<double> &sigma);
+    /// Compute the one-electron part of the sigma vector
+    void H1_on_vec(std::vector<double> &ci_vec, std::vector<double> &sigma, bool alpha);
+    /// Compute the two-electron part of the sigma vector
+    void H2_on_vec(std::vector<double> &ci_vec, std::vector<double> &sigma, bool alpha1, bool alpha2);
+
     /// Build the FCI space
     void initialize(std::string citype);
     /// Build determinants
@@ -81,6 +101,11 @@ private:
     /// Build memory maps
     void build_memory_map1(bool alpha);
     void build_memory_map2(bool alpha1, bool alpha2);
+
+    /// Build the Hamiltonian matrix
+    void build_H0(std::vector<double> &Hmat);
+    void build_H1(std::vector<double> &Hmat, bool alpha);
+    void build_H2(std::vector<double> &Hmat, bool alpha1, bool alpha2);
 };
 
 #endif // CI_SPACE_H
