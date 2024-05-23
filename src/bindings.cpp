@@ -115,6 +115,63 @@ PYBIND11_MODULE(_quantel, m) {
                     return vec_to_np_array(ndet,ndet,Hmat.data());
                },
                "Build the Hamiltonian matrix")
+          .def("trdm1", [](
+               CIspace &ci, py::array_t<double> &bra, py::array_t<double> &ket, 
+               bool alpha)
+               {
+                    size_t nmo = ci.nmo();
+                    auto bra_buf = bra.request();
+                    auto ket_buf = ket.request();
+                    std::vector<double> v_bra(
+                         (double *) bra_buf.ptr, (double *) bra_buf.ptr + bra_buf.size);
+                    std::vector<double> v_ket(
+                         (double *) ket_buf.ptr, (double *) ket_buf.ptr + ket_buf.size);
+                    std::vector<double> rdm1(nmo*nmo,0.0);
+                    ci.build_rdm1(v_bra,v_ket,rdm1,alpha);
+                    return vec_to_np_array(nmo,nmo,rdm1.data());
+               },
+               "Build the one-particle transition reduced density matrix")
+          .def("trdm2", [](
+               CIspace &ci, py::array_t<double> &bra, py::array_t<double> &ket, 
+               bool alpha1, bool alpha2)
+               {
+                    size_t nmo = ci.nmo();
+                    auto bra_buf = bra.request();
+                    auto ket_buf = ket.request();
+                    std::vector<double> v_bra(
+                         (double *) bra_buf.ptr, (double *) bra_buf.ptr + bra_buf.size);
+                    std::vector<double> v_ket(
+                         (double *) ket_buf.ptr, (double *) ket_buf.ptr + ket_buf.size);
+                    std::vector<double> rdm2(nmo*nmo*nmo*nmo,0.0);
+                    ci.build_rdm2(v_bra,v_ket,rdm2,alpha1,alpha2);
+                    return vec_to_np_array(nmo,nmo,nmo,nmo,rdm2.data());
+               },
+               "Build the two-particle transition reduced density matrix")
+          .def("rdm1", [](
+               CIspace &ci, py::array_t<double> &ket, bool alpha)
+               {
+                    size_t nmo = ci.nmo();
+                    auto ket_buf = ket.request();
+                    std::vector<double> v_ket(
+                         (double *) ket_buf.ptr, (double *) ket_buf.ptr + ket_buf.size);
+                    std::vector<double> rdm1(nmo*nmo,0.0);
+                    ci.build_rdm1(v_ket,v_ket,rdm1,alpha);
+                    return vec_to_np_array(nmo,nmo,rdm1.data());
+               },
+               "Build the one-particle reduced density matrix")
+          .def("rdm2", [](
+               CIspace &ci, py::array_t<double> &ket, 
+               bool alpha1, bool alpha2)
+               {
+                    size_t nmo = ci.nmo();
+                    auto ket_buf = ket.request();
+                    std::vector<double> v_ket(
+                         (double *) ket_buf.ptr, (double *) ket_buf.ptr + ket_buf.size);
+                    std::vector<double> rdm2(nmo*nmo*nmo*nmo,0.0);
+                    ci.build_rdm2(v_ket,v_ket,rdm2,alpha1,alpha2);
+                    return vec_to_np_array(nmo,nmo,nmo,nmo,rdm2.data());
+               },
+               "Build the two-particle reduced density matrix")
           ;         
 
      py::class_<MOintegrals>(m, "MOintegrals")

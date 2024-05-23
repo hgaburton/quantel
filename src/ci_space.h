@@ -66,6 +66,27 @@ public:
     /// @param Hmat
     void build_Hmat(std::vector<double> &Hmat);
 
+    /// @brief Compute 1RDM
+    /// @param bra CI vector for bra
+    /// @param ket CI vector for ket
+    /// @param rdm1
+    /// @param alpha
+    void build_rdm1(
+        std::vector<double> &bra, 
+        std::vector<double> &ket, 
+        std::vector<double> &rdm1, 
+        bool alpha);
+
+    /// @brief Compute 2RDM
+    /// @param bra CI vector for bra
+    /// @param ket CI vector for ket
+    /// @param rdm2 Output 2RDM
+    /// @param alpha1 Spin of electron 1
+    /// @param alpha2 Spin of electron 2
+    void build_rdm2(
+        std::vector<double> &bra, std::vector<double> &ket, 
+        std::vector<double> &rdm2, bool alpha1, bool alpha2);
+
 private:
     /// MO integrals
     MOintegrals &m_ints;
@@ -107,9 +128,9 @@ private:
     /// Compute the two-electron part of the sigma vector
     void H2_on_vec(std::vector<double> &ci_vec, std::vector<double> &sigma, bool alpha1, bool alpha2);
 
-    /// Build the FCI space
+    /// Build the CI space
     void initialize(std::string citype);
-    /// Build determinants
+    /// Build FCI determinants
     void build_fci_determinants();
     /// Build memory maps
     void build_memory_map1(bool alpha);

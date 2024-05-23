@@ -277,3 +277,65 @@ void CIspace::build_H2(std::vector<double> &H2, bool alpha1, bool alpha2)
         }
     }
 }
+
+void CIspace::build_rdm1(
+    std::vector<double> &bra, std::vector<double> &ket,
+    std::vector<double> &rdm1, bool alpha)
+{
+    // Check size of input
+    assert(bra.size() == m_ndet);
+    assert(ket.size() == m_ndet);
+    // Resize output
+
+    rdm1.resize(m_nmo*m_nmo,0.0);
+
+    // Get relevant memory map
+    auto &m_map = get_map(alpha);
+
+    // Compute 1RDM
+    #pragma omp parallel for collapse(2)
+    for(size_t p=0; p<m_nmo; p++)
+    for(size_t q=0; q<m_nmo; q++)
+    {
+        double &rdm_pq = rdm1[p*m_nmo+q];
+        for(auto &[indJ, indI, phase] : m_map.at({p,q}))
+            rdm_pq += phase * bra[indI] * ket[indJ];
+    }
+}
+
+void CIspace::build_rdm2(
+    std::vector<double> &bra, std::vector<double> &ket,
+    std::vector<double> &rdm2, bool alpha1, bool alpha2)
+{
+    // Check size of input
+    assert(bra.size() == m_ndet);
+    assert(ket.size() == m_ndet);
+
+    // Resize output
+    rdm2.resize(m_nmo*m_nmo*m_nmo*m_nmo,0.0);
+
+    // Get relevant memory map
+    auto &m_map = get_map(alpha1,alpha2);
+
+    // Compute 2RDM
+    #pragma omp parallel for collapse(4)
+    for(size_t p=0; p<m_nmo; p++)
+    for(size_t r=0; r<m_nmo; r++)
+    for(size_t q=0; q<m_nmo; q++)
+    for(size_t s=0; s<m_nmo; s++)
+    {
+        // Consider only unique pairs
+        size_t pq = p*m_nmo + q;
+        size_t rs = r*m_nmo + s;
+        if(pq > rs) continue;
+
+        double &rdm_pqrs = rdm2[p*m_nmo*m_nmo*m_nmo+q*m_nmo*m_nmo+r*m_nmo+s];
+        double &rdm_rspq = rdm2[r*m_nmo*m_nmo*m_nmo+s*m_nmo*m_nmo+p*m_nmo+q];
+
+        for(auto &[indJ, indI, phase] : m_map.at({p,q,r,s}))
+        {
+            rdm_pqrs += phase * bra[indI] * ket[indJ];
+            if(pq!=rs) rdm_rspq += phase * bra[indJ] * ket[indI];
+        }
+    }
+}

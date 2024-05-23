@@ -13,9 +13,11 @@ mol = quantel.Molecule([["H",0.0,0.0,0.0*R],
                         ["H",0.0,0.0,2.0*R],
                         ["H",0.0,0.0,3.0*R],
                         ["H",0.0,0.0,4.0*R],
-                        ["H",0.0,0.0,5.0*R]])
+                        ["H",0.0,0.0,5.0*R],
+                        ["H",0.0,0.0,6.0*R],
+                        ["H",0.0,0.0,7.0*R]])
 print(mol.natom())
-no = 3
+no = 4
 mol.print()
 
 # Initialise interface to Libint2
@@ -59,7 +61,9 @@ en += 0.5 * np.einsum('qpqp',h2ab[:no,:no,:no,:no])
 en += 0.5 * np.einsum('pqpq',h2bb[:no,:no,:no,:no])
 
 # Build CI object
+print("Initialise CI object... ")
 cispace = quantel.CIspace(mo_ints,no,no,'FCI')
+print("done")
 
 vec = np.zeros(cispace.ndet())
 vec[0] = 1.0
@@ -73,20 +77,64 @@ print(f"\nEnergy from np.einsum    = {en: 16.10f}")
 print(f"Energy from sigma vector = {np.dot(sig, vec): 16.10f}")
 
 print("Build Hmat from sigma vector")
-Hmat = np.zeros((400,400))
-for irow in range(400):
-    vec = np.zeros(cispace.ndet())
-    vec[irow] = 1.0
-    Hmat[irow] = cispace.H_on_vec(vec).copy()
+#ndet = cispace.ndet()
+#Hmat = np.zeros((ndet,ndet))
+#for irow in range(ndet):
+#    print(irow, ndet)
+#    vec = np.zeros(cispace.ndet())
+#    vec[irow] = 1.0
+#    Hmat[irow] = cispace.H_on_vec(vec).copy()
 print("Sigma Hmat")
-print(Hmat[:21,:21])
+#print(Hmat[:21,:21])
 
 print("Building CI space Hmat")
 Hfci = cispace.build_Hmat()
 print("Build_Hmat")
 print(Hfci[:21,:21])
-print(np.linalg.norm(Hmat - Hfci))
-print(np.linalg.eigh(Hfci)[0])
+print("Solve eigenvalue problem")
+eci, vci = np.linalg.eigh(Hfci)
+print(eci[:10])
+
+print("Build density matrices")
+vgs = vci[:,0].copy()
+rdm1_a = cispace.rdm1(vgs,True)
+rdm1_b = cispace.rdm1(vgs,False)
+rdm1 = rdm1_a + rdm1_b
+rdm2_aa = cispace.rdm2(vgs,True,True)
+rdm2_ab = cispace.rdm2(vgs,True,False)
+rdm2_bb = cispace.rdm2(vgs,False,False)
+print(rdm1)
+
+en = ints.scalar_potential()
+en += np.einsum('pq,pq',rdm1_a,h1a)
+en += np.einsum('pq,pq',rdm1_b,h1b)
+en += 0.25 * np.einsum('pqrs,pqrs',h2aa,rdm2_aa)
+en += 1.00 * np.einsum('pqrs,pqrs',h2ab,rdm2_ab)
+en += 0.25 * np.einsum('pqrs,pqrs',h2bb,rdm2_bb)
+
+print(f"RDM energy = {en: 16.10f}")
+
+v1 = np.random.rand(cispace.ndet())
+v2 = np.random.rand(cispace.ndet())
+v1 /= np.linalg.norm(v1)
+v2 /= np.linalg.norm(v2)
+
+trdm1_a = cispace.trdm1(v1,v2,True)
+trdm1_b = cispace.trdm1(v1,v2,False)
+trdm2_aa = cispace.trdm2(v1,v2,True,True)
+trdm2_ab = cispace.trdm2(v1,v2,True,False)
+trdm2_bb = cispace.trdm2(v1,v2,False,False)
+
+H12 = v1.dot(v2) * ints.scalar_potential()
+H12 += np.einsum('pq,pq',trdm1_a,h1a)
+H12 += np.einsum('pq,pq',trdm1_b,h1b)
+H12 += 0.25 * np.einsum('pqrs,pqrs',h2aa,trdm2_aa)
+H12 += 1.00 * np.einsum('pqrs,pqrs',h2ab,trdm2_ab)
+H12 += 0.25 * np.einsum('pqrs,pqrs',h2bb,trdm2_bb)
+print(H12)
+print(np.linalg.multi_dot([v1.T, Hfci, v2]))
+
+
 quit()
 
 # Define the CI space
