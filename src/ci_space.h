@@ -12,6 +12,9 @@
 #include "mo_integrals.h"
 #include "fmt/core.h"
 
+typedef std::map<Eph, std::vector<std::tuple<size_t,size_t,int> > > mem_map_1;
+typedef std::map<Epphh, std::vector<std::tuple<size_t,size_t,int> > > mem_map_2;
+
 /// \brief Container for information about a CI space
 class CIspace 
 {
@@ -78,12 +81,22 @@ private:
     size_t m_nmo = 0;
 
     /// 1-electron memory map
-    std::map<Eph, std::vector<std::tuple<size_t,size_t,int> > > m_map_a;
-    std::map<Eph, std::vector<std::tuple<size_t,size_t,int> > > m_map_b;
+    mem_map_1 m_map_a;
+    mem_map_1 m_map_b;
     /// 2-electron memory maps
-    std::map<Epphh, std::vector<std::tuple<size_t,size_t,int> > > m_map_aa;
-    std::map<Epphh, std::vector<std::tuple<size_t,size_t,int> > > m_map_ab;
-    std::map<Epphh, std::vector<std::tuple<size_t,size_t,int> > > m_map_bb;
+    mem_map_2 m_map_aa;
+    mem_map_2 m_map_ab;
+    mem_map_2 m_map_bb;
+    // Get access to memory maps
+    mem_map_1 &get_map(bool alpha) 
+    { 
+        return alpha ? m_map_a : m_map_b; 
+    }
+    mem_map_2 &get_map(bool alpha1, bool alpha2) 
+    { 
+        return alpha1 ? (alpha2 ? m_map_aa : m_map_ab) : m_map_bb; 
+    }
+
     /// Determinant list
     std::map<Determinant,int> m_dets;
 

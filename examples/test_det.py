@@ -63,28 +63,29 @@ cispace = quantel.CIspace(mo_ints,no,no,'FCI')
 
 vec = np.zeros(cispace.ndet())
 vec[0] = 1.0
-print("\nCI vector")
-cispace.print_vector(vec,1e-10)
+#print("\nCI vector")
+#cispace.print_vector(vec,1e-10)
 sig = cispace.H_on_vec(vec)
-print("\nSigma vector")
-cispace.print_vector(sig,1e-10)
+#print("\nSigma vector")
+#cispace.print_vector(sig,1e-10)
 
 print(f"\nEnergy from np.einsum    = {en: 16.10f}")
 print(f"Energy from sigma vector = {np.dot(sig, vec): 16.10f}")
-cispace.print()
 
+print("Build Hmat from sigma vector")
 Hmat = np.zeros((400,400))
 for irow in range(400):
     vec = np.zeros(cispace.ndet())
     vec[irow] = 1.0
     Hmat[irow] = cispace.H_on_vec(vec).copy()
-print(Fmo)
 print("Sigma Hmat")
 print(Hmat[:21,:21])
 
+print("Building CI space Hmat")
 Hfci = cispace.build_Hmat()
 print("Build_Hmat")
 print(Hfci[:21,:21])
+print(np.linalg.norm(Hmat - Hfci))
 print(np.linalg.eigh(Hfci)[0])
 quit()
 
