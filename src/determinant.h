@@ -35,9 +35,9 @@ public:
     }
 
     /// Apply single excitation operator to the determinant
-    /// \param Eqp Excitation operator
+    /// \param Epq Excitation operator
     /// \param alpha True if alpha excitation, false if beta
-    int apply_excitation(Eph &Eqp, bool alpha);
+    int apply_excitation(Eph &Epq, bool alpha);
 
     /// Apply double excitation operator to the determinant
     /// \param Eqp First excitation operator

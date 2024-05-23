@@ -59,7 +59,7 @@ en += 0.5 * np.einsum('qpqp',h2ab[:no,:no,:no,:no])
 en += 0.5 * np.einsum('pqpq',h2bb[:no,:no,:no,:no])
 
 # Build CI object
-cispace = quantel.CIspace(mo_ints,no,0,'FCI')
+cispace = quantel.CIspace(mo_ints,no,no,'FCI')
 
 vec = np.zeros(cispace.ndet())
 vec[0] = 1.0
@@ -80,11 +80,11 @@ for irow in range(400):
     Hmat[irow] = cispace.H_on_vec(vec).copy()
 print(Fmo)
 print("Sigma Hmat")
-print(Hmat[:10,:10])
+print(Hmat[:21,:21])
 
 Hfci = cispace.build_Hmat()
 print("Build_Hmat")
-print(Hfci[:10,:10])
+print(Hfci[:21,:21])
 print(np.linalg.eigh(Hfci)[0])
 quit()
 

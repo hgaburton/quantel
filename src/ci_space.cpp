@@ -8,7 +8,7 @@ void CIspace::initialize(std::string citype)
         build_fci_determinants();
     else 
         throw std::runtime_error("CI space type not implemented");
-        
+
     // Build memory maps
     build_memory_map1(true);
     build_memory_map1(false);
@@ -40,7 +40,7 @@ void CIspace::build_memory_map1(bool alpha)
     auto &m_map = alpha ? m_map_a : m_map_b;
 
     // Populate m_map with connected determinants
-    #pragma omp parallel for collapse(2)
+    //#pragma omp parallel for collapse(2)
     for(size_t p=0; p<m_nmo; p++)
     for(size_t q=0; q<m_nmo; q++)
     {
@@ -74,6 +74,7 @@ void CIspace::build_memory_map1(bool alpha)
 void CIspace::build_memory_map2(bool alpha1, bool alpha2)
 {
     // Get relevant memory map
+    assert(alpha1 >= alpha2);
     auto &m_map = alpha1 ? (alpha2 ? m_map_aa : m_map_ab) : m_map_bb;
 
     // Populate m_map with connected determinants
@@ -96,10 +97,6 @@ void CIspace::build_memory_map2(bool alpha1, bool alpha2)
             int phase = detI.apply_excitation(Epqrs,alpha1,alpha2);
             if(phase != 0) 
             {
-                std::cout << p << q << r << s << " " << phase << std::endl;
-                std::cout << det_str(detJ) << std::endl;
-                std::cout << det_str(detI) << std::endl;
-                std::cout << phase << std::endl;
                 // If the detI is in the CI space, add connection to the map
                 try {
                     size_t indI = m_dets.at(detI);
@@ -251,7 +248,6 @@ void CIspace::build_H1(std::vector<double> &H1, bool alpha)
         {
             H1[indI*m_ndet+indJ] += phase * hpq;
         }
-
     }
 }
 
@@ -261,7 +257,8 @@ void CIspace::build_H2(std::vector<double> &H2, bool alpha1, bool alpha2)
     double tol = 1e-14;
 
     // Get relevant memory map
-    auto &m_map = (alpha1 == alpha2) ? m_map_aa : (alpha1 ? m_map_ab : m_map_bb);
+    auto &m_map = alpha1 ? (alpha2 ? m_map_aa : m_map_ab) : m_map_bb;
+    
     // Scaling factor for same spin terms is 1/4 due to antisymmetrisation
     double scale = (alpha1 == alpha2) ? 0.25 : 1.0;
 
