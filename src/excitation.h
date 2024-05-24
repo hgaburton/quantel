@@ -3,6 +3,7 @@
 
 #include <cstddef>
 
+/// Single particle-hole excitation
 struct Eph {
     size_t particle; // Particle index
     size_t hole; // Hole index
@@ -15,6 +16,7 @@ struct Eph {
     }
 };
 
+/// Double particle-hole excitation
 struct Epphh {
     size_t particle1; // First particle index
     size_t particle2; // Second particle index

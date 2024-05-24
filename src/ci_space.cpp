@@ -113,11 +113,33 @@ void CIspace::build_memory_map2(bool alpha1, bool alpha2)
     }
 }
 
+/// Print the determinant list
+void CIspace::print() const 
+{
+    for(auto &[det, index] : m_dets)
+        std::cout << det_str(det) << ": " << index << std::endl;
+}
 
-void CIspace::H_on_vec(std::vector<double> &ci_vec, std::vector<double> &sigma)
+/// Print a CI vector
+void CIspace::print_vector(const std::vector<double> &ci_vec, double tol) const
+{
+    if(ci_vec.size() != m_ndet) 
+        throw std::runtime_error("CIspace::print_vector() CI vector size error");
+    
+    for(auto &[det, ind] : m_dets)
+    {
+        if(std::abs(ci_vec[ind]) > tol) 
+            fmt::print("{:>s}: {:>10.6f}\n", det_str(det), ci_vec[ind]);;
+    }   
+}
+
+
+void CIspace::H_on_vec(const std::vector<double> &ci_vec, std::vector<double> &sigma)
 {
     // Check size of input
-    assert(ci_vec.size() == m_ndet);
+    if(ci_vec.size() != m_ndet) 
+        throw std::runtime_error("CIspace::H_on_vec() CI vector size error");
+
     // Resize output
     sigma.resize(m_ndet,0.0);
 
@@ -132,7 +154,7 @@ void CIspace::H_on_vec(std::vector<double> &ci_vec, std::vector<double> &sigma)
     H2_on_vec(ci_vec, sigma, false, false);
 }
 
-void CIspace::H0_on_vec(std::vector<double> &ci_vec, std::vector<double> &sigma)
+void CIspace::H0_on_vec(const std::vector<double> &ci_vec, std::vector<double> &sigma)
 {
     double v_scalar = m_ints.scalar_potential();
     for(size_t ind=0; ind<m_ndet; ind++)
@@ -140,11 +162,11 @@ void CIspace::H0_on_vec(std::vector<double> &ci_vec, std::vector<double> &sigma)
 }
 
 void CIspace::H1_on_vec(
-    std::vector<double> &ci_vec, std::vector<double> &sigma, bool alpha)
+    const std::vector<double> &ci_vec, std::vector<double> &sigma, bool alpha)
 {
     // Get relevant memory map
     auto &m_map = get_map(alpha);
-    double tol = 1e-14;
+    double tol = m_ints.tol();
 
     // Get one-electron integrals
     for(size_t p=0; p<m_nmo; p++)
@@ -160,10 +182,11 @@ void CIspace::H1_on_vec(
 }
 
 void CIspace::H2_on_vec(
-    std::vector<double> &ci_vec, std::vector<double> &sigma, bool alpha1, bool alpha2)
+    const std::vector<double> &ci_vec, std::vector<double> &sigma, 
+    bool alpha1, bool alpha2)
 {
     assert(alpha1 >= alpha2);
-    double tol = 1e-14;
+    double tol = m_ints.tol();
 
     // Get relevant memory map
     auto &m_map = get_map(alpha1,alpha2);
@@ -199,8 +222,9 @@ void CIspace::H2_on_vec(
 
 void CIspace::build_Hmat(std::vector<double> &Hmat)
 {
-    // Check size of output
-    assert(Hmat.size() == m_ndet*m_ndet);
+    // Check size of output and initialise memory
+    Hmat.resize(m_ndet*m_ndet,0.0);
+
     // Scalar component
     build_H0(Hmat);
     // One-electron component
@@ -225,7 +249,7 @@ void CIspace::build_H1(std::vector<double> &H1, bool alpha)
 {
     // Get relevant memory map
     auto &m_map = get_map(alpha);
-    double tol = 1e-14;
+    double tol = m_ints.tol();
 
     // Get one-electron integrals
     for(size_t p=0; p<m_nmo; p++)
@@ -246,7 +270,7 @@ void CIspace::build_H1(std::vector<double> &H1, bool alpha)
 void CIspace::build_H2(std::vector<double> &H2, bool alpha1, bool alpha2)
 {
     assert(alpha1 >= alpha2);
-    double tol = 1e-14;
+    double tol = m_ints.tol();
 
     // Get relevant memory map
     auto &m_map = get_map(alpha1,alpha2);
@@ -279,14 +303,16 @@ void CIspace::build_H2(std::vector<double> &H2, bool alpha1, bool alpha2)
 }
 
 void CIspace::build_rdm1(
-    std::vector<double> &bra, std::vector<double> &ket,
+    const std::vector<double> &bra, const std::vector<double> &ket,
     std::vector<double> &rdm1, bool alpha)
 {
     // Check size of input
-    assert(bra.size() == m_ndet);
-    assert(ket.size() == m_ndet);
-    // Resize output
+    if(bra.size() != m_ndet) 
+        throw std::runtime_error("CIspace::build_rdm1() bra vector size error");
+    if(ket.size() != m_ndet)
+        throw std::runtime_error("CIspace::build_rdm1() ket vector size error");
 
+    // Resize output
     rdm1.resize(m_nmo*m_nmo,0.0);
 
     // Get relevant memory map
@@ -304,12 +330,16 @@ void CIspace::build_rdm1(
 }
 
 void CIspace::build_rdm2(
-    std::vector<double> &bra, std::vector<double> &ket,
+    const std::vector<double> &bra, const std::vector<double> &ket,
     std::vector<double> &rdm2, bool alpha1, bool alpha2)
 {
-    // Check size of input
-    assert(bra.size() == m_ndet);
-    assert(ket.size() == m_ndet);
+    // Check input
+    if(bra.size() != m_ndet) 
+        throw std::runtime_error("CIspace::build_rdm2() bra vector size error");
+    if(ket.size() != m_ndet)
+        throw std::runtime_error("CIspace::build_rdm2() ket vector size error");
+    if(alpha1 < alpha2) 
+        throw std::runtime_error("CIspace::build_rdm2() Cannot compute rdm2_ba, try rdm2_ab instead");
 
     // Resize output
     rdm2.resize(m_nmo*m_nmo*m_nmo*m_nmo,0.0);

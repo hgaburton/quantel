@@ -8,10 +8,10 @@
 
 class MOintegrals {
 public:
-    /// Default destructor
+    /// \brief Default destructor
     virtual ~MOintegrals() { }
 
-    /// Constructor from orbital coefficients and integrals
+    /// \brief Constructor from orbital coefficients and integrals
     MOintegrals(std::vector<double> &Ca, std::vector<double> &Cb, LibintInterface &ints) :
         m_Ca(Ca), m_Cb(Cb), m_ints(ints), m_nbsf(ints.nbsf()), m_nmo(ints.nmo())
     { 
@@ -22,22 +22,22 @@ public:
         initialize();
     }
 
-    /// Get the value of the scalar potential
+    /// \brief Get the value of the scalar potential
     double scalar_potential() const { return m_V; }
 
-    /// Get an element of the one-electron Hamiltonian matrix
+    /// \brief Get an element of the one-electron Hamiltonian matrix
     /// @param p integral index for bra
     /// @param q integral index for ket
     /// @param alpha spin of the integral
     double oei(size_t p, size_t q, bool alpha);
 
-    /// Get an element of the effective one-electron matrix
+    /// \brief Get an element of the effective one-electron matrix
     /// @param p integral index for bra
     /// @param q integral index for ket
     /// @param alpha spin of the integral
     double oek(size_t p, size_t q, bool alpha);
 
-    /// Get an element of the two-electron integrals <pq||rs>
+    /// \brief Get an element of the two-electron integrals <pq||rs>
     /// @param p integral index
     /// @param q integral index
     /// @param r integral index 
@@ -46,7 +46,7 @@ public:
     /// @param alpha2 spin of electron 2
     double tei(size_t p, size_t q, size_t r, size_t s, bool alpha1, bool alpha2);
 
-    /// Get a pointer to the one-electron Hamiltonian matrix
+    /// \brief Get a pointer to the one-electron Hamiltonian matrix
     /// @param alpha spin of the integrals
     double *oei_matrix(bool alpha) { return alpha ? m_oei_a.data() : m_oei_b.data(); }
 
@@ -63,10 +63,12 @@ public:
         return nullptr;
     }
 
-    /// Get the number of basis functions
+    /// \brief Get the number of basis functions
     size_t nbsf() const { return m_nbsf; }
-    /// Get the number of linearly indepdent molecular orbitals
+    /// \brief Get the number of linearly indepdent molecular orbitals
     size_t nmo() const { return m_nmo; }
+    /// \brief Get integral screening threshold
+    double tol() const { return m_tol; }
 
 private:
     /// Orbital coefficients
@@ -77,6 +79,11 @@ private:
     size_t m_nbsf;
     /// Number of molecular orbitals
     size_t m_nmo;
+    /// Number of correlated orbitals
+    size_t m_ncor;
+
+    /// Intergral screening threshold
+    double m_tol = 1e-14;
 
     /// Libint interface
     LibintInterface &m_ints;
@@ -94,26 +101,26 @@ private:
     std::vector<double> m_tei_bb;
     std::vector<double> m_tei_ab;
 
-    /// Initialise
+    /// \brief Initialise
     void initialize();
 
-    /// Compute scalar potential
+    /// \brief Compute scalar potential
     void compute_scalar_potential();
-    /// Compute one-electron integrals
+    /// \brief Compute one-electron integrals
     void compute_oei(bool alpha);
-    /// Compute two-electron integrals
+    /// \brief Compute two-electron integrals
     void compute_tei(bool alpha1, bool alpha2);
-    /// Compute the effective one-electron matrix
+    /// \brief Compute the effective one-electron matrix
     void compute_oek(bool alpha);
 
-    /// Get index-for one-electron quantity
+    /// \brief Get index-for one-electron quantity
     size_t oei_index(size_t p, size_t q) 
     { 
         assert(p<m_nmo);
         assert(q<m_nmo);
         return p * m_nmo + q; 
     }
-    /// Get index-for two-electron quantity
+    /// \brief Get index-for two-electron quantity
     size_t tei_index(size_t p, size_t q, size_t r, size_t s) 
     {
         assert(p<m_nmo);

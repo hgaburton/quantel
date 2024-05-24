@@ -30,22 +30,9 @@ public:
     }
 
     /// Print the determinant list
-    virtual void print() const 
-    {
-        for(auto &[det, index] : m_dets)
-            std::cout << det_str(det) << ": " << index << std::endl;
-    }
-
+    virtual void print() const;
     /// Print a CI vector
-    virtual void print_vector(std::vector<double> &ci_vec, double tol) const
-    {
-        assert(ci_vec.size() == m_ndet);
-        for(auto &[det, ind] : m_dets)
-        {
-            if(std::abs(ci_vec[ind]) > tol) 
-                fmt::print("{:>s}: {:>10.6f}\n", det_str(det), ci_vec[ind]);;
-        }   
-    }
+    virtual void print_vector(const std::vector<double> &ci_vec, double tol) const;
 
     /// Get the number of determinants
     size_t ndet() const { return m_ndet; }
@@ -58,9 +45,9 @@ public:
     size_t nmo() const { return m_nmo; }
 
     /// @brief Compute the sigma vector
-    /// @param ci_vec 
-    /// @param sigma 
-    void H_on_vec(std::vector<double> &ci_vec, std::vector<double> &sigma);
+    /// @param ci_vec Input CI vector
+    /// @param sigma Output sigma vector
+    void H_on_vec(const std::vector<double> &ci_vec, std::vector<double> &sigma);
 
     /// @brief Compute the Hamiltonian matrix
     /// @param Hmat
@@ -69,11 +56,11 @@ public:
     /// @brief Compute 1RDM
     /// @param bra CI vector for bra
     /// @param ket CI vector for ket
-    /// @param rdm1
-    /// @param alpha
+    /// @param rdm1 Output 1RDM
+    /// @param alpha Spin of the RDM
     void build_rdm1(
-        std::vector<double> &bra, 
-        std::vector<double> &ket, 
+        const std::vector<double> &bra, 
+        const std::vector<double> &ket, 
         std::vector<double> &rdm1, 
         bool alpha);
 
@@ -84,7 +71,7 @@ public:
     /// @param alpha1 Spin of electron 1
     /// @param alpha2 Spin of electron 2
     void build_rdm2(
-        std::vector<double> &bra, std::vector<double> &ket, 
+        const std::vector<double> &bra, const std::vector<double> &ket, 
         std::vector<double> &rdm2, bool alpha1, bool alpha2);
 
 private:
@@ -122,11 +109,11 @@ private:
     std::map<Determinant,int> m_dets;
 
     /// Compute scalar part of sigma vector
-    void H0_on_vec(std::vector<double> &ci_vec, std::vector<double> &sigma);
+    void H0_on_vec(const std::vector<double> &ci_vec, std::vector<double> &sigma);
     /// Compute the one-electron part of the sigma vector
-    void H1_on_vec(std::vector<double> &ci_vec, std::vector<double> &sigma, bool alpha);
+    void H1_on_vec(const std::vector<double> &ci_vec, std::vector<double> &sigma, bool alpha);
     /// Compute the two-electron part of the sigma vector
-    void H2_on_vec(std::vector<double> &ci_vec, std::vector<double> &sigma, bool alpha1, bool alpha2);
+    void H2_on_vec(const std::vector<double> &ci_vec, std::vector<double> &sigma, bool alpha1, bool alpha2);
 
     /// Build the CI space
     void initialize(std::string citype);
