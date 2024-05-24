@@ -18,6 +18,9 @@ mol = quantel.Molecule([["H",0.0,0.0,0.0*R],
                         ["H",0.0,0.0,7.0*R]])
 print(mol.natom())
 no = 4
+ncore = 1
+nact = 6
+ne = no - ncore
 mol.print()
 
 # Initialise interface to Libint2
@@ -35,14 +38,20 @@ nmo = ints.nmo()
 wfn.canonicalize()
 C = wfn.mo_coeff.copy()
 # Print some information about optimal solution
-print(f"\nEnergy = {wfn.energy: 16.10f}")
+print(f"\nNuclear repulsion = {ints.scalar_potential(): 16.10f}")
+print(f"Energy = {wfn.energy: 16.10f}")
 print("\nMO coefficients:")
 print(wfn.mo_coeff)
 Fao = wfn.fock
 Fmo = np.linalg.multi_dot([C.T, Fao, C])
 
 # Construct MO integral objectPerform MO transfrom
-mo_ints = quantel.MOintegrals(C,C,ints)
+print("Initialise MO integrals")
+mo_ints = quantel.MOintegrals(ints)
+print("Compute integrals")
+mo_ints.update_orbitals(C,ncore,nact)
+print("Done")
+
 #print(mo_ints.oei_matrix(True))
 
 # Check the mo_ints are all good
@@ -52,17 +61,20 @@ h2aa = mo_ints.tei_array(True,True)
 h2ab = mo_ints.tei_array(True,False)
 h2bb = mo_ints.tei_array(False,False)
 
-en = ints.scalar_potential()
-en += np.einsum('pp',h1a[:no,:no])
-en += np.einsum('pp',h1b[:no,:no])
-en += 0.5 * np.einsum('pqpq',h2aa[:no,:no,:no,:no])
-en += 0.5 * np.einsum('pqpq',h2ab[:no,:no,:no,:no])
-en += 0.5 * np.einsum('qpqp',h2ab[:no,:no,:no,:no])
-en += 0.5 * np.einsum('pqpq',h2bb[:no,:no,:no,:no])
+print(h1a.shape)
+print(h2aa.shape)
+
+en = mo_ints.scalar_potential()
+en += np.einsum('pp',h1a[:ne,:ne])
+en += np.einsum('pp',h1b[:ne,:ne])
+en += 0.5 * np.einsum('pqpq',h2aa[:ne,:ne,:ne,:ne])
+en += 0.5 * np.einsum('pqpq',h2ab[:ne,:ne,:ne,:ne])
+en += 0.5 * np.einsum('qpqp',h2ab[:ne,:ne,:ne,:ne])
+en += 0.5 * np.einsum('pqpq',h2bb[:ne,:ne,:ne,:ne])
 
 # Build CI object
 print("Initialise CI object... ")
-cispace = quantel.CIspace(mo_ints,no,no,'FCI')
+cispace = quantel.CIspace(mo_ints,no-ncore,no-ncore,'FCI')
 print("done")
 
 vec = np.zeros(cispace.ndet())
@@ -105,7 +117,7 @@ rdm2_ab = cispace.rdm2(vgs,True,False)
 rdm2_bb = cispace.rdm2(vgs,False,False)
 print(rdm1)
 
-en = ints.scalar_potential()
+en = mo_ints.scalar_potential()
 en += np.einsum('pq,pq',rdm1_a,h1a)
 en += np.einsum('pq,pq',rdm1_b,h1b)
 en += 0.25 * np.einsum('pqrs,pqrs',h2aa,rdm2_aa)
@@ -125,7 +137,7 @@ trdm2_aa = cispace.trdm2(v1,v2,True,True)
 trdm2_ab = cispace.trdm2(v1,v2,True,False)
 trdm2_bb = cispace.trdm2(v1,v2,False,False)
 
-H12 = v1.dot(v2) * ints.scalar_potential()
+H12 = v1.dot(v2) * mo_ints.scalar_potential()
 H12 += np.einsum('pq,pq',trdm1_a,h1a)
 H12 += np.einsum('pq,pq',trdm1_b,h1b)
 H12 += 0.25 * np.einsum('pqrs,pqrs',h2aa,trdm2_aa)

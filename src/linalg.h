@@ -25,4 +25,17 @@ void gen_eig_sym(
     std::vector<double> &M, std::vector<double> &S, std::vector<double> &X, 
     std::vector<double> &eigval, std::vector<double> &eigvec, double thresh=1e-8);
 
+/// \brief Perform 1-electron integral transformation
+/// \param bra Input bra coefficients
+/// \param ket Input ket coefficients
+/// \param hao One-electron integrals in AO basis
+/// \param hmo One-electron integrals in MO basis
+/// \param d1 Number of orbitals in bra
+/// \param d2 Number of orbitals in ket
+/// \param nbsf Number of basis functions
+void oei_transform(
+    const std::vector<double> &Cbra, const std::vector<double> &Cket,
+    const std::vector<double> &hao, std::vector<double> &hmo, 
+    const size_t d1, const size_t d2, const size_t nbsf);
+
 #endif // LINALG_H_

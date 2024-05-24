@@ -65,7 +65,8 @@ class SS_CASSCF(Wavefunction):
         # Save mapping indices for unique orbital rotations
         self.frozen     = None
         self.rot_idx    = self.uniq_var_indices(self.norb, self.frozen)
-        self.nrot       = np.sum(self.rot_idx)
+        self.nrot       = np.su
+        m(self.rot_idx)
 
         # Define the FCI solver
         self.fcisolver = fci.direct_spin1.FCISolver(mol)

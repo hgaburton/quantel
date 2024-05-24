@@ -124,7 +124,7 @@ void CIspace::print() const
 void CIspace::print_vector(const std::vector<double> &ci_vec, double tol) const
 {
     if(ci_vec.size() != m_ndet) 
-        throw std::runtime_error("CIspace::print_vector() CI vector size error");
+        throw std::runtime_error("CIspace::print_vector: CI vector size error");
     
     for(auto &[det, ind] : m_dets)
     {
@@ -138,7 +138,7 @@ void CIspace::H_on_vec(const std::vector<double> &ci_vec, std::vector<double> &s
 {
     // Check size of input
     if(ci_vec.size() != m_ndet) 
-        throw std::runtime_error("CIspace::H_on_vec() CI vector size error");
+        throw std::runtime_error("CIspace::H_on_vec: CI vector size error");
 
     // Resize output
     sigma.resize(m_ndet,0.0);
@@ -308,9 +308,9 @@ void CIspace::build_rdm1(
 {
     // Check size of input
     if(bra.size() != m_ndet) 
-        throw std::runtime_error("CIspace::build_rdm1() bra vector size error");
+        throw std::runtime_error("CIspace::build_rdm1: bra vector size error");
     if(ket.size() != m_ndet)
-        throw std::runtime_error("CIspace::build_rdm1() ket vector size error");
+        throw std::runtime_error("CIspace::build_rdm1: ket vector size error");
 
     // Resize output
     rdm1.resize(m_nmo*m_nmo,0.0);
@@ -335,11 +335,11 @@ void CIspace::build_rdm2(
 {
     // Check input
     if(bra.size() != m_ndet) 
-        throw std::runtime_error("CIspace::build_rdm2() bra vector size error");
+        throw std::runtime_error("CIspace::build_rdm2: bra vector size error");
     if(ket.size() != m_ndet)
-        throw std::runtime_error("CIspace::build_rdm2() ket vector size error");
+        throw std::runtime_error("CIspace::build_rdm2: ket vector size error");
     if(alpha1 < alpha2) 
-        throw std::runtime_error("CIspace::build_rdm2() Cannot compute rdm2_ba, try rdm2_ab instead");
+        throw std::runtime_error("CIspace::build_rdm2: Cannot compute rdm2_ba, try rdm2_ab instead");
 
     // Resize output
     rdm2.resize(m_nmo*m_nmo*m_nmo*m_nmo,0.0);

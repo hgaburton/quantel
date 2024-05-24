@@ -83,3 +83,42 @@ void gen_eig_sym(
     arma::inplace_trans(Xmat);
     arma::inplace_trans(mat_eigvec);
 }
+
+void oei_transform(
+    const std::vector<double> &Cbra, const std::vector<double> &Cket,
+    const std::vector<double> &hao, std::vector<double> &hmo, 
+    const size_t d1, const size_t d2, const size_t nbsf)
+{
+    // Check input
+    assert(Cbra.size() == d1 * nbsf);
+    assert(Cket.size() == d2 * nbsf);
+    assert(hao.size() == nbsf * nbsf);
+
+    // Perform first loop
+    std::vector<double> tmp(nbsf*d2, 0.0);
+    #pragma omp parallel for collapse(2)
+    for(size_t mu=0; mu<nbsf; mu++)
+    for(size_t q=0; q<d2; q++)
+    { 
+        // Get source buffer
+        const double *buff = &hao[mu*nbsf];
+        // Get destination 
+        double &dest = tmp[mu*d2+q];
+        // Perform inner loop
+        for(size_t nu=0; nu < nbsf; nu++)
+            dest += buff[nu] * Cket[nu*d2+q];
+    }    
+
+    // Perform second loop
+    hmo.resize(d1*d2, 0.0);
+    #pragma omp parallel for collapse(2)
+    for(size_t p=0; p < d1; p++)
+    for(size_t q=0; q < d2; q++)
+    {
+        // Get destination
+        double &dest = hmo[p*d2+q];
+        // Perform inner loop
+        for(size_t mu=0; mu < nbsf; mu++)
+            dest += tmp[mu*d2+q] * Cbra[mu*d1+p];
+    }
+}

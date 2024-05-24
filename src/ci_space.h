@@ -24,8 +24,14 @@ public:
 
     /// Constructor
     CIspace(MOintegrals &mo_ints, size_t nalfa, size_t nbeta, std::string citype="FCI") :
-        m_ints(mo_ints), m_nmo(mo_ints.nmo()), m_nalfa(nalfa), m_nbeta(nbeta)
+        m_ints(mo_ints), m_nmo(mo_ints.nact()), m_nalfa(nalfa), m_nbeta(nbeta)
     { 
+        if(m_nmo == 0)
+            throw std::runtime_error("CIspace::CIspace: No active orbitals");
+        if(m_nalfa > m_nmo)
+            throw std::runtime_error("CIspace::CIspace: Invalid number of alpha electrons");
+        if(m_nbeta > m_nmo)
+            throw std::runtime_error("CIspace::CIspace: Invalid number of beta electrons");
         initialize(citype);
     }
 

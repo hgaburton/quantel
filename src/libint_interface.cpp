@@ -283,7 +283,7 @@ void LibintInterface::build_JK(std::vector<double> &dens, std::vector<double> &J
     assert(dens.size() == m_nbsf * m_nbsf);
 
     // Resize JK matrix
-    JK.resize(m_nbsf * m_nbsf, 0.0);
+    JK.resize(m_nbsf*m_nbsf,0.0);
 
     // Loop over basis functions
     #pragma omp parallel for collapse(2)
@@ -440,31 +440,6 @@ void LibintInterface::oei_ao_to_mo(
     // Get alfa or beta one-electron integrals
     std::vector<double> &oei = alpha ? m_oei_a : m_oei_b;
 
-    // Perform first loop
-    std::vector<double> tmp(m_nbsf*d2, 0.0);
-    #pragma omp parallel for collapse(2)
-    for(size_t mu=0; mu < m_nbsf; mu++)
-    for(size_t q=0; q < d2; q++)
-    { 
-        // Get source buffer
-        double *buff = &oei[mu*m_nbsf];
-        // Get destination 
-        double &dest = tmp[mu*d2+q];
-        // Perform inner loop
-        for(size_t nu=0; nu < m_nbsf; nu++)
-            dest += buff[nu] * C2[nu*d2+q];
-    }    
-
-    // Perform second loop
-    oei_mo.resize(d1*d2, 0.0);
-    #pragma omp parallel for collapse(2)
-    for(size_t p=0; p < d1; p++)
-    for(size_t q=0; q < d2; q++)
-    {
-        // Get destination
-        double &dest = oei_mo[p*d2+q];
-        // Perform inner loop
-        for(size_t mu=0; mu < m_nbsf; mu++)
-            dest += tmp[mu*d2+q] * C1[mu*d1+p];
-    }
+    // Perform transformation
+    oei_transform(C1,C2,oei,oei_mo,d1,d2,m_nbsf);
 }

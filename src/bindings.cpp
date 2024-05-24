@@ -175,29 +175,30 @@ PYBIND11_MODULE(_quantel, m) {
           ;         
 
      py::class_<MOintegrals>(m, "MOintegrals")
-          .def(py::init([](py::array_t<double> &C1, py::array_t<double> &C2, LibintInterface &ints) 
+          .def(py::init<LibintInterface &>(), "Initialise MO integrals from LibintInterface object")
+          .def("update_orbitals",[](MOintegrals &m_ints, py::array_t<double> &C, size_t ninactive, size_t nvirtual) 
                {
-                    auto C1_buf = C1.request();
-                    auto C2_buf = C2.request();
-                    std::vector<double> v_C1((double *) C1_buf.ptr, (double *) C1_buf.ptr + C1_buf.size);
-                    std::vector<double> v_C2((double *) C2_buf.ptr, (double *) C2_buf.ptr + C2_buf.size);
-                    return new MOintegrals(v_C1,v_C2,ints);
-               }),
-               "Initialise MO integrals from MO coefficients and LibintInterface object")
+                    auto C_buf = C.request();
+                    std::vector<double> v_C((double *) C_buf.ptr, (double *) C_buf.ptr + C_buf.size);
+                    m_ints.update_orbitals(v_C,ninactive,nvirtual);
+               },
+               "Compute MO integrals from MO coefficients")
+          .def("scalar_potential", &MOintegrals::scalar_potential, "Get the value of the scalar potential")
           .def("oei_matrix", [](MOintegrals &mo_ints, bool alpha) 
                { 
-                    size_t nmo = mo_ints.nmo();
-                    return vec_to_np_array(nmo,nmo,mo_ints.oei_matrix(alpha)); 
+                    size_t nact = mo_ints.nact();
+                    return vec_to_np_array(nact,nact,mo_ints.oei_matrix(alpha)); 
                }, 
                "Return one-electron Hamiltonian matrix in MO basis")
           .def("tei_array", [](MOintegrals &mo_ints, bool alpha1, bool alpha2) 
                { 
-                    size_t nmo = mo_ints.nmo();
-                    return vec_to_np_array(nmo,nmo,nmo,nmo,mo_ints.tei_array(alpha1, alpha2)); 
+                    size_t nact = mo_ints.nact();
+                    return vec_to_np_array(nact,nact,nact,nact,mo_ints.tei_array(alpha1, alpha2)); 
                },
                "Return two-electron integral array")
           .def("nbsf", &MOintegrals::nbsf, "Get the number of basis functions")
           .def("nmo", &MOintegrals::nmo, "Get the number of molecular orbitals")
+          .def("nact", &MOintegrals::nact, "Get the number of active orbitals")
           ;
 
      py::class_<LibintInterface>(m, "LibintInterface")
