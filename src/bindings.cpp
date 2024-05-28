@@ -88,7 +88,7 @@ PYBIND11_MODULE(_quantel, m) {
      py::class_<Epphh>(m, "Epphh").def(py::init<size_t,size_t,size_t,size_t>(), "Constructor with indices");
 
      py::class_<CIspace>(m, "CIspace")
-          .def(py::init<MOintegrals &,size_t,size_t,std::string>(), "Constructor with number of electrons and orbitals")
+          .def(py::init<MOintegrals &,size_t,size_t,size_t,std::string>(), "Constructor with number of electrons and orbitals")
           .def("print", &CIspace::print, "Print the CI space")
           .def("print_vector", &CIspace::print_vector, "Print a CI vector")
           .def("ndet", &CIspace::ndet, "Get the number of determinants")
@@ -176,11 +176,11 @@ PYBIND11_MODULE(_quantel, m) {
 
      py::class_<MOintegrals>(m, "MOintegrals")
           .def(py::init<LibintInterface &>(), "Initialise MO integrals from LibintInterface object")
-          .def("update_orbitals",[](MOintegrals &m_ints, py::array_t<double> &C, size_t ninactive, size_t nvirtual) 
+          .def("update_orbitals",[](MOintegrals &m_ints, py::array_t<double>  C, size_t ninactive, size_t nactive) 
                {
                     auto C_buf = C.request();
                     std::vector<double> v_C((double *) C_buf.ptr, (double *) C_buf.ptr + C_buf.size);
-                    m_ints.update_orbitals(v_C,ninactive,nvirtual);
+                    m_ints.update_orbitals(v_C,ninactive,nactive);
                },
                "Compute MO integrals from MO coefficients")
           .def("scalar_potential", &MOintegrals::scalar_potential, "Get the value of the scalar potential")

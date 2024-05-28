@@ -21,7 +21,7 @@ public:
     /// \param Cb Coefficients for beta orbitals
     /// \param nin Number of inactive orbitals
     /// \param nvr Number of virtual orbitals
-    void update_orbitals(std::vector<double> &C, size_t ninactive, size_t nvirtual);
+    void update_orbitals(std::vector<double> C, size_t ninactive, size_t nvirtual);
 
 
     /// \brief Get the value of the scalar potential

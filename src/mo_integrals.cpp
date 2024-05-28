@@ -2,7 +2,7 @@
 #include "linalg.h"
 
 void MOintegrals::update_orbitals(
-    std::vector<double> &C, size_t ncore, size_t nactive)
+    std::vector<double> C, size_t ncore, size_t nactive)
 {
     /// Check we have a valid number of orbitals
     if(ncore + nactive > m_nmo)
@@ -57,6 +57,7 @@ void MOintegrals::compute_core_potential()
 {
     // Resize core potential in active orbital basis
     m_Vc_oei.resize(m_nact*m_nact,0.0);
+    m_Vc = 0;
 
     if(m_ncore > 0)
     {
@@ -68,7 +69,6 @@ void MOintegrals::compute_core_potential()
         m_ints.build_JK(m_Pcore,JK);
 
         // Compute scalar core energy
-        m_Vc = 0;
         double *Hao = m_ints.oei_matrix(true);
         #pragma omp parallel for reduction(+:m_Vc)
         for(size_t pq=0; pq<m_nbsf*m_nbsf; pq++)

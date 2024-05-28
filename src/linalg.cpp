@@ -110,7 +110,8 @@ void oei_transform(
     }    
 
     // Perform second loop
-    hmo.resize(d1*d2, 0.0);
+    hmo.resize(d1*d2);
+    std::fill(hmo.begin(), hmo.end(), 0.0);
     #pragma omp parallel for collapse(2)
     for(size_t p=0; p < d1; p++)
     for(size_t q=0; q < d2; q++)

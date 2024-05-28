@@ -43,6 +43,13 @@ class RHF(Wavefunction):
         # Define the orbital energies and coefficients
         self.mo_coeff         = None
         self.orbital_energies = None
+    
+    def initialise(self, mo_guess):
+        """Initialise the wave function with a set of molecular orbital coefficients"""
+        # Make sure orbitals are orthogonal
+        self.mo_coeff = orthogonalise(mo_guess, self.integrals.overlap_matrix())
+        # Update the density and Fock matrices
+        self.update()
 
     @property
     def dim(self):
@@ -141,13 +148,6 @@ class RHF(Wavefunction):
     def hamiltonian(self, them):
         """Compute the (nonorthogonal) many-body Hamiltonian coupling with another RHF wavefunction (them)"""
         raise NotImplementedError("RHF Hamiltonian not implemented")
-
-    def initialise(self, mo_guess):
-        """Initialise the wave function with a set of molecular orbital coefficients"""
-        # Make sure orbitals are orthogonal
-        self.mo_coeff = orthogonalise(mo_guess, self.integrals.overlap_matrix())
-        # Update the density and Fock matrices
-        self.update()
 
     def update(self):
         """Update the 1RDM and Fock matrix for the current state"""

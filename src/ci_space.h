@@ -23,8 +23,8 @@ public:
     virtual ~CIspace() { }
 
     /// Constructor
-    CIspace(MOintegrals &mo_ints, size_t nalfa, size_t nbeta, std::string citype="FCI") :
-        m_ints(mo_ints), m_nmo(mo_ints.nact()), m_nalfa(nalfa), m_nbeta(nbeta)
+    CIspace(MOintegrals &mo_ints, size_t norb, size_t nalfa, size_t nbeta, std::string citype="FCI") :
+        m_ints(mo_ints), m_nmo(norb), m_nalfa(nalfa), m_nbeta(nbeta)
     { 
         if(m_nmo == 0)
             throw std::runtime_error("CIspace::CIspace: No active orbitals");

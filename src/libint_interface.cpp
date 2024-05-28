@@ -399,7 +399,8 @@ void LibintInterface::tei_ao_to_mo(
     }
 
     // Transform p index
-    eri.resize(d1*d2*d3*d4, 0.0);
+    eri.resize(d1*d2*d3*d4);
+    std::fill(eri.begin(), eri.end(), 0.0);
     #pragma omp parallel for collapse(2)
     for(size_t p=0; p < d1; p++)
     for(size_t q=0; q < d2; q++)
