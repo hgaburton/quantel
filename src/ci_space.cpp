@@ -6,6 +6,12 @@ void CIspace::initialize(std::string citype)
     // Build the FCI space
     if(citype == "FCI") 
         build_fci_determinants();
+    else if(citype == "ESMF")
+        // Include reference determinant in CIS 
+        build_cis_determinants(true);
+    else if(citype == "CIS")
+        // Exclude reference determinant in CIS
+        build_cis_determinants(false);
     else 
         throw std::runtime_error("CI space type not implemented");
 
@@ -32,6 +38,42 @@ void CIspace::build_fci_determinants()
             m_dets[Determinant(occ_alfa,occ_beta)] = m_ndet++;
         } while(std::prev_permutation(occ_beta.begin(), occ_beta.end()));
     } while(std::prev_permutation(occ_alfa.begin(), occ_alfa.end()));
+}
+
+void CIspace::build_cis_determinants(bool with_ref)
+{
+    // Populate m_det with CIS space
+    m_ndet = 0;
+    
+    // Setup reference occupation vectors
+    std::vector<uint8_t> ref_alfa(m_nmo,false);
+    std::vector<uint8_t> ref_beta(m_nmo,false);
+    std::fill_n(ref_alfa.begin(), m_nalfa, 1);
+    std::fill_n(ref_beta.begin(), m_nbeta, 1);
+
+    // Include reference determinant if requested
+    if(with_ref) 
+        m_dets[Determinant(ref_alfa,ref_beta)] = m_ndet++;
+
+    // Setup alfa excitations
+    for(size_t i=0; i<m_nalfa; i++)
+    for(size_t a=m_nalfa; a<m_nmo; a++)
+    {
+        std::vector<uint8_t> occ_alfa = ref_alfa;
+        occ_alfa[i] = 0;
+        occ_alfa[a] = 1;
+        m_dets[Determinant(occ_alfa,ref_beta)] = m_ndet++;
+    }
+
+    // Setup beta excitations
+    for(size_t i=0; i<m_nbeta; i++)
+    for(size_t a=m_nbeta; a<m_nmo; a++)
+    {
+        std::vector<uint8_t> occ_beta = ref_beta;
+        occ_beta[i] = 0;
+        occ_beta[a] = 1;
+        m_dets[Determinant(ref_alfa,occ_beta)] = m_ndet++;
+    }
 }
 
 void CIspace::build_memory_map1(bool alpha)

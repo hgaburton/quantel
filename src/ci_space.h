@@ -125,6 +125,8 @@ private:
     void initialize(std::string citype);
     /// Build FCI determinants
     void build_fci_determinants();
+    /// Build CIS determinants
+    void build_cis_determinants(bool with_ref);
     /// Build memory maps
     void build_memory_map1(bool alpha);
     void build_memory_map2(bool alpha1, bool alpha2);
