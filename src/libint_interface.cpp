@@ -80,9 +80,12 @@ void LibintInterface::compute_two_electron_integrals()
     size_t strides[3];
 
     // Resize and zero the two-electron integral arrays
-    m_tei_aa.resize(m_nbsf*m_nbsf*m_nbsf*m_nbsf, 0.0);
-    m_tei_ab.resize(m_nbsf*m_nbsf*m_nbsf*m_nbsf, 0.0);
-    m_tei_bb.resize(m_nbsf*m_nbsf*m_nbsf*m_nbsf, 0.0);
+    m_tei_aa.resize(m_nbsf*m_nbsf*m_nbsf*m_nbsf);
+    m_tei_ab.resize(m_nbsf*m_nbsf*m_nbsf*m_nbsf);
+    m_tei_bb.resize(m_nbsf*m_nbsf*m_nbsf*m_nbsf);
+    std::fill(m_tei_aa.begin(), m_tei_aa.end(), 0.0);
+    std::fill(m_tei_ab.begin(), m_tei_ab.end(), 0.0);
+    std::fill(m_tei_bb.begin(), m_tei_bb.end(), 0.0);
 
     // Compute integrals
     Engine coul_engine(Operator::coulomb, m_basis.max_nprim(), m_basis.max_l());
@@ -166,7 +169,8 @@ void LibintInterface::compute_overlap()
     auto shell2bf = m_basis.shell2bf();
 
     // Resize and zero the overlap matrix
-    m_S.resize(m_nbsf*m_nbsf, 0.0);
+    m_S.resize(m_nbsf*m_nbsf);
+    std::fill(m_S.begin(), m_S.end(), 0.0);
 
     // Evaluate overlap matrix elements
     Engine ov_engine(Operator::overlap, m_basis.max_nprim(), m_basis.max_l());
@@ -208,8 +212,10 @@ void LibintInterface::compute_one_electron_matrix()
     auto shell2bf = m_basis.shell2bf();
 
     // Resize and zero vector storage
-    m_oei_a.resize(m_nbsf*m_nbsf, 0.0);
-    m_oei_b.resize(m_nbsf*m_nbsf, 0.0);
+    m_oei_a.resize(m_nbsf*m_nbsf);
+    m_oei_b.resize(m_nbsf*m_nbsf);
+    std::fill(m_oei_a.begin(), m_oei_a.end(), 0.0);
+    std::fill(m_oei_b.begin(), m_oei_b.end(), 0.0);
 
     // Setup kinetic energy engine
     Engine kin_engine(Operator::kinetic, m_basis.max_nprim(), m_basis.max_l());
@@ -258,7 +264,8 @@ void LibintInterface::build_fock(std::vector<double> &dens, std::vector<double> 
     assert(dens.size() == m_nbsf * m_nbsf);
 
     // Resize fock matrix
-    fock.resize(m_nbsf * m_nbsf, 0.0);
+    fock.resize(m_nbsf * m_nbsf);
+    std::fill(fock.begin(), fock.end(), 0.0);
 
     // Loop over basis functions
     for(size_t p=0; p < m_nbsf; p++)
@@ -283,7 +290,8 @@ void LibintInterface::build_JK(std::vector<double> &dens, std::vector<double> &J
     assert(dens.size() == m_nbsf * m_nbsf);
 
     // Resize JK matrix
-    JK.resize(m_nbsf*m_nbsf,0.0);
+    JK.resize(m_nbsf*m_nbsf);
+    std::fill(JK.begin(),JK.end(),0.0);
 
     // Loop over basis functions
     #pragma omp parallel for collapse(2)

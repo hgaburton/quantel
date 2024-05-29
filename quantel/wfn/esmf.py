@@ -133,7 +133,6 @@ class ESMF(Wavefunction):
         self.mo_coeff_save = self.mo_coeff.copy()
         self.mat_ci_save   = self.mat_ci.copy()
 
-
     def take_step(self,step):
         # Save our last position
         self.save_last_step()
@@ -146,14 +145,12 @@ class ESMF(Wavefunction):
         self.canonicalize()
         self.update_integrals()
 
-
     def rotate_orb(self,step): 
         '''Rotate the molecular orbital coefficients'''
         # Transform the step into correct structure
         orb_step = np.zeros((self.nmo,self.nmo))
         orb_step[self.rot_idx] = step
         self.mo_coeff = np.dot(self.mo_coeff, scipy.linalg.expm(orb_step - orb_step.T))
-
 
     def rotate_ci(self,step): 
         """Take rotation step in the CIS space"""
@@ -189,7 +186,6 @@ class ESMF(Wavefunction):
         newcas.initialise(self.mo_coeff, self.mat_ci, integrals=False)
         return newcas
     
-
     def update_integrals(self):
         # Update integral object
         self.mo_ints.update_orbitals(self.mo_coeff,0,self.nmo)

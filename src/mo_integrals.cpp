@@ -20,7 +20,8 @@ void MOintegrals::update_orbitals(
     m_C = C;
 
     /// Save the active orbital coefficients
-    m_Cact.resize(m_nbsf*m_nact,0.0);
+    m_Cact.resize(m_nbsf*m_nact);
+    std::fill(m_Cact.begin(),m_Cact.end(),0.0);
     #pragma omp parallel for collapse(2)
     for(size_t mu=0; mu<m_nbsf; mu++)
     for(size_t p=0; p<m_nact; p++)
@@ -42,7 +43,8 @@ void MOintegrals::update_orbitals(
 
 void MOintegrals::compute_core_density()
 {
-    m_Pcore.resize(m_nbsf*m_nbsf,0.0);
+    m_Pcore.resize(m_nbsf*m_nbsf);
+    std::fill(m_Pcore.begin(),m_Pcore.end(),0.0);
 
     #pragma omp parallel for collapse(2)
     for(size_t p=0; p<m_nbsf; p++)
@@ -56,7 +58,8 @@ void MOintegrals::compute_core_density()
 void MOintegrals::compute_core_potential()
 {
     // Resize core potential in active orbital basis
-    m_Vc_oei.resize(m_nact*m_nact,0.0);
+    m_Vc_oei.resize(m_nact*m_nact);
+    std::fill(m_Vc_oei.begin(),m_Vc_oei.end(),0.0);
     m_Vc = 0;
 
     if(m_ncore > 0)
