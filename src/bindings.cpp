@@ -43,7 +43,6 @@ bool libint_initialize()
      libint2::initialize();
 
      initialized = true;
-     std::cout << "Libint2 initialized successfully" << std::endl;
      return true;
 }
 
@@ -224,8 +223,8 @@ PYBIND11_MODULE(_quantel, m) {
                size_t nbsf = ints.nbsf();
                auto dens_buf = dens.request();
                std::vector<double> v_dens((double *) dens_buf.ptr, (double *) dens_buf.ptr + dens_buf.size);
-               std::vector<double> v_jk(v_dens.size(), 0.0);
-               ints.build_fock(v_dens, v_jk);
+               std::vector<double> v_jk(v_dens.size(),0.0);
+               ints.build_JK(v_dens, v_jk);
                return vec_to_np_array(nbsf,nbsf,v_jk.data()); 
                },
                "Build JK matrix from density matrix")
