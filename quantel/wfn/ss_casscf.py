@@ -166,6 +166,9 @@ class SS_CASSCF(Wavefunction):
 
     def save_to_disk(self,tag):
         """Save a SS-CASSCF object to disk with prefix 'tag'"""
+        # Canonicalise 
+        self.canonicalize()
+        
         # Save hdf5 file with MO coefficients, orbital energies, energy, and spin
         with h5py.File(tag+".hdf5", "w") as F:
             F.create_dataset("mo_coeff", data=self.mo_coeff[:,:self.nocc])
@@ -178,7 +181,6 @@ class SS_CASSCF(Wavefunction):
         with open(tag+".solution", "w") as F:
             F.write(f"{self.energy:18.12f} {hindices[0]:5d} {hindices[1]:5d} {self.s2:12.6f}\n")
         return
-
 
     def read_from_disk(self,tag):
         """Read a SS-CASSCF object from disk with prefix 'tag'"""
@@ -575,33 +577,22 @@ class SS_CASSCF(Wavefunction):
         else: 
             return np.zeros((0,0))
 
+    def canonicalize(self):
+        """Canonicalise the natural orbitals and CI coefficients"""
+        # Save the old energy
+        eold = self.energy
+        # Compute the natural orbitals
+        occ, u = np.linalg.eigh(-self.dm1_cas)
+        # Update the orbitals and integrals
+        self.mo_coeff[:,self.ncore:self.nocc] = self.mo_coeff[:,self.ncore:self.nocc] @ u
+        self.update_integrals()
 
-    def _eig(self, h, *args):
-        return scf.hf.eig(h, None)
-    def get_hcore(self, mol=None):
-        return self.hcore
-    def get_fock(self, mo_coeff=None, ci=None, eris=None, casdm1=None, verbose=None):
-        return mcscf.casci.get_fock(self, mo_coeff, ci, eris, casdm1, verbose)
-    def cas_natorb(self, mo_coeff=None, ci=None, eris=None, sort=False, casdm1=None, verbose=None, with_meta_lowdin=True):
-        test = mcscf.casci.cas_natorb(self, mo_coeff, ci, eris, sort, casdm1, verbose, True)
-        return test
-
-    def canonicalise(self):
-        raise NotImplementedError("Canonicalisation not implemented")
-        self.canonicalize_()
-    def canonicalize_(self):
-        # Compute canonicalised natural orbitals
-        ao2mo_level = getattr(__config__, 'mcscf_mc1step_CASSCF_ao2mo_level', 2)
-        self.mo_coeff, ci, self.mo_energy = mcscf.casci.canonicalize(
-                      self, self.mo_coeff, ci=self.mat_ci[:,0], 
-                      eris=mc_ao2mo._ERIS(self, self.mo_coeff, method='incore', level=ao2mo_level),
-                      sort=True, cas_natorb=True, casdm1=self.dm1_cas)
-
-        # Insert new "occupied" ci vector
-        self.mat_ci[:,0] = ci.ravel()
-        self.mat_ci = orthogonalise(self.mat_ci, np.identity(self.ndet))
-
-        # Update integrals
+        # For now, we update the CI coefficients by just re-diagonalising the Hamiltonian
+        # TODO: Perform the transformation directly from the orbital rotation to avoid any 
+        #       issues with degeneracies
+        enew, self.mat_ci = np.linalg.eigh(self.ham)
+        n = np.argwhere(abs(enew - eold)<1e-6).flatten()[0]
+        self.mat_ci[:,[0,n]] = self.mat_ci[:,[n,0]]
         self.update_integrals()
         return
 

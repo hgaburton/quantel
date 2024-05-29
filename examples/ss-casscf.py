@@ -45,6 +45,7 @@ print(f"\nEnergy = {wfn.energy: 16.10f}")
 print(f" <S^2> = {wfn.s2: 9.3f}")
 
 
+wfn.canonicalize()
 # Save the output to disk with tag '0001'
 wfn.save_to_disk('0001')
 wfn.deallocate()
