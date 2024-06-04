@@ -3,6 +3,7 @@
 
 #include <libint2.hpp>
 #include <vector>
+#include <string>
 
 
 class Molecule {
@@ -15,6 +16,7 @@ protected:
     size_t m_nelec = 0; //!< Number of electrons
     size_t m_nalfa = 0; //!< Number of alpha electrons
     size_t m_nbeta = 0; //!< Number of beta electrons
+    std::string m_units; //!< Units of 
 
 public:
     std::vector<libint2::Atom> atoms; //!< Vector of atomic positions
@@ -23,15 +25,22 @@ public:
     virtual ~Molecule() { }
 
     /** \brief Default constructor **/
-    Molecule() { }
+    Molecule(std::string units): m_units(units) { }
 
     /// \brief Create molecule from list of atom tuples
     /// \param atoms List of tuples containing atomic number and coordinates
-    Molecule(std::vector<std::tuple<int,double,double,double> > _atoms);
+    /// \param units Units of coordinates ("angstrom" or "bohr")
+    Molecule(std::vector<std::tuple<int,double,double,double> > _atoms, std::string units);
+
+    /// \brief Create molecule from xyz file with element labels
+    /// \param fname Path to xyz file
+    /// \param units Units of coordinates ("angstrom" or "bohr")
+    Molecule(std::string fname, std::string units);
 
     /// \brief Create molecule from list of atom tuples
     /// \param atoms List of tuples containing element symbol and coordinates
-    Molecule(std::vector<std::tuple<std::string,double,double,double> > _atoms);
+    /// \param units Units of coordinates ("angstrom" or "bohr")
+    Molecule(std::vector<std::tuple<std::string,double,double,double> > _atoms, std::string units);
 
     /// \brief Add an atom to the molecule using nuclear charge
     /// \param nuc_charge Nuclear atomic charge

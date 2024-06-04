@@ -32,10 +32,8 @@ class Config(dict):
 
     def parse_molecule(self):
         """Read keywords that define the molecular system"""
-        self["molecule"] = dict(charge = getvalue(self.lines,"charge",int,True),
-                                spin = getvalue(self.lines,"spin",int,True),
-                                basis = getvalue(self.lines,"basis",str,True), 
-                                unit = getvalue(self.lines,"units",str,False,"Ang")
+        self["molecule"] = dict(basis = getvalue(self.lines,"basis",str,True), 
+                                unit = getvalue(self.lines,"units",str,False,"angstrom")
                                )
 
             
@@ -46,7 +44,7 @@ class Config(dict):
         # Get keywords for each allowed method
         if self["wavefunction"]["method"] == "esmf":
             # TODO: Add support for triplet states 
-            self["wavefunction"]["esmf"] = dict(ref_allowed = getbool(self.lines,"with_ref",False,True))
+            self["wavefunction"]["esmf"] = dict(with_ref = getbool(self.lines,"with_ref",False,True))
         
         elif self["wavefunction"]["method"] == "pp":
             self["wavefunction"]["pp"] = dict()

@@ -56,9 +56,10 @@ PYBIND11_MODULE(_quantel, m) {
      m.def("libint_finalize", &libint_finalize, "Called upon to finalise on module exit");
 
      py::class_<Molecule>(m, "Molecule")
-          .def(py::init<>())
-          .def(py::init<std::vector<std::tuple<int,double,double,double> > >())
-          .def(py::init<std::vector<std::tuple<std::string,double,double,double> > >())
+          .def(py::init<std::string>())
+          .def(py::init<std::vector<std::tuple<int,double,double,double>>,std::string>())
+          .def(py::init<std::vector<std::tuple<std::string,double,double,double>>,std::string>())
+          .def(py::init<std::string,std::string>())
           .def("add_atom", py::overload_cast<int,double,double,double>(&Molecule::add_atom), 
                "Add an atom using integer nuclear charge")
           .def("add_atom", py::overload_cast<std::string,double,double,double>(&Molecule::add_atom), 

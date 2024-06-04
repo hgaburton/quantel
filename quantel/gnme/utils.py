@@ -4,7 +4,16 @@ import unittest
 import numpy as np
 
 def orthogonalisation_matrix(M, thresh=1e-8):
-
+    """Construct an orthogonalisation matrix X such that X^T M X = I for a symmetric matrix M
+    
+        Inputs:
+        -------
+            M      2d-array containing symmetric matrix to orthogonalise
+            thresh (optional) Threshold for determining if eigenvalue is zero
+        Outputs:
+        --------
+            X      2d-array containing orthogonalisation matrix
+    """
     # Get eigenvalues and eigenvectors
     eigval, eigvec = np.linalg.eigh(M)
 
@@ -17,6 +26,18 @@ def orthogonalisation_matrix(M, thresh=1e-8):
     return X
 
 def gen_eig_sym(M, S, thresh=1e-8):
+    """ Solve the generalised eigenvalue problem Mx = Sx lambda for a symmetric matrix M and S
+    
+        Inputs:
+        -------
+            M      2d-array containing symmetric matrix
+            S      2d-array containing symmetric matrix
+            thresh (optional) Threshold for determining if eigenvalue is zero
+        Outputs:
+        --------
+            eigval 1d-array containing eigenvalues
+            eigvec 2d-array containing eigenvectors
+    """
     # Check the input
     assert(M.shape[0] == S.shape[0])
     assert(M.shape[1] == S.shape[1])
@@ -36,7 +57,17 @@ def gen_eig_sym(M, S, thresh=1e-8):
     return eigval, eigvec
 
 def orthogonalise(C,S,thresh=1e-8):
-    '''Orthogonalise a set of occipied orbitals C with respect to the overlap matrix S'''
+    """ Orthogonalise a set of occipied orbitals C with respect to the overlap matrix S
+
+        Inputs:
+        -------
+            C      2d-array containing occupied orbitals
+            S      2d-array containing overlap matrix
+            thresh (optional) Threshold for determining if overlap is already diagonal
+        Outputs:
+        --------
+            C_new  2d-array containing orthogonalised orbitals
+    """
 
     # Get MO overlap matrix
     Smo = np.einsum('pi,pq,qj->ij',np.conj(C),S,C)

@@ -7,7 +7,7 @@ import h5py
 import quantel
 from functools import reduce
 from quantel.utils.linalg import orthogonalise
-#from exelsis.gnme.cas_noci import cas_coupling
+from quantel.gnme.cas_noci import cas_coupling
 from .wavefunction import Wavefunction
 
 class SS_CASSCF(Wavefunction):
@@ -42,8 +42,13 @@ class SS_CASSCF(Wavefunction):
         self.nmo        = integrals.nmo()
         # Get active space definition
         self.cas_nmo    = active_space[0]
-        self.cas_nalfa  = active_space[1][0]
-        self.cas_nbeta  = active_space[1][1]
+        if(type(active_space[1]) is int):
+            self.cas_nbeta = active_space[1]//2
+            self.cas_nalfa = active_space[1] - self.cas_nbeta
+        else:
+            self.cas_nalfa  = active_space[1][0]
+            self.cas_nbeta  = active_space[1][1]
+
         # Get number of core electrons
         if ncore is None:
             self.ncore = integrals.molecule().nelec() - self.cas_nalfa - self.cas_nbeta
@@ -59,7 +64,8 @@ class SS_CASSCF(Wavefunction):
         self.sanity_check()
 
         # Initialise CI space
-        self.cispace    = quantel.CIspace(self.mo_ints, self.cas_nmo, self.cas_nalfa, self.cas_nbeta, 'FCI')
+        self.cispace    = quantel.CIspace(self.mo_ints, self.cas_nmo, self.cas_nalfa, self.cas_nbeta)
+        self.cispace.initialize('FCI')
 
         # Get number of determinants
         self.ndeta      = (scipy.special.comb(self.cas_nmo,self.cas_nalfa)).astype(int)
@@ -167,7 +173,7 @@ class SS_CASSCF(Wavefunction):
     def save_to_disk(self,tag):
         """Save a SS-CASSCF object to disk with prefix 'tag'"""
         # Canonicalise 
-        self.canonicalize()
+        #self.canonicalize()
         
         # Save hdf5 file with MO coefficients, orbital energies, energy, and spin
         with h5py.File(tag+".hdf5", "w") as F:
@@ -205,20 +211,22 @@ class SS_CASSCF(Wavefunction):
 
     def copy(self, integrals=False):
         # Return a copy of the current object
-        newcas = SS_CASSCF(self.mol, [self.ncas, self.nelecas])
+        newcas = SS_CASSCF(self.integrals, [self.cas_nmo, [self.cas_nalfa, self.cas_nbeta]])
         newcas.initialise(self.mo_coeff, self.mat_ci, integrals=integrals)
         return newcas
 
     def overlap(self, them):
         """Compute the many-body overlap with another CAS waveunction (them)"""
-        raise NotImplementedError("Overlap computation not implemented")
-        #return cas_coupling(self, them, self.ovlp)[0]
+        ovlp = self.integrals.overlap_matrix()
+        return cas_coupling(self, them, ovlp)[0]
 
     def hamiltonian(self, them):
         """Compute the many-body Hamiltonian coupling with another CAS wavefunction (them)"""
-        raise NotImplementedError("Hamiltonian coupling computation not implemented")
-        #eri = ao2mo.restore(1, self._scf._eri, self.mol.nao).reshape(self.mol.nao**2, self.mol.nao**2)
-        #return cas_coupling(self, them, self.ovlp, self.hcore, eri, self.enuc)
+        hcore = self.integrals.oei_matrix(True)
+        eri   = self.integrals.tei_array(True,False).transpose(0,2,1,3).reshape(self.nbsf**2,self.nbsf**2)
+        ovlp  = self.integrals.overlap_matrix()
+        enuc  = self.integrals.nuclear_repulsion()
+        return cas_coupling(self, them, ovlp, hcore, eri, enuc)
 
     def tdm(self, them):
         """Compute the transition dipole moment with other CAS wave function (them)"""

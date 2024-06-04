@@ -1,8 +1,8 @@
 #!/usr/bin/python3
 
-import numpy, glob, scipy
+import numpy, glob
 
-def ev_linesearch(mol, config):
+def ev_linesearch(ints, config):
     """Perform zero-eigenvector linesearch"""
 
     print("-----------------------------------------------")
@@ -13,23 +13,27 @@ def ev_linesearch(mol, config):
     # Get information about the wavefunction
     wfnconfig = config["wavefunction"][config["wavefunction"]["method"]]
     if config["wavefunction"]["method"] == "esmf":
-        from exelsis.wfn.esmf import ESMF as WFN
-        ref_ci = numpy.identity(WFN(mol, **wfnconfig).nDet)
+        from quantel.wfn.esmf import ESMF as WFN
+        ref_ci = numpy.identity(WFN(ints, **wfnconfig).ndet)
         ndet = ref_ci.shape[1]
     elif config["wavefunction"]["method"] == "casscf":
-        from exelsis.wfn.ss_casscf import SS_CASSCF as WFN
-        ref_ci = numpy.identity(WFN(mol, **wfnconfig).nDet)
+        from quantel.wfn.ss_casscf import SS_CASSCF as WFN
+        ref_ci = numpy.identity(WFN(ints, **wfnconfig).ndet)
         ndet = ref_ci.shape[1]
-    elif config["wavefunction"]["method"] == "csf":
-        from exelsis.wfn.csf import CSF as WFN
-        ndet = 0
+    #elif config["wavefunction"]["method"] == "csf":
+    #    from quantel.wfn.csf import CSF as WFN
+    #    ndet = 0
+    else:
+        raise ValueError("Wavefunction method not recognised")
 
     # Select the optimiser
     optconfig = config["optimiser"][config["optimiser"]["algorithm"]]
     if config["optimiser"]["algorithm"] == "eigenvector_following":
-        from exelsis.opt.eigenvector_following import EigenFollow as OPT
+        from quantel.opt.eigenvector_following import EigenFollow as OPT
     elif config["optimiser"]["algorithm"] == "mode_control":
-        from exelsis.opt.mode_controlling import ModeControl as OPT
+        from quantel.opt.mode_controlling import ModeControl as OPT
+    else:
+        raise ValueError("Optimiser algorithm not recognised")
 
     # Initialise wavefunction list
     wfn_list = []
@@ -50,7 +54,7 @@ def ev_linesearch(mol, config):
             # Initialise optimisation object
             try: del myfun
             except: pass
-            myfun = WFN(mol, **wfnconfig)
+            myfun = WFN(ints, **wfnconfig)
             myfun.read_from_disk(old_tag)
 
             # Run the optimisation
@@ -73,7 +77,7 @@ def ev_linesearch(mol, config):
             # Save the solution if it is a new one!
             if new: 
                 if config["wavefunction"]["method"] == "esmf":
-                    myfun.canonicalise()
+                    myfun.canonicalize()
                 # Get the prefix for this solution
                 count += 1
                 tag = "{:04d}".format(count)
@@ -158,7 +162,7 @@ def ev_linesearch(mol, config):
                 if new: 
                     hindices = newfun.get_hessian_index()
                     if config["wavefunction"]["method"] == "esmf":
-                        newfun.canonicalise()
+                        newfun.canonicalize()
                     # Get the prefix for this solution
                     count += 1
                     tag = "{:04d}".format(count)

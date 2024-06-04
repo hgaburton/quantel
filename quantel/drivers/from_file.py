@@ -2,7 +2,7 @@
 
 import numpy, glob
 
-def from_file(mol, config):
+def from_file(ints, config):
     """Read wavefunctions from solutions that are saved to file"""
 
     print("-----------------------------------------------")
@@ -13,23 +13,23 @@ def from_file(mol, config):
     # Get information about the wavefunction
     wfnconfig = config["wavefunction"][config["wavefunction"]["method"]]
     if config["wavefunction"]["method"] == "esmf":
-        from exelsis.wfn.esmf import ESMF as WFN
-        ref_ci = numpy.identity(WFN(mol, **wfnconfig).nDet)
+        from quantel.wfn.esmf import ESMF as WFN
+        ref_ci = numpy.identity(WFN(ints, **wfnconfig).ndet)
         ndet = ref_ci.shape[1]
     elif config["wavefunction"]["method"] == "casscf":
-        from exelsis.wfn.ss_casscf import SS_CASSCF as WFN
-        ref_ci = numpy.identity(WFN(mol, **wfnconfig).nDet)
+        from quantel.wfn.ss_casscf import SS_CASSCF as WFN
+        ref_ci = numpy.identity(WFN(ints, **wfnconfig).ndet)
         ndet = ref_ci.shape[1]
-    elif config["wavefunction"]["method"] == "csf":
-        from exelsis.wfn.csf import CSF as WFN
-        ndet = 0
+    #elif config["wavefunction"]["method"] == "csf":
+    #    from quantel.wfn.csf import CSF as WFN
+    #    ndet = 0
 
     # Select the optimiser
     optconfig = config["optimiser"][config["optimiser"]["algorithm"]]
     if config["optimiser"]["algorithm"] == "eigenvector_following":
-        from exelsis.opt.eigenvector_following import EigenFollow as OPT
+        from quantel.opt.eigenvector_following import EigenFollow as OPT
     elif config["optimiser"]["algorithm"] == "mode_control":
-        from exelsis.opt.mode_controlling import ModeControl as OPT
+        from quantel.opt.mode_controlling import ModeControl as OPT
 
     # Initialise wavefunction list
     wfn_list  = []
@@ -43,14 +43,14 @@ def from_file(mol, config):
     for prefix in config["jobcontrol"]["read_dir"]:
         print(" Reading solutions from directory {:s}".format(prefix))
         # Need to count the number of states to converge
-        nstates = len(glob.glob(prefix+"*.mo_coeff"))
+        nstates = len(glob.glob(prefix+"*.solution"))
         for i in range(nstates):
             old_tag = "{:s}{:04d}".format(prefix, i+1)
 
             # Initialise optimisation object
             try: del myfun
             except: pass
-            myfun = WFN(mol, **wfnconfig)
+            myfun = WFN(ints, **wfnconfig)
             myfun.read_from_disk(old_tag)
 
             # Run the optimisation
@@ -73,7 +73,7 @@ def from_file(mol, config):
             # Save the solution if it is a new one!
             if new: 
                 if config["wavefunction"]["method"] == "esmf":
-                    myfun.canonicalise()
+                    myfun.canonicalize()
                 # Get the prefix for this solution
                 count += 1
                 tag = "{:04d}".format(count)
@@ -84,12 +84,6 @@ def from_file(mol, config):
                 # Save energy and indices
                 e_list.append(myfun.energy)
                 i_list.append(hindices[0])
-                if(config["jobcontrol"]["nevpt2"]): 
-                    if config["wavefunction"]["method"] != "casscf":
-                        raise ValueError("NEVPT2 is only compatible with CASSCF function")
-                    ept2_list.append(myfun.get_pt2_correction())
-
-
 
                 # Deallocate integrals to reduce memory footprint
                 myfun.deallocate()
@@ -102,8 +96,6 @@ def from_file(mol, config):
 
     numpy.savetxt('energy_list', numpy.array([e_list]),fmt="% 16.10f")
     numpy.savetxt('ind_list', numpy.array([i_list]),fmt="% 5d")
-    if(config["jobcontrol"]["nevpt2"]): 
-        numpy.savetxt('energy_pt2_list', numpy.array([ept2_list]),fmt="% 16.10f")
 
     print()
     print(" Read from file complete... Identified {:5d} unique solutions".format(len(wfn_list)))

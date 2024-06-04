@@ -12,22 +12,22 @@ def cas_coupling(cas1, cas2, metric, hcore=None, eri=None, enuc=0.0, thresh=1e-1
     nmo = cas1.nmo
 
     # Number of electrons 
-    assert(cas1.nelec[0] == cas2.nelec[0])
-    assert(cas1.nelec[1] == cas2.nelec[1])
+    assert(cas1.nalfa == cas2.nalfa)
+    assert(cas1.nbeta == cas2.nbeta)
     # TODO: For now, we can only do ms = 0
-    assert(cas1.nelec[0] == cas1.nelec[1])
-    nocc = cas1.nelec[0]
+    assert(cas1.nalfa == cas1.nbeta)
+    nocc = cas1.nalfa
 
     # Reshape CI matrices
-    ci1 = np.reshape(cas1.mat_ci[:,0],(cas1.nDeta, cas1.nDetb))
-    ci2 = np.reshape(cas2.mat_ci[:,0],(cas2.nDeta, cas2.nDetb))
+    ci1 = np.reshape(cas1.mat_ci[:,0],(cas1.ndeta, cas1.ndetb))
+    ci2 = np.reshape(cas2.mat_ci[:,0],(cas2.ndeta, cas2.ndetb))
 
     # Intialise output
     Hxw, Sxw = 0, 0
 
     # Setup biorthogonalised orbital pair
-    refx = wick.reference_state[float](nmo, nmo, nocc, cas1.ncas, cas1.ncore, owndata(cas1.mo_coeff))
-    refw = wick.reference_state[float](nmo, nmo, nocc, cas2.ncas, cas2.ncore, owndata(cas2.mo_coeff))
+    refx = wick.reference_state[float](nmo, nmo, nocc, cas1.cas_nmo, cas1.ncore, owndata(cas1.mo_coeff))
+    refw = wick.reference_state[float](nmo, nmo, nocc, cas2.cas_nmo, cas2.ncore, owndata(cas2.mo_coeff))
 
     # Setup paired orbitals
     orbs = wick.wick_orbitals[float, float](refx, refw, ovlp)
@@ -44,8 +44,8 @@ def cas_coupling(cas1, cas2, metric, hcore=None, eri=None, enuc=0.0, thresh=1e-1
         mb.add_two_body(h2e)
 
     # Generate lists of FCI bitsets
-    vx = utils.fci_bitset_list(nocc-cas1.ncore, cas1.ncas)
-    vw = utils.fci_bitset_list(nocc-cas2.ncore, cas2.ncas)
+    vx = utils.fci_bitset_list(nocc-cas1.ncore, cas1.cas_nmo)
+    vw = utils.fci_bitset_list(nocc-cas2.ncore, cas2.cas_nmo)
     test = np.zeros((4,4))
 
     # Loop over FCI occupation strings

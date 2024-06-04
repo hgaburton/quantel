@@ -1,9 +1,11 @@
 #!/usr/bin/python3
 
 import numpy
-from exelsis.utils.linalg import random_rot
+from quantel.wfn.rhf import RHF
+from quantel.opt.diis import DIIS
+from quantel.utils.linalg import random_rot
 
-def ci_guess(mol, config):
+def ci_guess(ints, config):
     """Generate wavefunctions using standard CI guess as the starting point"""
 
     print("---------------------------------------------------------------")
@@ -11,23 +13,22 @@ def ci_guess(mol, config):
     print("    + Wavefunction:      {:s}".format(config["wavefunction"]["method"]))
     print("---------------------------------------------------------------")
 
-
     print("\n  Generating RHF guess:")
-    hf     = mol.RHF().run(verbose=0)
-    ref_mo = hf.mo_coeff.copy()
-    ref_ci = None
-    escf   = hf.energy_tot()
-    print(hf.mo_energy)
-    print("    RHF total energy (Eh): {: 16.8f}".format(escf))
+    rhf = RHF(ints)
+    rhf.get_orbital_guess()
+    DIIS().run(rhf)
+    ref_mo = rhf.mo_coeff.copy()
+    escf   = rhf.energy
+    print(f"    RHF total energy (Eh): {escf: 16.8f}")
 
     wfnconfig = config["wavefunction"][config["wavefunction"]["method"]]
     if config["wavefunction"]["method"] == "esmf":
-        from exelsis.wfn.esmf import ESMF as WFN
-        ref_ci = numpy.identity(WFN(mol, **wfnconfig).nDet)
+        from quantel.wfn.esmf import ESMF as WFN
+        ref_ci = numpy.identity(WFN(ints, **wfnconfig).ndet)
         ndet = ref_ci.shape[1]
     elif config["wavefunction"]["method"] == "casscf":
-        from exelsis.wfn.ss_casscf import SS_CASSCF as WFN
-        ref_ci = numpy.identity(WFN(mol, **wfnconfig).nDet)
+        from quantel.wfn.ss_casscf import SS_CASSCF as WFN
+        ref_ci = numpy.identity(WFN(ints, **wfnconfig).ndet)
         ndet = ref_ci.shape[1]
     elif config["wavefunction"]["method"] == "csf":
         errstr = "CI guess is not compatible with CSF wavefunction"
@@ -39,17 +40,14 @@ def ci_guess(mol, config):
     # Select the optimiser
     optconfig = config["optimiser"][config["optimiser"]["algorithm"]]
     if config["optimiser"]["algorithm"] == "eigenvector_following":
-        from exelsis.opt.eigenvector_following import EigenFollow as OPT
+        from quantel.opt.eigenvector_following import EigenFollow as OPT
     elif config["optimiser"]["algorithm"] == "mode_control":
-        from exelsis.opt.mode_controlling import ModeControl as OPT
+        from quantel.opt.mode_controlling import ModeControl as OPT
 
     # Get reference MOs and CI vector
     print("\n  Computing initial CI energies (Eh):")
-    ref = WFN(mol, **wfnconfig)
+    ref = WFN(ints, **wfnconfig)
     ref.initialise(ref_mo, ref_ci)
-    numpy.set_printoptions(linewidth=10000,precision=4,suppress=True,edgeitems=10000)
-    ref_mo[:,[8,12]] = ref_mo[:,[12,8]]
-    print(ref_mo[:,7:20])
 
     ref_e, ref_ci = numpy.linalg.eigh(ref.ham)
     for ind in config["jobcontrol"]["ci_guess"]:
@@ -72,7 +70,7 @@ def ci_guess(mol, config):
         # Initialise optimisation object
         try: del myfun
         except: pass
-        myfun = WFN(mol, **wfnconfig)
+        myfun = WFN(ints, **wfnconfig)
         myfun.initialise(mo_guess, ci_guess)
 
         # Run the optimisation
@@ -96,15 +94,11 @@ def ci_guess(mol, config):
         # Save the solution if it is a new one!
         if new: 
             if config["wavefunction"]["method"] == "esmf":
-                myfun.canonicalise()
+                myfun.canonicalize()
             # Get prefix
             count += 1
             tag = "{:04d}".format(count)
-            numpy.savetxt(tag+'.mo_coeff', myfun.mo_coeff, fmt="% 20.16f")
-            if myfun.mat_ci is not None:
-                numpy.savetxt(tag+'.mat_ci',   myfun.mat_ci, fmt="% 20.16f")
-            numpy.savetxt(tag+'.energy',   numpy.array([[myfun.energy, hindices[0], hindices[1], 0.0]]), 
-                          fmt="% 18.12f % 5d % 5d % 12.6f")
+            myfun.save_to_disk(tag)
             
             # Deallocate integrals to reduce memory footprint
             myfun.deallocate()

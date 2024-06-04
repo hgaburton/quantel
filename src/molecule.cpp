@@ -2,7 +2,10 @@
 #include "molecule.h"
 #include "periodic_table.h"
 
-Molecule::Molecule(std::vector<std::tuple<int,double,double,double> > _atoms)
+const double ANG_TO_BOHR = 1.8897261254578281;
+
+Molecule::Molecule(std::vector<std::tuple<int,double,double,double> > _atoms, std::string units) :
+    m_units(units)
 {
     for(size_t iatm=0; iatm < _atoms.size(); iatm++)
     {
@@ -17,7 +20,42 @@ Molecule::Molecule(std::vector<std::tuple<int,double,double,double> > _atoms)
     set_spin_multiplicity();
 }
 
-Molecule::Molecule(std::vector<std::tuple<std::string,double,double,double> > _atoms)
+// Initialise molecule from xyz file with element labels
+Molecule::Molecule(std::string fname, std::string units) :
+    m_units(units)
+{
+    // Open the file
+    std::ifstream file(fname);
+    if(!file.is_open())
+    {
+        throw std::runtime_error("Could not open file");
+    }
+
+    // Read the number of atoms
+    size_t natom, charge, mult;
+    file >> natom;
+    // Read the charge and multiplicity
+    file >> charge >> mult;
+
+    // Read the atoms
+    for(size_t iatm=0; iatm<natom; iatm++)
+    {
+        std::string element;
+        double x, y, z;
+        file >> element >> x >> y >> z;
+        add_atom(element, x, y, z);
+    }
+
+    // Close the file
+    file.close();
+
+    // Update the charge and spin multiplicity
+    set_spin_multiplicity(mult);
+    set_charge(charge);
+}
+
+Molecule::Molecule(std::vector<std::tuple<std::string,double,double,double> > _atoms, std::string units) :
+    m_units(units)
 {
     for(size_t iatm=0; iatm < _atoms.size(); iatm++)
     {
@@ -37,7 +75,22 @@ void Molecule::add_atom(int nuc_charge, double x, double y, double z)
     // Create the atom
     libint2::Atom atom;
     atom.atomic_number = nuc_charge;
-    atom.x = x; atom.y = y; atom.z = z;
+    if(m_units == "bohr")
+    {
+        atom.x = x;
+        atom.y = y;
+        atom.z = z;
+    }
+    else if(m_units == "angstrom")
+    {
+        atom.x = x * ANG_TO_BOHR;
+        atom.y = y * ANG_TO_BOHR;
+        atom.z = z * ANG_TO_BOHR;
+    }
+    else
+    {
+        throw std::runtime_error("Invalid units. Must be 'bohr' or 'angstrom'");
+    }
 
     // Add to the atom vector
     atoms.push_back(atom);
@@ -77,7 +130,7 @@ void Molecule::set_spin_multiplicity(size_t mult)
     // Check if the multiplicity is valid
     if((m_nelec + mult - 1)%2 != 0)
     {   
-        std::cout << m_nelec << " " << mult << std::endl;
+        std::cout << "N_electron: " << m_nelec << " Multiplicity: " << mult << std::endl;
         throw std::runtime_error("Invalid spin multiplicity");
     }
 

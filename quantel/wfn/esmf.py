@@ -3,9 +3,10 @@
 
 import numpy as np
 import scipy.linalg
+import h5py
 import quantel
 from quantel.utils.linalg import orthogonalise
-#from exelsis.gnme.esmf_noci import esmf_coupling
+from quantel.gnme.esmf_noci import esmf_coupling
 from .wavefunction import Wavefunction
 
 class ESMF(Wavefunction):
@@ -36,8 +37,8 @@ class ESMF(Wavefunction):
         self.nmo       = integrals.nmo()
         # Initialise CI space
         cistr          = ('ESMF' if with_ref else 'CIS')
-        self.cispace   = quantel.CIspace(self.mo_ints, self.nmo, self.nalfa, self.nbeta, cistr)
-        self.cispace.print()
+        self.cispace   = quantel.CIspace(self.mo_ints, self.nmo, self.nalfa, self.nbeta)
+        self.cispace.initialize(cistr)
 
         # For now, only support alpha = nbeta
         if(self.nalfa != self.nbeta):
@@ -46,7 +47,7 @@ class ESMF(Wavefunction):
         self.with_ref  = with_ref
         self.spin      = spin
         self.ndet      = self.nalfa * (self.nmo - self.nalfa)
-        if self.with_ref: self.nDet += 1
+        if self.with_ref: self.ndet += 1
 
         self.verbose   = verbose
 
@@ -163,26 +164,42 @@ class ESMF(Wavefunction):
         # Get the Hessian index
         hindices = self.get_hessian_index()
 
-        # Save coefficients, CI, and energy
-        np.savetxt(tag+'.mo_coeff', self.mo_coeff, fmt="% 20.16f")
-        np.savetxt(tag+'.mat_ci',   self.mat_ci, fmt="% 20.16f")
-        np.savetxt(tag+'.energy',   
-                   np.array([[self.energy, hindices[0], hindices[1], self.s2]]), 
-                   fmt="% 18.12f % 5d % 5d % 12.6f")
+        # Save hdf5 file with MO coefficients, orbital energies, energy, and spin
+        with h5py.File(tag+".hdf5", "w") as F:
+            F.create_dataset("mo_coeff", data=self.mo_coeff)
+            F.create_dataset("mat_ci", data=self.mat_ci[:,[0]])
+            F.create_dataset("energy", data=self.energy)
+            F.create_dataset("s2", data=self.s2)
+        
+        # Save numpy txt file with energy and Hessian indices
+        hindices = self.get_hessian_index()
+        with open(tag+".solution", "w") as F:
+            F.write(f"{self.energy:18.12f} {hindices[0]:5d} {hindices[1]:5d} {self.s2:12.6f}\n")
+        return
 
 
     def read_from_disk(self,tag):
-        """Read object from disk with prefix 'tag'"""
-        # Read MO coefficient and CI coefficients
-        mo_coeff = np.genfromtxt(tag+".mo_coeff")
-        ci_coeff = np.genfromtxt(tag+".mat_ci")
-
-        # Initialise object
-        self.initialise(mo_coeff, ci_coeff)
+        """Read a ESMF object from disk with prefix 'tag'"""
+        # Read orbital and CI coefficients
+        with h5py.File(tag+".hdf5", "r") as F:
+            mo_read = F["mo_coeff"][:]
+            ci_read = F["mat_ci"][:]
+        # Check the input
+        if mo_read.shape[0] != self.nbsf:
+            raise ValueError("Inccorect number of AO basis functions in file")
+        if ci_read.shape[0] != self.ndet:
+            raise ValueError("Incorrect dimension of CI space in file")
+        if mo_read.shape[1] > self.nmo:
+            raise ValueError("Too many orbitals in file")
+        if ci_read.shape[1] > self.ndet:
+            raise ValueError("Too many CI vectors in file")
+        # Initialise the wave function
+        self.initialise(mo_read, ci_read)
+        return
 
     def copy(self):
         # Return a copy of the current object
-        newcas = ESMF(self.mol, spin=self.spin, ref_allowed=self.with_ref)
+        newcas = ESMF(self.integrals, spin=self.spin, with_ref=self.with_ref)
         newcas.initialise(self.mo_coeff, self.mat_ci, integrals=False)
         return newcas
     
@@ -217,12 +234,16 @@ class ESMF(Wavefunction):
 
     def overlap(self, them):
         """Compute the many-body overlap with another CAS waveunction (them)"""
-        return 0#esmf_coupling(self, them, self.ovlp, with_ref=self.with_ref)[0]
+        ovlp  = self.integrals.overlap_matrix()
+        return esmf_coupling(self, them, ovlp, with_ref=self.with_ref)[0]
 
     def hamiltonian(self, them):
         """Compute the many-body Hamiltonian coupling with another CAS wavefunction (them)"""
-        #eri = ao2mo.restore(1, self._scf._eri, self.mol.nao).reshape(self.mol.nao**2, self.mol.nao**2)
-        return 0#esmf_coupling(self, them, self.ovlp, self.hcore, eri, self.enuc, with_ref=self.with_ref)
+        hcore = self.integrals.oei_matrix(True)
+        eri   = self.integrals.tei_array(True,False).transpose(0,2,1,3).reshape(self.nbsf**2,self.nbsf**2)
+        ovlp  = self.integrals.overlap_matrix()
+        enuc  = self.integrals.scalar_potential()
+        return esmf_coupling(self, them, ovlp, hcore, eri, enuc, with_ref=self.with_ref)
 
     def deallocate(self):
         # Reduce the memory footprint for storing 
