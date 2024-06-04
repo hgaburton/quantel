@@ -6,6 +6,7 @@
 #include <vector>
 #include <tuple>
 #include <iostream>
+#include <string>
 #include <cassert>
 #include "determinant.h"
 #include "excitation.h"
@@ -23,7 +24,7 @@ public:
     virtual ~CIspace() { }
 
     /// Constructor
-    CIspace(MOintegrals &mo_ints, size_t norb, size_t nalfa, size_t nbeta, std::string citype="FCI") :
+    CIspace(MOintegrals &mo_ints, size_t norb, size_t nalfa, size_t nbeta) :
         m_ints(mo_ints), m_nmo(norb), m_nalfa(nalfa), m_nbeta(nbeta)
     { 
         if(m_nmo == 0)
@@ -32,8 +33,10 @@ public:
             throw std::runtime_error("CIspace::CIspace: Invalid number of alpha electrons");
         if(m_nbeta > m_nmo)
             throw std::runtime_error("CIspace::CIspace: Invalid number of beta electrons");
-        initialize(citype);
     }
+
+    /// Build the CI space
+    void initialize(std::string citype, std::vector<std::string> detlist={});
 
     /// Print the determinant list
     virtual void print() const;
@@ -83,6 +86,8 @@ public:
 private:
     /// MO integrals
     MOintegrals &m_ints;
+    /// Control variable if succesfully initialized
+    bool m_initialized = false;
 
     /// Number of determinants
     size_t m_ndet = 0;
@@ -121,12 +126,12 @@ private:
     /// Compute the two-electron part of the sigma vector
     void H2_on_vec(const std::vector<double> &ci_vec, std::vector<double> &sigma, bool alpha1, bool alpha2);
 
-    /// Build the CI space
-    void initialize(std::string citype);
     /// Build FCI determinants
     void build_fci_determinants();
     /// Build CIS determinants
     void build_cis_determinants(bool with_ref);
+    /// Build custom determinants
+    void build_custom_determinants(std::vector<std::string> detlist);
     /// Build memory maps
     void build_memory_map1(bool alpha);
     void build_memory_map2(bool alpha1, bool alpha2);

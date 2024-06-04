@@ -1,17 +1,33 @@
 #include "ci_space.h"
 #include <omp.h>
 
-void CIspace::initialize(std::string citype)
+void CIspace::initialize(std::string citype, std::vector<std::string> detlist)
 {
+    // Check that we haven't already initialized CI space
+    if(m_initialized)
+        throw std::runtime_error("CI space has already been initialised!");
+
+    // Transform CI type to uppercase
+    std::transform(citype.begin(), citype.end(), citype.begin(),
+                   [](unsigned char c){ return std::toupper(c); });
+                   
+    // Reject attempts to build non-custom determinant set with custom list
+    if(citype!="CUSTOM" and detlist.size()>0)
+        throw std::runtime_error("Custom determinant list not compatible with requested CI type");
+    
     // Build the FCI space
     if(citype == "FCI") 
         build_fci_determinants();
+
     else if(citype == "ESMF")
         // Include reference determinant in CIS 
         build_cis_determinants(true);
     else if(citype == "CIS")
         // Exclude reference determinant in CIS
         build_cis_determinants(false);
+    else if(citype == "CUSTOM")
+        // Build custom determinant list 
+        build_custom_determinants(detlist);
     else 
         throw std::runtime_error("CI space type not implemented");
 
@@ -21,6 +37,9 @@ void CIspace::initialize(std::string citype)
     build_memory_map2(true, true);
     build_memory_map2(true, false);
     build_memory_map2(false, false);
+
+    // Record that we successfully initialised
+    m_initialized = true;
 }
 
 void CIspace::build_fci_determinants()
@@ -74,6 +93,13 @@ void CIspace::build_cis_determinants(bool with_ref)
         occ_beta[a] = 1;
         m_dets[Determinant(ref_alfa,occ_beta)] = m_ndet++;
     }
+}
+
+void CIspace::build_custom_determinants(std::vector<std::string> detlist)
+{
+    m_ndet = detlist.size();
+    for(size_t idet=0; idet<m_ndet; idet++)
+        m_dets[Determinant(detlist[idet])] = idet;
 }
 
 void CIspace::build_memory_map1(bool alpha)
@@ -158,6 +184,9 @@ void CIspace::build_memory_map2(bool alpha1, bool alpha2)
 /// Print the determinant list
 void CIspace::print() const 
 {
+    if(!m_initialized)
+        throw std::runtime_error("CI space has not been initialized!");
+
     for(auto &[det, index] : m_dets)
         std::cout << det_str(det) << ": " << index << std::endl;
 }
@@ -165,6 +194,9 @@ void CIspace::print() const
 /// Print a CI vector
 void CIspace::print_vector(const std::vector<double> &ci_vec, double tol) const
 {
+    if(!m_initialized)
+        throw std::runtime_error("CI space has not been initialized!");
+
     if(ci_vec.size() != m_ndet) 
         throw std::runtime_error("CIspace::print_vector: CI vector size error");
     
@@ -178,6 +210,9 @@ void CIspace::print_vector(const std::vector<double> &ci_vec, double tol) const
 
 void CIspace::H_on_vec(const std::vector<double> &ci_vec, std::vector<double> &sigma)
 {
+    if(!m_initialized)
+        throw std::runtime_error("CI space has not been initialized!");
+
     // Check size of input
     if(ci_vec.size() != m_ndet) 
         throw std::runtime_error("CIspace::H_on_vec: CI vector size error");
@@ -264,8 +299,12 @@ void CIspace::H2_on_vec(
 
 void CIspace::build_Hmat(std::vector<double> &Hmat)
 {
+    if(!m_initialized)
+        throw std::runtime_error("CI space has not been initialized!");
+
     // Check size of output and initialise memory
-    Hmat.resize(m_ndet*m_ndet,0.0);
+    Hmat.resize(m_ndet*m_ndet);
+    std::fill(Hmat.begin(), Hmat.end(), 0.0);
 
     // Scalar component
     build_H0(Hmat);
@@ -348,6 +387,9 @@ void CIspace::build_rdm1(
     const std::vector<double> &bra, const std::vector<double> &ket,
     std::vector<double> &rdm1, bool alpha)
 {
+    if(!m_initialized)
+        throw std::runtime_error("CI space has not been initialized!");
+
     // Check size of input
     if(bra.size() != m_ndet) 
         throw std::runtime_error("CIspace::build_rdm1: bra vector size error");
@@ -375,6 +417,9 @@ void CIspace::build_rdm2(
     const std::vector<double> &bra, const std::vector<double> &ket,
     std::vector<double> &rdm2, bool alpha1, bool alpha2)
 {
+    if(!m_initialized)
+        throw std::runtime_error("CI space has not been initialized!");
+
     // Check input
     if(bra.size() != m_ndet) 
         throw std::runtime_error("CIspace::build_rdm2: bra vector size error");

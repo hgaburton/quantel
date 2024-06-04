@@ -16,6 +16,9 @@ public:
     /// Default constructor
     Determinant() { }
 
+    /// Constructor from determinant string
+    Determinant(std::string detstr);
+
     /// Constructor with occupation vectors
     Determinant(std::vector<uint8_t> occ_alfa, std::vector<uint8_t> occ_beta) :
         m_occ_alfa(occ_alfa), m_occ_beta(occ_beta)

@@ -78,16 +78,21 @@ PYBIND11_MODULE(_quantel, m) {
 
      py::class_<Determinant>(m, "Determinant")
           .def(py::init<>(), "Default constructor")
-          .def(py::init<std::vector<uint8_t>, std::vector<uint8_t> >(), 
-               "Constructor with occupation vectors")
-          .def("__lt__", &Determinant::operator<, "Comparison operator")
+          .def(py::init<std::vector<uint8_t>, std::vector<uint8_t> >(), "Constructor with occupation vectors")
+          .def(py::init<std::string> (), "Constructor from determinant string")
+          .def("__lt__", &Determinant::operator<, "Comparison operator");
           ; 
 
      py::class_<Eph>(m, "Eph").def(py::init<size_t,size_t>(), "Constructor with indices");
      py::class_<Epphh>(m, "Epphh").def(py::init<size_t,size_t,size_t,size_t>(), "Constructor with indices");
 
      py::class_<CIspace>(m, "CIspace")
-          .def(py::init<MOintegrals &,size_t,size_t,size_t,std::string>(), "Constructor with number of electrons and orbitals")
+          .def(py::init<MOintegrals &,size_t,size_t,size_t>(), "Constructor with number of electrons and orbitals")
+          .def("initialize", [](CIspace &self, std::string citype, std::vector<std::string> detlist)
+               {
+                    self.initialize(citype, detlist);
+               },py::arg("citype"), py::arg("detlist") = std::vector<std::string>(),
+               "Initialize the CI space")
           .def("print", &CIspace::print, "Print the CI space")
           .def("print_vector", &CIspace::print_vector, "Print a CI vector")
           .def("ndet", &CIspace::ndet, "Get the number of determinants")

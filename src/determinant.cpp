@@ -1,5 +1,6 @@
 #include "determinant.h"
 #include <iostream>
+#include <stdexcept>
 
 std::string det_str(const Determinant &det)
 { 
@@ -16,6 +17,41 @@ std::string det_str(const Determinant &det)
             outstr += "0";
     }
     return outstr;
+}
+
+Determinant::Determinant(std::string detstr)
+{
+    m_nmo = detstr.length();
+    m_occ_alfa.resize(m_nmo,0);
+    m_occ_beta.resize(m_nmo,0);
+    for(size_t i=0; i<m_nmo; i++)
+    {
+        char ostr = detstr.at(i);
+        if(ostr=='2') 
+        {
+            m_occ_alfa[i] = 1;
+            m_occ_beta[i] = 1;
+        } 
+        else if(ostr=='a')
+        {
+            m_occ_alfa[i] = 1;
+            m_occ_beta[i] = 0;
+        }
+        else if(ostr=='b')
+        {
+            m_occ_alfa[i] = 0;
+            m_occ_beta[i] = 1;
+        }
+        else if(ostr=='0')
+        {
+            m_occ_alfa[i] = 0;
+            m_occ_beta[i] = 0;
+        }
+        else
+        {
+            throw std::runtime_error("Invalid character in determinant string");
+        }
+    }
 }
 
 int Determinant::apply_excitation(Eph &Epq, bool alpha)
