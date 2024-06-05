@@ -173,6 +173,7 @@ class GenealogicalCSF(Wavefunction):
         Cocc = self.mo_coeff[:,:self.nocc].copy()
         self.ppoo = self.integrals.tei_ao_to_mo(self.mo_coeff,Cocc,self.mo_coeff,Cocc,True,False).transpose(0,2,1,3)
         self.popo = self.integrals.tei_ao_to_mo(self.mo_coeff,self.mo_coeff,Cocc,Cocc,True,False).transpose(0,2,1,3)
+        self.pooo = self.integrals.tei_ao_to_mo(self.mo_coeff,Cocc,Cocc,Cocc,True,False).transpose(0,2,1,3)
         # Construct core potential outside active space
         dm_core = np.dot(self.mo_coeff[:,:self.ncore], self.mo_coeff[:,:self.ncore].T)
         v_jk = self.integrals.build_JK(dm_core)
@@ -236,7 +237,6 @@ class GenealogicalCSF(Wavefunction):
         enuc  = self.integrals.scalar_potential()
         return csf_coupling(self, them, ovlp, hcore, eri, enuc)
 
-
     def deallocate(self):
         """ Reduce the memory footprint for storing"""
         self.ppoo = None
@@ -273,8 +273,10 @@ class GenealogicalCSF(Wavefunction):
         # Core contribution is just effective 1-electron matrix
         self.F_core = self.h1e + self.vhf_c
         # Active space contribution
-        self.F_active = np.einsum('pq,mnpq->mn',self.csf_dm1,self.ppoo[:,:,self.ncore:,self.ncore:],optimize="optimal")
-        self.F_active -= 0.5 * np.einsum('pq,mqnp->mn',self.csf_dm1,self.popo[:,self.ncore:,:,self.ncore:],optimize="optimal")
+        Cactive = self.mo_coeff[:,self.ncore:self.nocc].copy()
+        dm_active = np.linalg.multi_dot([Cactive, self.csf_dm1, Cactive.T])
+        self.F_active = 0.5 * self.integrals.build_JK(dm_active)
+        self.F_active = np.linalg.multi_dot([self.mo_coeff.T, self.F_active, self.mo_coeff])
         return
 
     def get_generalised_fock(self, csf_dm1, csf_dm2):
@@ -286,7 +288,7 @@ class GenealogicalCSF(Wavefunction):
         F[ncore:nocc,:] += np.einsum(
             "nw,vw->vn", self.F_core[:,ncore:nocc], csf_dm1, optimize="optimal")
         F[ncore:nocc,:] += np.einsum(
-            "vwxy,nwxy->vn",csf_dm2,self.popo[:,ncore:nocc,ncore:nocc,ncore:nocc], optimize="optimal") 
+            "vwxy,nwxy->vn",csf_dm2,self.pooo[:,ncore:nocc,ncore:nocc,ncore:nocc], optimize="optimal") 
         return 2 * F.T
 
     def get_orbital_gradient(self):
