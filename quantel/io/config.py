@@ -76,6 +76,7 @@ class Config(dict):
                                                     hesstol = getvalue(self.lines,"hesstol",float,False,1e-16)
                                                     )
 
+
         else:
             errstr = "Requested optimiser '"+self["optimiser"]["algorithm"]+"' is not available"
             raise ValueError(errstr)

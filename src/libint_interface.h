@@ -80,6 +80,11 @@ public:
     /// @param JK output JK matrix
     void build_JK(std::vector<double> &dens, std::vector<double> &JK);
 
+    /// Build a J matrix
+    /// @param D density matrix
+    /// @param J output J matrix
+    void build_J(std::vector<double> &dens, std::vector<double> &J);
+
     /// Get the value of the scalar potential
     double scalar_potential() { return m_V; }
 

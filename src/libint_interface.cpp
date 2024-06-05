@@ -308,6 +308,31 @@ void LibintInterface::build_JK(std::vector<double> &dens, std::vector<double> &J
     }
 }
 
+
+void LibintInterface::build_J(std::vector<double> &dens, std::vector<double> &J)
+{
+    // Check dimensions of density matrix
+    assert(dens.size() == m_nbsf * m_nbsf);
+
+    // Resize JK matrix
+    J.resize(m_nbsf*m_nbsf);
+    std::fill(J.begin(),J.end(),0.0);
+
+    // Loop over basis functions
+    #pragma omp parallel for collapse(2)
+    for(size_t p=0; p < m_nbsf; p++)
+    for(size_t q=0; q < m_nbsf; q++)
+    {
+        // Two-electron contribution
+        for(size_t s=0; s < m_nbsf; s++)
+        for(size_t r=0; r < m_nbsf; r++)
+        {
+            // Build JK matrix
+            J[oei_index(p,q)] += dens[oei_index(s,r)] * tei(p,r,q,s,true,false);
+        }
+    }
+}
+
 void LibintInterface::tei_ao_to_mo(
     std::vector<double> &C1, std::vector<double> &C2, 
     std::vector<double> &C3, std::vector<double> &C4, 

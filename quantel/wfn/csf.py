@@ -22,7 +22,7 @@ class GenealogicalCSF(Wavefunction):
             - save_last_step
             - restore_step
     """
-    def __init__(self, integrals, spin_coupling, verbose=0):
+    def __init__(self, integrals, spin_coupling, verbose=0, nohess=False):
         """ Initialise the CSF wave function
                 integrals     : quantel integral interface
                 spin_coupling : genealogical coupling pattern
@@ -39,6 +39,8 @@ class GenealogicalCSF(Wavefunction):
         # Get number of basis functions and linearly independent orbitals
         self.nbsf       = integrals.nbsf()
         self.nmo        = integrals.nmo()
+        # Record whether Hessian allowed
+        self.nohess     = nohess
     
     
     def sanity_check(self):
@@ -140,6 +142,8 @@ class GenealogicalCSF(Wavefunction):
     @property
     def hessian(self):
         ''' This method finds orb-orb part of the Hessian '''
+        if(self.nohess):
+            raise RuntimeError("Hessian calculation not allowed with 'nohess' flag")
         return (self.get_hessianOrbOrb()[:, :, self.rot_idx])[self.rot_idx, :]
 
     def get_active_rdm_12(self):
@@ -171,9 +175,9 @@ class GenealogicalCSF(Wavefunction):
         # 1 and 2 electron integrals outside active space
         self.h1e = np.linalg.multi_dot([self.mo_coeff.T, self.integrals.oei_matrix(True), self.mo_coeff])
         Cocc = self.mo_coeff[:,:self.nocc].copy()
-        self.ppoo = self.integrals.tei_ao_to_mo(self.mo_coeff,Cocc,self.mo_coeff,Cocc,True,False).transpose(0,2,1,3)
-        self.popo = self.integrals.tei_ao_to_mo(self.mo_coeff,self.mo_coeff,Cocc,Cocc,True,False).transpose(0,2,1,3)
-        self.pooo = self.integrals.tei_ao_to_mo(self.mo_coeff,Cocc,Cocc,Cocc,True,False).transpose(0,2,1,3)
+        if(not self.nohess):
+            self.ppoo = self.integrals.tei_ao_to_mo(self.mo_coeff,Cocc,self.mo_coeff,Cocc,True,False).transpose(0,2,1,3)
+            self.popo = self.integrals.tei_ao_to_mo(self.mo_coeff,self.mo_coeff,Cocc,Cocc,True,False).transpose(0,2,1,3)
         # Construct core potential outside active space
         dm_core = np.dot(self.mo_coeff[:,:self.ncore], self.mo_coeff[:,:self.ncore].T)
         v_jk = self.integrals.build_JK(dm_core)
@@ -287,8 +291,15 @@ class GenealogicalCSF(Wavefunction):
         F[:ncore, :] = 2 * (self.F_core[:,:ncore] + self.F_active[:, :ncore]).T
         F[ncore:nocc,:] += np.einsum(
             "nw,vw->vn", self.F_core[:,ncore:nocc], csf_dm1, optimize="optimal")
-        F[ncore:nocc,:] += np.einsum(
-            "vwxy,nwxy->vn",csf_dm2,self.pooo[:,ncore:nocc,ncore:nocc,ncore:nocc], optimize="optimal") 
+
+        # 2-electron active space component
+        Cact = self.mo_coeff[:,ncore:nocc].copy()
+        for v in range(ncore, nocc):
+            for w in range(ncore, nocc):
+                Dvw = np.linalg.multi_dot([Cact, csf_dm2[v-ncore,w-ncore,:,:], Cact.T])
+                Fvw = np.linalg.multi_dot([self.mo_coeff.T, self.integrals.build_J(Dvw), self.mo_coeff])
+                F[v,:] += Fvw[:,w]
+
         return 2 * F.T
 
     def get_orbital_gradient(self):

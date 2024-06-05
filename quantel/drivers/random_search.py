@@ -55,6 +55,8 @@ def random_search(ints, config):
         from quantel.opt.eigenvector_following import EigenFollow as OPT
     elif config["optimiser"]["algorithm"] == "mode_control":
         from quantel.opt.mode_controlling import ModeControl as OPT
+    elif config["optimiser"]["algorithm"] == "lbfgs":
+        from quantel.opt.lbfgs import LBFGS as OPT
 
     # Set numpy random seed
     numpy.random.seed(config["jobcontrol"]["search"]["seed"])
