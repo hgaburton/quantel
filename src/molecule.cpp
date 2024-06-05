@@ -43,6 +43,7 @@ Molecule::Molecule(std::string fname, std::string units) :
         std::string element;
         double x, y, z;
         file >> element >> x >> y >> z;
+        std::cout << element << " " << x << " " << y << " " << z << std::endl;
         add_atom(element, x, y, z);
     }
 
@@ -105,6 +106,7 @@ void Molecule::add_atom(std::string element, double x, double y, double z)
     // Transform element label to uppercase
     std::transform(element.begin(), element.end(), element.begin(),
                    [](unsigned char c){ return std::toupper(c); });
+    std::cout << "element: " << element << std::endl;
     // Add atom using atomic charge from peridoic_table dict
     add_atom(periodic_table.at(element), x, y, z);
 }
