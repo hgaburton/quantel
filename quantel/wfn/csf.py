@@ -4,11 +4,9 @@
 
 import numpy as np
 import scipy, quantel, h5py, warnings
-from pygnme import wick, utils, owndata
-
 from quantel.utils.csf_utils import get_csf_vector
-from quantel.io.parser import getlist, getvalue
 from quantel.utils.linalg import delta_kron, orthogonalise
+from quantel.gnme.csf_noci import csf_coupling
 from .wavefunction import Wavefunction
 
 
@@ -24,12 +22,14 @@ class GenealogicalCSF(Wavefunction):
             - save_last_step
             - restore_step
     """
-    def __init__(self, integrals, verbose=0):
+    def __init__(self, integrals, spin_coupling, verbose=0):
         """ Initialise the CSF wave function
                 integrals     : quantel integral interface
                 spin_coupling : genealogical coupling pattern
                 verbose       : verbosity level
         """
+        self.spin_coupling = spin_coupling
+        self.verbose       = verbose
         # Initialise integrals object
         self.integrals  = integrals
         self.nalfa      = integrals.molecule().nalfa()
@@ -39,6 +39,7 @@ class GenealogicalCSF(Wavefunction):
         # Get number of basis functions and linearly independent orbitals
         self.nbsf       = integrals.nbsf()
         self.nmo        = integrals.nmo()
+    
     
     def sanity_check(self):
         '''Need to be run at the start of the kernel to verify that the number of 
@@ -56,6 +57,51 @@ class GenealogicalCSF(Wavefunction):
         if(self.nocc > self.nmo):
             raise ValueError("Number of inactive and active orbitals must be <= total number of orbitals")
                              
+
+    def initialise(self, mo_guess, spin_coupling=None, mat_ci=None, integrals=True):
+        """ Initialise the CSF object with a set of MO coefficients"""
+        if(spin_coupling is None):
+            spin_coupling = self.spin_coupling
+        
+        # Save orbital coefficients
+        mo_guess      = orthogonalise(mo_guess, self.integrals.overlap_matrix())
+        if(mo_guess.shape[1] != self.nmo):
+            raise ValueError("Number of orbitals in MO coefficient matrix is incorrect")
+        self.mo_coeff = mo_guess
+
+        # Get active space definition
+        self.cas_nmo    = len(spin_coupling)
+        self.cas_nalfa  = sum(int(s=='+') for s in spin_coupling)
+        self.cas_nbeta  = sum(int(s=='-') for s in spin_coupling)
+        # Get number of core electrons
+        self.ncore = self.integrals.molecule().nelec() - self.cas_nalfa - self.cas_nbeta
+        if(self.ncore % 2 != 0):
+            raise ValueError("Number of core electrons must be even")
+        if(self.ncore < 0):
+            raise ValueError("Number of core electrons must be positive")
+        self.ncore = self.ncore // 2
+        # Get numer of 'occupied' orbitals
+        self.nocc = self.ncore + self.cas_nmo
+        self.sanity_check()
+
+        # Get determinant list and coefficient vector
+        self.spin_coupling = spin_coupling
+        self.detlist, self.civec = get_csf_vector(spin_coupling)
+        self.ndet = len(self.detlist)
+
+        # Setup CI space
+        self.cispace = quantel.CIspace(self.mo_ints, self.cas_nmo, self.cas_nalfa, self.cas_nbeta)
+        self.cispace.initialize('custom', self.detlist)
+        self.csf_dm1, self.csf_dm2 = self.get_active_rdm_12()
+
+        # Save mapping indices for unique orbital rotations
+        self.frozen     = None
+        self.rot_idx    = self.uniq_var_indices(self.frozen)
+        self.nrot       = np.sum(self.rot_idx)
+
+        # Initialise integrals
+        if (integrals): self.update_integrals()
+
     @property
     def dim(self):
         """Number of degrees of freedom"""
@@ -134,7 +180,6 @@ class GenealogicalCSF(Wavefunction):
 
         # Fock matrices
         self.get_fock_matrices()
-
         return 
     
     def save_to_disk(self, tag):
@@ -172,117 +217,25 @@ class GenealogicalCSF(Wavefunction):
 
     def copy(self):
         """Return a copy of the current object"""
-        newcsf = GenealogicalCSF(self.integrals, verbose=self.verbose)
-        newcsf.initialise(self.mo_coeff, self.spin_coupling)
+        newcsf = GenealogicalCSF(self.integrals, self.spin_coupling, verbose=self.verbose)
+        newcsf.initialise(self.mo_coeff)
         return newcsf
 
-    def overlap(self, ref):
-        r"""
-        Determines the overlap between the current CSF and a reference CSF.
-
-        :param ref: A ConfigurationStateFunction object which we are comparing to
+    def overlap(self, them):
+        """ Compute the overlap between two CSF objects
         """
-        #csf_coeffs = self.csf_instance.csf_coeffs
-        #ref_coeffs = ref.csf_instance.csf_coeffs
-        #smo = np.einsum("ip,ij,jq->pq", self.mo_coeff, self.ovlp, ref.mo_coeff)
-        #cross_overlap_mat = scipy.linalg.block_diag(smo, smo)
-        #return get_generic_no_overlap(self.csf_instance.dets_sq, ref.csf_instance.dets_sq, csf_coeffs, ref_coeffs,
-        #                              cross_overlap_mat)
-        s, h = self.hamiltonian(ref)
-        return s
+        ovlp = self.integrals.overlap_matrix()
+        return csf_coupling(self, them, ovlp)[0]
 
-    def hamiltonian(self, other, thresh=1e-10):
-        # x = self
-        # w = other
-        self.update_integrals()
-        na = self.nelecas[0] + self.ncore
-        nb = self.nelecas[1] + self.ncore
-        h1e = owndata(self._scf.get_hcore())
-        h2e = owndata(ao2mo.restore(1, self._scf._eri, self.mol.nao).reshape(self.mol.nao ** 2, self.mol.nao ** 2))
+    def hamiltonian(self, them):
+        """ Compute the Hamiltonian coupling between two CSF objects
+        """
+        hcore = self.integrals.oei_matrix(True)
+        eri   = self.integrals.tei_array(True,False).transpose(0,2,1,3).reshape(self.nbsf**2,self.nbsf**2)
+        ovlp  = self.integrals.overlap_matrix()
+        enuc  = self.integrals.scalar_potential()
+        return csf_coupling(self, them, ovlp, hcore, eri, enuc)
 
-        # Setup biorthogonalised orbital pair
-        refxa = wick.reference_state[float](self.nmo, self.nmo, na, self.ncas, self.ncore, owndata(self.mo_coeff))
-        refxb = wick.reference_state[float](self.nmo, self.nmo, nb, self.ncas, self.ncore, owndata(self.mo_coeff))
-        refwa = wick.reference_state[float](self.nmo, self.nmo, na, other.ncas, other.ncore, owndata(other.mo_coeff))
-        refwb = wick.reference_state[float](self.nmo, self.nmo, nb, other.ncas, other.ncore, owndata(other.mo_coeff))
-
-        # Setup paired orbitals
-        orba = wick.wick_orbitals[float, float](refxa, refwa, owndata(self.ovlp))
-        orbb = wick.wick_orbitals[float, float](refxb, refwb, owndata(self.ovlp))
-
-        # Setup matrix builder object
-        mb = wick.wick_uscf[float, float, float](orba, orbb, self.mol.energy_nuc())
-        # Add one- and two-body contributions
-        mb.add_one_body(h1e)
-        mb.add_two_body(h2e)
-
-        # Generate lists of FCI bitsets
-        vxa = utils.fci_bitset_list(na - self.ncore, self.ncas)
-        vxb = utils.fci_bitset_list(nb - self.ncore, self.ncas)
-        vwa = utils.fci_bitset_list(na - other.ncore, other.ncas)
-        vwb = utils.fci_bitset_list(nb - other.ncore, other.ncas)
-
-        s = 0
-        h = 0
-
-        # Loop over FCI occupation strings
-        for iwa in range(len(vwa)):
-            for iwb in range(len(vwb)):
-                if (abs(owndata(other.csf_instance.ci)[iwa, iwb]) < thresh):
-                    # Skip if coefficient is below threshold
-                    continue
-                for ixa in range(len(vxa)):
-                    for ixb in range(len(vxb)):
-                        if (abs(owndata(self.csf_instance.ci)[ixa, ixb]) < thresh):
-                            # Skip if coefficient is below threshold
-                            continue
-                        # Compute S and H contribution for this pair of determinants
-                        stmp, htmp = mb.evaluate(vxa[ixa], vxb[ixb], vwa[iwa], vwb[iwb])
-                        # Accumulate the Hamiltonian and overlap matrix elements
-                        s += stmp * owndata(other.csf_instance.ci)[iwa, iwb] * owndata(self.csf_instance.ci)[ixa, ixb]
-                        h += htmp * owndata(other.csf_instance.ci)[iwa, iwb] * owndata(self.csf_instance.ci)[ixa, ixb]
-        return s, h
-
-    def initialise(self, mo_guess, spin_coupling, mat_ci=None, integrals=True):
-        """ Initialise the CSF object with a set of MO coefficients"""
-        # Save orbital coefficients
-        mo_guess      = orthogonalise(mo_guess, self.integrals.overlap_matrix())
-        if(mo_guess.shape[1] != self.nmo):
-            raise ValueError("Number of orbitals in MO coefficient matrix is incorrect")
-        self.mo_coeff = mo_guess
-
-        # Get active space definition
-        self.cas_nmo    = len(spin_coupling)
-        self.cas_nalfa  = sum(int(s=='+') for s in spin_coupling)
-        self.cas_nbeta  = sum(int(s=='-') for s in spin_coupling)
-        # Get number of core electrons
-        self.ncore = self.integrals.molecule().nelec() - self.cas_nalfa - self.cas_nbeta
-        if(self.ncore % 2 != 0):
-            raise ValueError("Number of core electrons must be even")
-        if(self.ncore < 0):
-            raise ValueError("Number of core electrons must be positive")
-        self.ncore = self.ncore // 2
-        # Get numer of 'occupied' orbitals
-        self.nocc = self.ncore + self.cas_nmo
-        self.sanity_check()
-
-        # Get determinant list and coefficient vector
-        self.spin_coupling = spin_coupling
-        self.detlist, self.civec = get_csf_vector(spin_coupling)
-        self.ndet = len(self.detlist)
-
-        # Setup CI space
-        self.cispace = quantel.CIspace(self.mo_ints, self.cas_nmo, self.cas_nalfa, self.cas_nbeta)
-        self.cispace.initialize('custom', self.detlist)
-        self.csf_dm1, self.csf_dm2 = self.get_active_rdm_12()
-
-        # Save mapping indices for unique orbital rotations
-        self.frozen     = None
-        self.rot_idx    = self.uniq_var_indices(self.frozen)
-        self.nrot       = np.sum(self.rot_idx)
-
-        # Initialise integrals
-        if (integrals): self.update_integrals()
 
     def deallocate(self):
         """ Reduce the memory footprint for storing"""
@@ -325,7 +278,7 @@ class GenealogicalCSF(Wavefunction):
         return
 
     def get_generalised_fock(self, csf_dm1, csf_dm2):
-        ''' This method finds the generalised Fock matrix with a different method '''
+        """ Compute the generalised Fock matrix"""
         ncore = self.ncore
         nocc  = self.nocc
         F = np.zeros((self.nmo, self.nmo))
@@ -642,14 +595,6 @@ class GenealogicalCSF(Wavefunction):
         for i, dim in enumerate(arr):
             partition_instructions.append(dim + partition_instructions[-1])
         return partition_instructions
-
-    @property
-    def orbital_energies(self):
-        r"""
-        Gets the orbital energies (This is found by diagonalising the Fock matrix)
-        """
-        evals, evecs = np.linalg.eigh(self.F_core + self.F_cas)
-        return evals
 
     def canonicalize(self):
         r"""

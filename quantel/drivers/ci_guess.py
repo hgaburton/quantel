@@ -25,18 +25,13 @@ def ci_guess(ints, config):
     if config["wavefunction"]["method"] == "esmf":
         from quantel.wfn.esmf import ESMF as WFN
         ref_ci = numpy.identity(WFN(ints, **wfnconfig).ndet)
-        ndet = ref_ci.shape[1]
     elif config["wavefunction"]["method"] == "casscf":
         from quantel.wfn.ss_casscf import SS_CASSCF as WFN
         ref_ci = numpy.identity(WFN(ints, **wfnconfig).ndet)
-        ndet = ref_ci.shape[1]
     elif config["wavefunction"]["method"] == "csf":
         errstr = "CI guess is not compatible with CSF wavefunction"
         raise ValueError(errstr)
         
-    # Get variables
-    nmo  = ref_mo.shape[1]
-
     # Select the optimiser
     optconfig = config["optimiser"][config["optimiser"]["algorithm"]]
     if config["optimiser"]["algorithm"] == "eigenvector_following":

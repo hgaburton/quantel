@@ -34,9 +34,8 @@ def random_search(ints, config):
         from quantel.wfn.ss_casscf import SS_CASSCF as WFN
         ref_ci = numpy.identity(WFN(ints, **wfnconfig).ndet)
         ndet = ref_ci.shape[1]
-    #elif config["wavefunction"]["method"] == "csf":
-    #    from quantel.wfn.csf import CSF as WFN
-    #    ndet = 0
+    elif config["wavefunction"]["method"] == "csf":
+        from quantel.wfn.csf import GenealogicalCSF as WFN
     #elif config["wavefunction"]["method"] == "pcid":
     #    from quantel.wfn.pcid import PCID as WFN
     #    ref_ci = numpy.identity(WFN(mol, **wfnconfig).nDet)

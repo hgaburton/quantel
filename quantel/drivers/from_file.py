@@ -15,14 +15,11 @@ def from_file(ints, config):
     if config["wavefunction"]["method"] == "esmf":
         from quantel.wfn.esmf import ESMF as WFN
         ref_ci = numpy.identity(WFN(ints, **wfnconfig).ndet)
-        ndet = ref_ci.shape[1]
     elif config["wavefunction"]["method"] == "casscf":
         from quantel.wfn.ss_casscf import SS_CASSCF as WFN
         ref_ci = numpy.identity(WFN(ints, **wfnconfig).ndet)
-        ndet = ref_ci.shape[1]
-    #elif config["wavefunction"]["method"] == "csf":
-    #    from quantel.wfn.csf import CSF as WFN
-    #    ndet = 0
+    elif config["wavefunction"]["method"] == "csf":
+        from quantel.wfn.csf import GenealogicalCSF as WFN
 
     # Select the optimiser
     optconfig = config["optimiser"][config["optimiser"]["algorithm"]]
@@ -35,7 +32,6 @@ def from_file(ints, config):
     wfn_list  = []
     e_list    = []
     i_list    = []
-    ept2_list = []
 
     # Reconverge target solutions
     target_index = config["optimiser"]["keywords"]["index"]

@@ -225,7 +225,7 @@ class SS_CASSCF(Wavefunction):
         hcore = self.integrals.oei_matrix(True)
         eri   = self.integrals.tei_array(True,False).transpose(0,2,1,3).reshape(self.nbsf**2,self.nbsf**2)
         ovlp  = self.integrals.overlap_matrix()
-        enuc  = self.integrals.nuclear_repulsion()
+        enuc  = self.integrals.scalar_potential()
         return cas_coupling(self, them, ovlp, hcore, eri, enuc)
 
     def tdm(self, them):

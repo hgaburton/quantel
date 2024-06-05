@@ -2,6 +2,7 @@
 
 import unittest
 import numpy as np
+import pygnme
 
 def orthogonalisation_matrix(M, thresh=1e-8):
     """Construct an orthogonalisation matrix X such that X^T M X = I for a symmetric matrix M
@@ -24,6 +25,27 @@ def orthogonalisation_matrix(M, thresh=1e-8):
     X = eigvec[:,inds].dot(np.diag(np.power(eigval[inds],-0.5)))
 
     return X
+
+def occstring_to_bitset(occstr):
+    """Convert an occupation string to a pair of pygnme bitsets"""
+    occa = []
+    occb = []
+    for i in occstr:
+        if(i=='2'):
+            occa.append(1)
+            occb.append(1)
+        elif(i=='a'):
+            occa.append(1)
+            occb.append(0)
+        elif(i=='b'):
+            occa.append(0)
+            occb.append(1)
+        elif(i=='0'):
+            occa.append(0)
+            occb.append(0)
+        else:
+            raise ValueError('Invalid character in occupation string')
+    return pygnme.utils.bitset(list(reversed(occa))), pygnme.utils.bitset(list(reversed(occb)))
 
 def gen_eig_sym(M, S, thresh=1e-8):
     """ Solve the generalised eigenvalue problem Mx = Sx lambda for a symmetric matrix M and S
@@ -205,6 +227,7 @@ class test_utils(unittest.TestCase):
 
         # Test we have preserved the overlap
         self.assertTrue(abs(np.linalg.det(Snew) - np.linalg.det(Sold)) < 1e-12, msg='Failed to conserve overlap')
+
 
 if __name__=='__main__':
     unittest.main()
