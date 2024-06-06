@@ -73,7 +73,7 @@ def get_csf_vector(csf):
     """ Get the list of determinants and their coefficients for a given CSF
             :param csf:
             :return:
-    """
+    """   
     # Check CSF vector is valid
     if(csf[0]!='+'):
         raise RuntimeError("Invalid spin coupling pattern")

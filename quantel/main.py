@@ -15,8 +15,10 @@ import argparse, numpy, time
 from datetime import datetime, timedelta
 from quantel import Molecule, LibintInterface
 from quantel.io.config import Config
-from quantel.drivers import random_search, from_file, ci_guess, ev_linesearch, noci, overlap
+from quantel.drivers import random_search, from_file, ci_guess, ev_linesearch, noci, overlap, analyse
 #from quantel.drivers import random_search, ci_guess, from_file, noci, oscillator_strength, overlap, analyse, ev_linesearch
+from cProfile import Profile
+from pstats import SortKey, Stats
 
 def write_splash():
     print("====================================================")
@@ -73,8 +75,8 @@ def main():
     #if config["jobcontrol"]["oscillator_strength"]:
     #    oscillator_strength(wfnlist, **config["jobcontrol"]["oscillator_job"])
 
-    #if config["jobcontrol"]["analyse"]:
-    #    analyse(mol, config)
+    if config["jobcontrol"]["analyse"]:
+        analyse(ints, config)
 
     if config["jobcontrol"]["noci"]:
         noci(wfnlist, **config["jobcontrol"]["noci_job"])

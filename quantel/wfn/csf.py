@@ -175,17 +175,28 @@ class GenealogicalCSF(Wavefunction):
         # 1 and 2 electron integrals outside active space
         self.h1e = np.linalg.multi_dot([self.mo_coeff.T, self.integrals.oei_matrix(True), self.mo_coeff])
         Cocc = self.mo_coeff[:,:self.nocc].copy()
-        if(not self.nohess):
-            self.ppoo = self.integrals.tei_ao_to_mo(self.mo_coeff,Cocc,self.mo_coeff,Cocc,True,False).transpose(0,2,1,3)
-            self.popo = self.integrals.tei_ao_to_mo(self.mo_coeff,self.mo_coeff,Cocc,Cocc,True,False).transpose(0,2,1,3)
+        self.pppo = self.integrals.tei_ao_to_mo(self.mo_coeff,self.mo_coeff,self.mo_coeff,Cocc,True,False).transpose(0,2,1,3)
+        # Slices for easy indexing
+        self.pooo = self.pppo[:,:self.nocc,:self.nocc,:self.nocc]
+        self.ppoo = self.pppo[:,:,:self.nocc,:self.nocc]
+        self.popo = self.pppo[:,:self.nocc,:,:self.nocc]
+
+        #self.pooo = self.integrals.tei_ao_to_mo(self.mo_coeff,Cocc,Cocc,Cocc,True,False).transpose(0,2,1,3)
+        #if(not self.nohess):
+        #    self.ppoo = self.integrals.tei_ao_to_mo(self.mo_coeff,Cocc,self.mo_coeff,Cocc,True,False).transpose(0,2,1,3)
+        #    self.popo = self.integrals.tei_ao_to_mo(self.mo_coeff,self.mo_coeff,Cocc,Cocc,True,False).transpose(0,2,1,3)
+
         # Construct core potential outside active space
-        dm_core = np.dot(self.mo_coeff[:,:self.ncore], self.mo_coeff[:,:self.ncore].T)
-        v_jk = self.integrals.build_JK(dm_core)
-        self.vhf_c = np.linalg.multi_dot([self.mo_coeff.T, v_jk, self.mo_coeff])
+        #dm_core = np.dot(self.mo_coeff[:,:self.ncore], self.mo_coeff[:,:self.ncore].T)
+        #v_jk = self.integrals.build_JK(dm_core)
+        #self.vhf_c = np.linalg.multi_dot([self.mo_coeff.T, v_jk, self.mo_coeff])
+        self.vhf_c = (2 * np.einsum('pqii->pq',self.pppo[:,:,:self.ncore,:self.ncore],optimize='optimal')
+                        - np.einsum('ipqi->pq',self.pppo[:self.ncore,:,:,:self.ncore],optimize='optimal'))
 
         # Fock matrices
         self.get_fock_matrices()
         return 
+
     
     def save_to_disk(self, tag):
         """Save a CSF to disk with prefix 'tag'"""
@@ -289,16 +300,10 @@ class GenealogicalCSF(Wavefunction):
         nocc  = self.nocc
         F = np.zeros((self.nmo, self.nmo))
         F[:ncore, :] = 2 * (self.F_core[:,:ncore] + self.F_active[:, :ncore]).T
-        F[ncore:nocc,:] += np.einsum(
-            "nw,vw->vn", self.F_core[:,ncore:nocc], csf_dm1, optimize="optimal")
+        F[ncore:nocc,:] += np.dot(csf_dm1, self.F_core[:,ncore:nocc].T)
 
         # 2-electron active space component
-        Cact = self.mo_coeff[:,ncore:nocc].copy()
-        for v in range(ncore, nocc):
-            for w in range(ncore, nocc):
-                Dvw = np.linalg.multi_dot([Cact, csf_dm2[v-ncore,w-ncore,:,:], Cact.T])
-                Fvw = np.linalg.multi_dot([self.mo_coeff.T, self.integrals.build_J(Dvw), self.mo_coeff])
-                F[v,:] += Fvw[:,w]
+        F[ncore:nocc,:] += np.einsum('vwxy,nwxy->vn',csf_dm2,self.pooo[:,ncore:,ncore:,ncore:],optimize='optimal')
 
         return 2 * F.T
 
@@ -610,7 +615,30 @@ class GenealogicalCSF(Wavefunction):
         return partition_instructions
 
     def canonicalize(self):
-        r"""
+        """
         Forms the canonicalised MO coefficients by diagonalising invariant subblocks of the Fock matrix
         """
-        warnings.warn("Warning: Canonicalize does nothing for CSF object")
+        fock = self.F_core + self.F_active
+        # Get occ-occ and vir-vir blocks of (pseudo) Fock matrix
+        foo = fock[:self.ncore, :self.ncore]
+        faa = fock[self.ncore:self.nocc, self.ncore:self.nocc]
+        fvv = fock[self.nocc:, self.nocc:]
+        # Get transformations
+        self.mo_energy = np.zeros(self.nmo)
+        self.mo_energy[:self.ncore], Qoo = np.linalg.eigh(foo)
+        self.mo_energy[self.nocc:], Qvv = np.linalg.eigh(fvv)
+        self.mo_energy[self.ncore:self.nocc] = np.diag(faa)
+        # Apply transformations
+        self.mo_coeff[:,:self.ncore] = np.dot(self.mo_coeff[:,:self.ncore], Qoo)
+        self.mo_coeff[:,self.nocc:] = np.dot(self.mo_coeff[:,self.nocc:], Qvv)
+        
+        # Update integrals
+        self.update_integrals()
+
+        # Set occupation numbers
+        self.mo_occ = np.zeros(self.nmo)
+        self.mo_occ[:self.ncore] = 2
+        self.mo_occ[self.ncore:self.nocc] = 1
+
+
+        return

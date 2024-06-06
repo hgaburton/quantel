@@ -36,6 +36,8 @@ def random_search(ints, config):
         ndet = ref_ci.shape[1]
     elif config["wavefunction"]["method"] == "csf":
         from quantel.wfn.csf import GenealogicalCSF as WFN
+    elif config["wavefunction"]["method"] == "rhf":
+        from quantel.wfn.rhf import RHF as WFN
     #elif config["wavefunction"]["method"] == "pcid":
     #    from quantel.wfn.pcid import PCID as WFN
     #    ref_ci = numpy.identity(WFN(mol, **wfnconfig).nDet)
@@ -88,7 +90,6 @@ def random_search(ints, config):
 
         # Check the Hessian index
         hindices = myfun.get_hessian_index()
-        myfun.update_integrals()
         if (hindices[0] != target_index) and (target_index is not None):
             continue
         

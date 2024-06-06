@@ -20,6 +20,8 @@ def from_file(ints, config):
         ref_ci = numpy.identity(WFN(ints, **wfnconfig).ndet)
     elif config["wavefunction"]["method"] == "csf":
         from quantel.wfn.csf import GenealogicalCSF as WFN
+    elif config["wavefunction"]["method"] == "rhf":
+        from quantel.wfn.rhf import RHF as WFN
 
     # Select the optimiser
     optconfig = config["optimiser"][config["optimiser"]["algorithm"]]

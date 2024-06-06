@@ -42,9 +42,9 @@ class RHF(Wavefunction):
 
         # Define the orbital energies and coefficients
         self.mo_coeff         = None
-        self.orbital_energies = None
+        self.mo_energy = None
     
-    def initialise(self, mo_guess):
+    def initialise(self, mo_guess, ci_guess=None):
         """Initialise the wave function with a set of molecular orbital coefficients"""
         # Make sure orbitals are orthogonal
         self.mo_coeff = orthogonalise(mo_guess, self.integrals.overlap_matrix())
@@ -118,7 +118,7 @@ class RHF(Wavefunction):
          # Save hdf5 file with MO coefficients, orbital energies, energy, and spin
         with h5py.File(tag+".hdf5", "w") as F:
             F.create_dataset("mo_coeff", data=self.mo_coeff)
-            F.create_dataset("orbital_energies", data=self.orbital_energies)
+            F.create_dataset("mo_energy", data=self.mo_energy)
             F.create_dataset("energy", data=self.energy)
             F.create_dataset("s2", data=self.s2)    
         
@@ -143,7 +143,12 @@ class RHF(Wavefunction):
 
     def overlap(self, them):
         """Compute the (nonorthogonal) many-body overlap with another RHF wavefunction (them)"""
-        raise NotImplementedError("RHF overlap not implemented")
+        if(self.nocc != them.nocc):
+            return 0
+        nocc = self.nocc
+        ovlp = self.integrals.overlap_matrix()
+        S = np.linalg.multi_dot([self.mo_coeff[:,:nocc].T, ovlp, them.mo_coeff[:,:nocc]])
+        return np.linalg.det(S)**2
 
     def hamiltonian(self, them):
         """Compute the (nonorthogonal) many-body Hamiltonian coupling with another RHF wavefunction (them)"""
@@ -166,19 +171,22 @@ class RHF(Wavefunction):
     def canonicalize(self):
         """Diagonalise the occupied and virtual blocks of the Fock matrix"""
         # Initialise orbital energies
-        self.orbital_energies = np.zeros(self.nmo)
+        self.mo_energy = np.zeros(self.nmo)
         # Get Fock matrix in MO basis
         Fmo = np.linalg.multi_dot([self.mo_coeff.T, self.fock, self.mo_coeff])
         # Extract occupied and virtual blocks
         Focc = Fmo[:self.nocc,:self.nocc]
         Fvir = Fmo[self.nocc:,self.nocc:]
         # Diagonalise the occupied and virtual blocks
-        self.orbital_energies[:self.nocc], Qocc = np.linalg.eig(Focc)
-        self.orbital_energies[self.nocc:], Qvir = np.linalg.eig(Fvir)
+        self.mo_energy[:self.nocc], Qocc = np.linalg.eigh(Focc)
+        self.mo_energy[self.nocc:], Qvir = np.linalg.eigh(Fvir)
         # Build the canonical MO coefficients
         self.mo_coeff[:,:self.nocc] = np.dot(self.mo_coeff[:,:self.nocc], Qocc)
         self.mo_coeff[:,self.nocc:] = np.dot(self.mo_coeff[:,self.nocc:], Qvir)
         self.update()
+        # Get orbital occupation
+        self.mo_occ = np.zeros(self.nmo)
+        self.mo_occ[:self.nocc] = 2.0
 
     def diagonalise_fock(self):
         """Diagonalise the Fock matrix"""
@@ -187,7 +195,7 @@ class RHF(Wavefunction):
         # Project to linearly independent orbitals
         Ft = np.linalg.multi_dot([X.T, self.fock, X])
         # Diagonalise the Fock matrix
-        self.orbital_energies, Ct = np.linalg.eigh(Ft)
+        self.mo_energy, Ct = np.linalg.eigh(Ft)
         # Transform back to the original basis
         self.mo_coeff = np.dot(X, Ct)
         # Update density and Fock matrices
@@ -248,3 +256,7 @@ class RHF(Wavefunction):
             self.diagonalise_fock()
         else:
             raise NotImplementedError(f"Orbital guess method {method} not implemented")
+    
+    def deallocate(self):
+        pass
+        
