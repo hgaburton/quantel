@@ -28,7 +28,11 @@ class GenealogicalCSF(Wavefunction):
                 spin_coupling : genealogical coupling pattern
                 verbose       : verbosity level
         """
-        self.spin_coupling = spin_coupling
+        if(spin_coupling == 'cs'):
+            self.spin_coupling = ''
+        else:
+            self.spin_coupling = spin_coupling
+
         self.verbose       = verbose
         # Initialise integrals object
         self.integrals  = integrals
@@ -47,7 +51,7 @@ class GenealogicalCSF(Wavefunction):
         '''Need to be run at the start of the kernel to verify that the number of 
            orbitals and electrons in the CAS are consistent with the system '''
         # Check number of active orbitals is positive
-        if self.cas_nmo <= 0:
+        if self.cas_nmo < 0:
             raise ValueError("Number of active orbitals must be positive")
         # Check number of active electrons doesn't exceed total number of electrons
         if(self.cas_nalfa > self.cas_nmo or self.cas_nbeta > self.cas_nmo):
@@ -64,6 +68,8 @@ class GenealogicalCSF(Wavefunction):
         """ Initialise the CSF object with a set of MO coefficients"""
         if(spin_coupling is None):
             spin_coupling = self.spin_coupling
+        if(spin_coupling == 'cs'):
+            spin_coupling = ''
         
         # Save orbital coefficients
         mo_guess      = orthogonalise(mo_guess, self.integrals.overlap_matrix())
@@ -82,6 +88,8 @@ class GenealogicalCSF(Wavefunction):
         if(self.ncore < 0):
             raise ValueError("Number of core electrons must be positive")
         self.ncore = self.ncore // 2
+        self.nalfa = self.ncore + self.cas_nalfa
+        self.nbeta = self.ncore + self.cas_nbeta
         # Get numer of 'occupied' orbitals
         self.nocc = self.ncore + self.cas_nmo
         self.sanity_check()
@@ -146,6 +154,26 @@ class GenealogicalCSF(Wavefunction):
             raise RuntimeError("Hessian calculation not allowed with 'nohess' flag")
         return (self.get_hessianOrbOrb()[:, :, self.rot_idx])[self.rot_idx, :]
 
+    def get_variance(self):
+        """ Compute the variance of the energy with respect to the current wave function
+            This approach makes use of MRCISD sigma vector"""
+        # Build full MO integral object
+        mo_ints = quantel.MOintegrals(self.integrals)
+        mo_ints.update_orbitals(self.mo_coeff,0,self.nmo)
+        
+        # Build full CI space
+        nvir = self.nmo - self.nocc
+        fulldets = [self.ncore*'2'+st+nvir*'0' for st in self.detlist]
+        mrcisd = quantel.CIspace(mo_ints, self.nmo, self.nalfa, self.nbeta)
+        mrcisd.initialize('custom', fulldets)
+
+        # Compute variance
+        E, var = mrcisd.get_variance(self.civec)
+        if(abs(E - self.energy) > 1e-12):
+            raise RuntimeError("GenealogicalCSF:get_variance: Energy mismatch in variance calculation")
+        
+        return var
+
     def get_active_rdm_12(self):
         """ Compute the 1- and 2-electron reduced density matrices in the active space.
             returns:
@@ -165,33 +193,41 @@ class GenealogicalCSF(Wavefunction):
     
     def update_integrals(self):
         """ Update the integrals with current set of orbital coefficients"""
-        self.mo_ints.update_orbitals(self.mo_coeff,self.ncore,self.cas_nmo)
-                
+        #self.mo_ints.update_orbitals(self.mo_coeff,self.ncore,self.cas_nmo)
         # Effective integrals in active space
-        self.energy_core = self.mo_ints.scalar_potential()
-        self.h1eff = self.mo_ints.oei_matrix(True)
-        self.h2eff = self.mo_ints.tei_array(True,False).transpose(0,2,1,3)
+        #self.energy_core = self.mo_ints.scalar_potential()
+        #self.h1eff = self.mo_ints.oei_matrix(True)
+        #self.h2eff = self.mo_ints.tei_array(True,False).transpose(0,2,1,3)
+
+        nocc = self.nocc
+        ncore = self.ncore
 
         # 1 and 2 electron integrals outside active space
         self.h1e = np.linalg.multi_dot([self.mo_coeff.T, self.integrals.oei_matrix(True), self.mo_coeff])
-        Cocc = self.mo_coeff[:,:self.nocc].copy()
+        Cocc = self.mo_coeff[:,:nocc].copy()
         self.pppo = self.integrals.tei_ao_to_mo(self.mo_coeff,self.mo_coeff,self.mo_coeff,Cocc,True,False).transpose(0,2,1,3)
         # Slices for easy indexing
-        self.pooo = self.pppo[:,:self.nocc,:self.nocc,:self.nocc]
-        self.ppoo = self.pppo[:,:,:self.nocc,:self.nocc]
-        self.popo = self.pppo[:,:self.nocc,:,:self.nocc]
-
-        #self.pooo = self.integrals.tei_ao_to_mo(self.mo_coeff,Cocc,Cocc,Cocc,True,False).transpose(0,2,1,3)
-        #if(not self.nohess):
-        #    self.ppoo = self.integrals.tei_ao_to_mo(self.mo_coeff,Cocc,self.mo_coeff,Cocc,True,False).transpose(0,2,1,3)
-        #    self.popo = self.integrals.tei_ao_to_mo(self.mo_coeff,self.mo_coeff,Cocc,Cocc,True,False).transpose(0,2,1,3)
+        self.pooo = self.pppo[:,:nocc,:nocc,:nocc]
+        self.ppoo = self.pppo[:,:,:nocc,:nocc]
+        self.popo = self.pppo[:,:nocc,:,:nocc]
 
         # Construct core potential outside active space
         #dm_core = np.dot(self.mo_coeff[:,:self.ncore], self.mo_coeff[:,:self.ncore].T)
         #v_jk = self.integrals.build_JK(dm_core)
         #self.vhf_c = np.linalg.multi_dot([self.mo_coeff.T, v_jk, self.mo_coeff])
-        self.vhf_c = (2 * np.einsum('pqii->pq',self.pppo[:,:,:self.ncore,:self.ncore],optimize='optimal')
-                        - np.einsum('ipqi->pq',self.pppo[:self.ncore,:,:,:self.ncore],optimize='optimal'))
+        self.vhf_c = (2 * np.einsum('pqii->pq',self.pppo[:,:,:ncore,:ncore],optimize='optimal')
+                        - np.einsum('ipqi->pq',self.pppo[:ncore,:,:,:ncore],optimize='optimal'))
+
+        # Get effective 1-body Hamiltonian in active space
+        self.h1eff = self.h1e[ncore:nocc,ncore:nocc] + self.vhf_c[ncore:nocc,ncore:nocc]
+
+        # Get effective core energy
+        self.energy_core = self.integrals.scalar_potential()
+        self.energy_core += 2 * np.trace(self.h1e[:ncore,:ncore]) 
+        self.energy_core += np.trace(self.vhf_c[:ncore,:ncore])
+
+        # Get effective 2-body Hamiltonian
+        self.h2eff = self.pppo[ncore:nocc,ncore:nocc,ncore:nocc,ncore:nocc]
 
         # Fock matrices
         self.get_fock_matrices()
@@ -209,7 +245,7 @@ class GenealogicalCSF(Wavefunction):
         
         # Save numpy txt file with energy and Hessian index
         hindices = self.get_hessian_index()
-        with open(f"{tag}.solution","w") as F:
+        with open(tag+".solution", "w") as F:
             F.write(f"{self.energy:18.12f} {hindices[0]:5d} {hindices[1]:5d} {self.s2:12.6f}\n")
         return 
     

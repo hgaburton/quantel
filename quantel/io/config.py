@@ -35,6 +35,8 @@ class Config(dict):
         self["molecule"] = dict(basis = getvalue(self.lines,"basis",str,True), 
                                 unit = getvalue(self.lines,"units",str,False,"angstrom")
                                )
+        if (self["molecule"]["unit"] == "ang") or (self["molecule"]["unit"] == "a"):
+            self["molecule"]["unit"] = "angstrom"
 
             
     def parse_wavefunction(self):

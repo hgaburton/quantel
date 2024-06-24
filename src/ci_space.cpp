@@ -12,9 +12,8 @@ void CIspace::initialize(std::string citype, std::vector<std::string> detlist)
                    [](unsigned char c){ return std::toupper(c); });
                    
     // Reject attempts to build non-custom determinant set with custom list
-    if(citype!="CUSTOM" and detlist.size()>0)
+    if((citype!="CUSTOM" and citype!="MRCISD") and detlist.size()>0)
         throw std::runtime_error("Custom determinant list not compatible with requested CI type");
-    
     // Build the FCI space
     if(citype == "FCI") 
         build_fci_determinants();
@@ -37,6 +36,7 @@ void CIspace::initialize(std::string citype, std::vector<std::string> detlist)
     build_memory_map2(true, true);
     build_memory_map2(true, false);
     build_memory_map2(false, false);
+    
 
     // Record that we successfully initialised
     m_initialized = true;
@@ -101,6 +101,7 @@ void CIspace::build_custom_determinants(std::vector<std::string> detlist)
     for(size_t idet=0; idet<m_ndet; idet++)
         m_dets[Determinant(detlist[idet])] = idet;
 }
+
 
 void CIspace::build_memory_map1(bool alpha)
 {
@@ -455,4 +456,111 @@ void CIspace::build_rdm2(
             if(pq!=rs) rdm_rspq += phase * bra[indJ] * ket[indI];
         }
     }
+}
+
+
+void CIspace::get_variance(const std::vector<double> civec, double &E, double &var)
+{
+    // Sigma vector accumulator
+    std::map<Determinant,double> sigma;
+
+    // Single excitations
+    for(size_t p=0; p<m_nmo; p++)
+    for(size_t q=0; q<m_nmo; q++)
+    {
+        // Make an exitation
+        Eph Epq = {p,q};
+        double hpq_a = m_ints.oei(p,q,true);
+        double hpq_b = m_ints.oei(p,q,false);
+
+        // Loop over determinants
+        for(auto &[detJ, indJ] : m_dets)
+        {
+            // Get contribution of alfa excitation
+            Determinant detIa(detJ);
+            int phase = detIa.apply_excitation(Epq,true);
+            if(phase != 0)
+                try {
+                    size_t dummy = sigma.at(detIa);
+                    sigma[detIa] += phase * civec[indJ] * hpq_a;
+                } catch(const std::out_of_range& e) { 
+                    sigma[detIa] = phase * civec[indJ] * hpq_a;
+                }
+
+            // Get contribution of beta excitation
+            Determinant detIb(detJ);
+            phase = detIb.apply_excitation(Epq,false);
+            if(phase != 0) 
+                try {
+                    size_t dummy = sigma.at(detIb);
+                    sigma[detIb] += phase * civec[indJ] * hpq_b;
+                } catch(const std::out_of_range& e) { 
+                    sigma[detIb] = phase * civec[indJ] * hpq_b;
+                }
+        } 
+    }
+
+    for(size_t p=0; p<m_nmo; p++)
+    for(size_t q=0; q<m_nmo; q++)
+    for(size_t r=0; r<m_nmo; r++)
+    for(size_t s=0; s<m_nmo; s++)
+    {
+        // Consider only unique pairs
+        size_t pq = p*m_nmo + q;
+        size_t rs = r*m_nmo + s;
+        Epphh Epqrs = {p,q,r,s};
+        double vpqrs_aa = 0.25 * m_ints.tei(p,q,r,s,true,true);
+        double vpqrs_ab = 1.00 * m_ints.tei(p,q,r,s,true,false);
+        double vpqrs_bb = 0.25 * m_ints.tei(p,q,r,s,false,false);
+
+        // Loop over determinants
+        for(auto &[detJ, indJ] : m_dets)
+        {
+            // Get contribution of alfa excitation
+            Determinant detIaa(detJ);
+            int phase = detIaa.apply_excitation(Epqrs,true,true);
+            if(phase != 0)
+                try {
+                    size_t dummy = sigma.at(detIaa);
+                    sigma[detIaa] += phase * civec[indJ] * vpqrs_aa;
+                } catch(const std::out_of_range& e) { 
+                    sigma[detIaa] = phase * civec[indJ] * vpqrs_aa;
+                }
+
+            Determinant detIab(detJ);
+            phase = detIab.apply_excitation(Epqrs,true,false);
+            if(phase != 0)
+                try {
+                    size_t dummy = sigma.at(detIab);
+                    sigma[detIab] += phase * civec[indJ] * vpqrs_ab;
+                } catch(const std::out_of_range& e) { 
+                    sigma[detIab] = phase * civec[indJ] * vpqrs_ab;
+                }
+
+            // Get contribution of beta excitation
+            Determinant detIbb(detJ);
+            phase = detIbb.apply_excitation(Epqrs,false,false);
+            if(phase != 0) 
+                try {
+                    size_t dummy = sigma.at(detIbb);
+                    sigma[detIbb] += phase * civec[indJ] * vpqrs_bb;
+                } catch(const std::out_of_range& e) { 
+                    sigma[detIbb] = phase * civec[indJ] * vpqrs_bb;
+                }
+        } 
+    }
+
+    // Compute energy
+    E = 0.0;
+    for(auto &[detI, indI] : m_dets)
+        E += civec[indI] * sigma[detI];
+    
+    // Compute variance
+    var = 0.0;
+    for(auto &[detI, sigI] : sigma)
+        var += sigI * sigI;
+    var = 4 * (var - E*E);
+
+    // Add scalar potential to full energy
+    E += m_ints.scalar_potential();
 }

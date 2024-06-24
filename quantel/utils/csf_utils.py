@@ -75,6 +75,8 @@ def get_csf_vector(csf):
             :return:
     """   
     # Check CSF vector is valid
+    if(len(csf)==0):
+        return [''], [1]
     if(csf[0]!='+'):
         raise RuntimeError("Invalid spin coupling pattern")
     # Get the CSF vectors

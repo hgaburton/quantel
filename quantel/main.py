@@ -10,7 +10,9 @@
 # Set environment variables before importing numpy
 import os
 os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+#os.environ["OMP_NUM_THREADS"] = "1"
 import argparse, numpy, time
 from datetime import datetime, timedelta
 from quantel import Molecule, LibintInterface
@@ -55,7 +57,6 @@ def main():
 
     # Setup  molecule and integrals
     mol = Molecule(config["molecule"]["atom"], config["molecule"]["unit"])
-    mol.print()
     ints = LibintInterface(config["molecule"]["basis"],mol)
 
     # Generate wavefunctions 

@@ -6,6 +6,7 @@ import scipy.linalg
 import h5py
 from quantel.utils.linalg import orthogonalise
 from .wavefunction import Wavefunction
+import quantel
 
 class RHF(Wavefunction):
     """ Restricted Hartree-Fock method
@@ -200,6 +201,26 @@ class RHF(Wavefunction):
         self.mo_coeff = np.dot(X, Ct)
         # Update density and Fock matrices
         self.update()
+
+    def get_variance(self):
+        """ Compute the variance of the energy with respect to the current wave function
+            This approach makes use of MRCISD sigma vector"""
+        # Build full MO integral object
+        mo_ints = quantel.MOintegrals(self.integrals)
+        mo_ints.update_orbitals(self.mo_coeff,0,self.nmo)
+        # Build MRCISD space
+        nvir = self.nmo - self.nocc
+        fulldets = [self.nocc*'2'+nvir*'0']
+        mrcisd = quantel.CIspace(mo_ints,self.nmo,self.nalfa,self.nbeta)
+        mrcisd.initialize('custom', fulldets)
+        # Build CI vector in MRCISD space
+        civec = [1]
+        # Compute variance
+        E, var = mrcisd.get_variance(civec)
+        if(abs(E - self.energy) > 1e-12):
+            raise RuntimeError("GenealogicalCSF:get_variance: Energy mismatch in variance calculation")
+        
+        return var
 
     def try_fock(self, fock):
         """Try an extrapolated Fock matrix and update the orbital coefficients"""

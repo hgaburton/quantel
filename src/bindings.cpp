@@ -177,6 +177,17 @@ PYBIND11_MODULE(_quantel, m) {
                     return vec_to_np_array(nmo,nmo,nmo,nmo,rdm2.data());
                },
                "Build the two-particle reduced density matrix")
+          .def("get_variance", [](CIspace &ci, py::array_t<double> &V)
+               {
+                    size_t ndet = ci.ndet();
+                    auto Vbuf = V.request();
+                    std::vector<double> v_V((double *) Vbuf.ptr, (double *) Vbuf.ptr + Vbuf.size);
+                    double E = 0;
+                    double var = 0;
+                    ci.get_variance(v_V, E, var);
+                    return std::make_tuple(E,var);
+               },
+               "Compute the variance")
           ;         
 
      py::class_<MOintegrals>(m, "MOintegrals")
