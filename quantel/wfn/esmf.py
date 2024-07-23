@@ -3,7 +3,7 @@
 
 import numpy as np
 import scipy.linalg
-import h5py
+import h5py # type: ignore
 import quantel
 from quantel.utils.linalg import orthogonalise
 from quantel.gnme.esmf_noci import esmf_coupling
@@ -37,8 +37,8 @@ class ESMF(Wavefunction):
         self.nmo       = integrals.nmo()
         # Initialise CI space
         cistr          = ('ESMF' if with_ref else 'CIS')
-        self.cispace   = quantel.CIspace(self.mo_ints, self.nmo, self.nalfa, self.nbeta)
-        self.cispace.initialize(cistr)
+        #self.cispace   = quantel.CIspace(self.mo_ints, self.nmo, self.nalfa, self.nbeta)
+        #self.cispace.initialize(cistr)
 
         # For now, only support alpha = nbeta
         if(self.nalfa != self.nbeta):
