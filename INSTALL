@@ -10,11 +10,14 @@ wget https://sourceforge.net/projects/arma/files/armadillo-12.8.3.tar.xz
 tar -xvf armadillo-12.8.3.tar.xz
 mv armadillo-12.8.3 armadillo
 
-
 cd ../
 
-## Then setup a build directory and ocmpute
+## Then setup a build directory and compile
 mkdir build
 cmake ../
 make -j16 install
 cd ../
+
+## Python setup
+# Set correct python path to root dir of quantel installation
+export PYTHONPATH=$QUANTELROOT
