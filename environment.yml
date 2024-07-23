@@ -1,4 +1,4 @@
-name: quantel_test
+name: quantel
 
 dependencies:
     - python=3.10
