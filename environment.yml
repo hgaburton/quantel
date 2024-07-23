@@ -8,6 +8,5 @@ dependencies:
     - numpy
     - scipy
     - boost
-    - pytest
-    - libint
     - h5py
+    - omnia::eigen3
