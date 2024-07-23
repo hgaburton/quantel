@@ -1,3 +1,6 @@
+## Setup conda environment
+conda env create -f environment.yml
+
 ## First setup the external libraries
 cd external/
 git clone https://github.com/fmtlib/fmt.git
