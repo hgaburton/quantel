@@ -3,7 +3,7 @@
 
 import numpy as np
 import scipy.special
-import h5py
+import h5py # type: ignore
 import quantel
 from functools import reduce
 from quantel.utils.linalg import orthogonalise
@@ -594,7 +594,7 @@ class SS_CASSCF(Wavefunction):
         # Update the orbitals and integrals
         self.mo_coeff[:,self.ncore:self.nocc] = self.mo_coeff[:,self.ncore:self.nocc] @ u
         self.update_integrals()
-
+        
         # For now, we update the CI coefficients by just re-diagonalising the Hamiltonian
         # TODO: Perform the transformation directly from the orbital rotation to avoid any 
         #       issues with degeneracies
