@@ -1,4 +1,4 @@
-name: quantel
+name: quantel_test
 
 dependencies:
     - python=3.10
@@ -8,6 +8,4 @@ dependencies:
     - numpy
     - scipy
     - boost
-    - pytest
-    - libint
     - h5py
