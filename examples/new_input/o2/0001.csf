@@ -1,9 +1,0 @@
-total_spin             1.00
-active_space           4 4
-core_orbitals          0 1 2 3 4 5
-active_orbitals        6 7 8 9
-genealogical_coupling  ++--
-coupling_permutation   0 1 2 3
-local_spins            1.00 1.00
-active_subspaces       2 2 2 2
-csf_build              clebschgordon
