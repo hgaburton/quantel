@@ -7,6 +7,8 @@ import quantel
 from quantel.wfn.ss_casscf import SS_CASSCF
 # Optimisation strategy (this is full second-order)
 from quantel.opt.eigenvector_following import EigenFollow
+# Mode controlled optimisation (target closest stationary point)
+from quantel.opt.mode_controlling import ModeControl
 
 np.set_printoptions(linewidth=10000,precision=6,suppress=True)
 np.random.seed(7)
@@ -29,7 +31,7 @@ ints = quantel.LibintInterface("6-31g",mol)
 
 # Get the overlap matrix or oei 
 ovlp = ints.overlap_matrix()
-oei  = ints.oei_matrix()
+oei  = ints.oei_matrix(True) # get alfa oei
 
 
 ### Define and optimise SS_CASSCF object ###
@@ -41,8 +43,11 @@ mo_guess = np.random.rand(wfn.nmo,wfn.nmo)
 ci_guess = np.random.rand(wfn.ndet,wfn.ndet)
 wfn.initialise(mo_guess,ci_guess)
 
-# Run eigenvector-following to target a minimum
-EigenFollow().run(wfn, index=1)
+# Run eigenvector-following to target an index-3 saddle point
+EigenFollow().run(wfn, index=3)
+
+# Or run ModeControl to target closest stationary point
+ModeControl().run(wfn)
 
 # Print some information about optimal solution
 print(f"\nEnergy = {wfn.energy: 16.10f}")
