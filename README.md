@@ -19,6 +19,9 @@ conda env create -f environment.yml
 conda activate quantel
 ```
 
+#### PyGNME
+The nonorthogonal matrix elements in QuantEl require `libgnme` and `pygnme`, which can be installed from https://github.com/hgaburton/pygnme.
+
 #### fmt 
 Library to support easier C++ string formatting. From the directory `external/`, run
 ```
