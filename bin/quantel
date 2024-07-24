@@ -1,0 +1,14 @@
+#!/usr/bin/python3
+
+"""Main script for running state-specific energy landscape code
+
+   Authors: 
+       Hugh G. A. Burton  2020-
+       Antoine Marie      2021
+       Nick Lee           2022-
+"""
+
+from quantel.main import main
+
+if __name__=="__main__":
+    main()

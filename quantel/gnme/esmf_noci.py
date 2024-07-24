@@ -13,25 +13,25 @@ def esmf_coupling(esmf1, esmf2, metric, hcore=None, eri=None, enuc=0.0, thresh=1
     nmo = esmf1.nmo
 
     # Number of electrons 
-    assert(esmf1.nelec[0] == esmf2.nelec[0])
-    assert(esmf1.nelec[1] == esmf2.nelec[1])
+    assert(esmf1.nalfa == esmf2.nalfa)
+    assert(esmf1.nbeta == esmf2.nbeta)
     # TODO: For now, we can only do ms = 0
-    assert(esmf1.nelec[0] == esmf1.nelec[1])
+    assert(esmf1.nalfa == esmf1.nbeta)
 
-    nocc = esmf1.nelec[0]
+    nocc = esmf1.nalfa
     nvir = nmo - nocc
 
     # Get access to CI coefficients
     if(with_ref):
         cref1 = esmf1.mat_ci[0,0]
         cref2 = esmf2.mat_ci[0,0]
-        t1   = 1/np.sqrt(2) * np.reshape(esmf1.mat_ci[1:,0], (esmf1.na, esmf1.nmo - esmf1.na))
-        t2   = 1/np.sqrt(2) * np.reshape(esmf2.mat_ci[1:,0], (esmf2.na, esmf2.nmo - esmf2.na))
+        t1   = 1/np.sqrt(2) * np.reshape(esmf1.mat_ci[1:,0], (esmf1.nalfa, esmf1.nmo - esmf1.nalfa))
+        t2   = 1/np.sqrt(2) * np.reshape(esmf2.mat_ci[1:,0], (esmf2.nalfa, esmf2.nmo - esmf2.nalfa))
     else:
         cref1 = 0.0
         cref2 = 0.0
-        t1   = 1/np.sqrt(2) * np.reshape(esmf1.mat_ci[:,0], (esmf1.na, esmf1.nmo - esmf1.na))
-        t2   = 1/np.sqrt(2) * np.reshape(esmf2.mat_ci[:,0], (esmf2.na, esmf2.nmo - esmf2.na))
+        t1   = 1/np.sqrt(2) * np.reshape(esmf1.mat_ci[:,0], (esmf1.nalfa, esmf1.nmo - esmf1.nalfa))
+        t2   = 1/np.sqrt(2) * np.reshape(esmf2.mat_ci[:,0], (esmf2.nalfa, esmf2.nmo - esmf2.nalfa))
 
     # Intialise output
     Hxw, Sxw = 0, 0

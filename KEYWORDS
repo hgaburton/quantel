@@ -58,7 +58,7 @@ Initial guess:
 ==============
   guess         str : [Optional] Select how to choose initial guess [random|ci_guess|fromfile]. Default = random
                                   > random   : Use random initial orbital and CI coefficients
-                                  > ci_guess : Start from CIS or CASCI solution (not valid for CSF wavefunction)
+                                  > ciguess : Start from CIS or CASCI solution (not valid for CSF wavefunction)
                                   > fromfile : Read solutions from disk 
                                   > evlin    : Perform search along smallest Hessian eigenvalue
 

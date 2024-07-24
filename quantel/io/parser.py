@@ -2,6 +2,7 @@
 
 import re
 
+
 def getvalue(lines, target, typ, required=False, default=None):
     """Get the value of a keyword with a single argument"""
     for line in lines:
@@ -12,6 +13,7 @@ def getvalue(lines, target, typ, required=False, default=None):
         raise ValueError(errstr)
     elif default is not None:
         return default
+
 
 def getlist(lines, target, typ, required=False, default=None):
     """Get the value of a keyword with a list of arguments"""
@@ -24,6 +26,7 @@ def getlist(lines, target, typ, required=False, default=None):
     elif default is not None:
         return default
     return []
+
 
 def getbool(lines, target, required=False, default=None):
     """Get the value for a boolean keyword"""

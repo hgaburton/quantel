@@ -3,9 +3,10 @@
 
 import numpy as np
 import scipy.linalg
-from pyscf import scf,  __config__, ao2mo
-from exelsis.utils.linalg import delta_kron, orthogonalise
-from exelsis.gnme.esmf_noci import esmf_coupling
+import h5py # type: ignore
+import quantel
+from quantel.utils.linalg import orthogonalise
+from quantel.gnme.esmf_noci import esmf_coupling
 from .wavefunction import Wavefunction
 
 class ESMF(Wavefunction):
@@ -20,49 +21,70 @@ class ESMF(Wavefunction):
             - restore_step
     """
 
-    def __init__(self, mol, spin=0, ref_allowed=False):
-        """Initialise excited-state mean-field wavefunction
-               mol : PySCF molecule object
+    def __init__(self, integrals, spin=0, with_ref=False, verbose=0):
+        """ Initialise excited-state mean-field wavefunction
+                integrals : quantel integral interface
+               
         """
-        self.mol        = mol
-        self.nelec      = mol.nelec
-        self._scf       = scf.RHF(mol)
-        self.verbose    = mol.verbose
-        self.stdout     = mol.stdout
-        self.max_memory = self._scf.max_memory
-        self.spin       = spin
-        self.with_ref   = ref_allowed
-        # Get AO integrals 
-        self.get_ao_integrals()
-        self.norb       = self.hcore.shape[0]
-        self.na         = self.nelec[0]
-        self.nb         = self.nelec[1]
-        assert(self.na == self.nb)
+        # Initialise integrals object
+        self.integrals = integrals
+        self.nalfa     = integrals.molecule().nalfa()
+        self.nbeta     = integrals.molecule().nbeta()
+        # Initialise molecular integrals object
+        self.mo_ints   = quantel.MOintegrals(integrals)
+        # Get number of basis functions and linearly independent orbitals
+        self.nbsf      = integrals.nbsf()
+        self.nmo       = integrals.nmo()
+        # Initialise CI space
+        cistr          = ('ESMF' if with_ref else 'CIS')
+        #self.cispace   = quantel.CIspace(self.mo_ints, self.nmo, self.nalfa, self.nbeta)
+        #self.cispace.initialize(cistr)
 
-        # Get number of determinants
-        self.nDet      = self.na * (self.norb - self.na) + 1
-        if not self.with_ref: 
-            self.nDet -= 1
+        # For now, only support alpha = nbeta
+        if(self.nalfa != self.nbeta):
+            raise ValueError("Alpha and beta electrons must be equal")
+        # Get number of determinants and spin
+        self.with_ref  = with_ref
+        self.spin      = spin
+        self.ndet      = self.nalfa * (self.nmo - self.nalfa)
+        if self.with_ref: self.ndet += 1
+
+        self.verbose   = verbose
 
         # Save mapping indices for unique orbital rotations
         self.frozen     = None
-        self.rot_idx    = self.uniq_var_indices(self.norb, self.frozen)
+        self.rot_idx    = self.uniq_var_indices(self.frozen)
         self.nrot       = np.sum(self.rot_idx)
+
+    def initialise(self, mo_guess, ci_guess, integrals=True):
+        # Save orbital coefficients
+        mo_guess = orthogonalise(mo_guess, self.integrals.overlap_matrix())
+        self.mo_coeff = mo_guess
+        assert(self.nmo == self.mo_coeff.shape[1])
+
+        if(self.spin==1 and self.with_ref and abs(ci_guess[0])>1e-12):
+            raise ValueError("Reference determinant must have zero CI coefficient for triplet spin")
+
+        # Orthogonalise and save CI coefficients
+        ci_guess = orthogonalise(ci_guess, np.identity(self.ndet)) 
+        self.mat_ci = ci_guess
+
+        # Initialise integrals
+        if(integrals): self.update_integrals()
 
     @property
     def dim(self):
         """Get the number of degrees of freedom"""
-        return self.nrot + self.nDet - 1
-
+        return self.nrot + self.ndet - 1
 
     @property
     def energy(self):
         ''' Compute the energy corresponding to a given set of
              one-el integrals, two-el integrals, 1- and 2-RDM '''
-        E  = self.enuc
-        E += np.einsum('pq,pq', self.h1e, self.dm1, optimize="optimal")
-        E += 0.5 * np.einsum('pqrs,pqrs', self.h2e, self.dm2, optimize="optimal")
-        return E
+        en = self.integrals.scalar_potential()
+        en += np.einsum('pq,pq', self.h1e, self.dm1, optimize="optimal")
+        en += 0.5 * np.einsum('pqrs,pqrs', self.h2e, self.dm2, optimize="optimal")
+        return en
 
     @property
     def s2(self):
@@ -76,6 +98,19 @@ class ESMF(Wavefunction):
         g_ci  = self.get_ci_gradient()  
         # Unpack matrices/vectors accordingly
         return np.concatenate((g_orb, g_ci))
+    
+    def get_orbital_gradient(self):
+        """Compute the orbital component of the energy gradient"""
+        g_orb = 2 * self.get_gen_fock(self.mat_ci[:,0], self.mat_ci[:,0], False)
+        return (g_orb.T - g_orb)[self.rot_idx]
+
+
+    def get_ci_gradient(self):
+        """Compute the CI component of the energy gradient"""
+        if(self.ndet > 1):
+            return 2.0 * self.mat_ci[:,1:].T.dot(self.sigma)
+        else:
+            return np.zeros((0))
 
     @property
     def hessian(self):
@@ -88,68 +123,127 @@ class ESMF(Wavefunction):
         return np.block([[H_OrbOrb, H_OrbCI],
                          [H_OrbCI.T, H_CICI]])
 
+    def restore_last_step(self):
+        # Restore coefficients
+        self.mo_coeff = self.mo_coeff_save.copy()
+        self.mat_ci   = self.mat_ci_save.copy()
+        # Finally, update our integrals for the new coefficients
+        self.update_integrals()
+
+    def save_last_step(self):
+        self.mo_coeff_save = self.mo_coeff.copy()
+        self.mat_ci_save   = self.mat_ci.copy()
+
+    def take_step(self,step):
+        # Save our last position
+        self.save_last_step()
+
+        # Take steps in orbital and CI space
+        self.rotate_orb(step[:self.nrot])
+        self.rotate_ci(step[self.nrot:])
+
+        # Finally, update our integrals for the new coefficients
+        self.canonicalize()
+        self.update_integrals()
+
+    def rotate_orb(self,step): 
+        '''Rotate the molecular orbital coefficients'''
+        # Transform the step into correct structure
+        orb_step = np.zeros((self.nmo,self.nmo))
+        orb_step[self.rot_idx] = step
+        self.mo_coeff = np.dot(self.mo_coeff, scipy.linalg.expm(orb_step - orb_step.T))
+
+    def rotate_ci(self,step): 
+        """Take rotation step in the CIS space"""
+        S       = np.zeros((self.ndet,self.ndet))
+        S[1:,0] = step
+        self.mat_ci = np.dot(self.mat_ci, scipy.linalg.expm(S - S.T))
 
     def save_to_disk(self,tag):
         """Save object to disk with prefix 'tag'"""
         # Get the Hessian index
         hindices = self.get_hessian_index()
 
-        # Save coefficients, CI, and energy
-        np.savetxt(tag+'.mo_coeff', self.mo_coeff, fmt="% 20.16f")
-        np.savetxt(tag+'.mat_ci',   self.mat_ci, fmt="% 20.16f")
-        np.savetxt(tag+'.energy',   
-                   np.array([[self.energy, hindices[0], hindices[1], self.s2]]), 
-                   fmt="% 18.12f % 5d % 5d % 12.6f")
+        # Save hdf5 file with MO coefficients, orbital energies, energy, and spin
+        with h5py.File(tag+".hdf5", "w") as F:
+            F.create_dataset("mo_coeff", data=self.mo_coeff)
+            F.create_dataset("mat_ci", data=self.mat_ci[:,[0]])
+            F.create_dataset("energy", data=self.energy)
+            F.create_dataset("s2", data=self.s2)
+        
+        # Save numpy txt file with energy and Hessian indices
+        hindices = self.get_hessian_index()
+        with open(tag+".solution", "w") as F:
+            F.write(f"{self.energy:18.12f} {hindices[0]:5d} {hindices[1]:5d} {self.s2:12.6f}\n")
+        return
 
 
     def read_from_disk(self,tag):
-        """Read object from disk with prefix 'tag'"""
-        # Read MO coefficient and CI coefficients
-        mo_coeff = np.genfromtxt(tag+".mo_coeff")
-        ci_coeff = np.genfromtxt(tag+".mat_ci")
-
-        # Initialise object
-        self.initialise(mo_coeff, ci_coeff)
+        """Read a ESMF object from disk with prefix 'tag'"""
+        # Read orbital and CI coefficients
+        with h5py.File(tag+".hdf5", "r") as F:
+            mo_read = F["mo_coeff"][:]
+            ci_read = F["mat_ci"][:]
+        # Check the input
+        if mo_read.shape[0] != self.nbsf:
+            raise ValueError("Inccorect number of AO basis functions in file")
+        if ci_read.shape[0] != self.ndet:
+            raise ValueError("Incorrect dimension of CI space in file")
+        if mo_read.shape[1] > self.nmo:
+            raise ValueError("Too many orbitals in file")
+        if ci_read.shape[1] > self.ndet:
+            raise ValueError("Too many CI vectors in file")
+        # Initialise the wave function
+        self.initialise(mo_read, ci_read)
+        return
 
     def copy(self):
         # Return a copy of the current object
-        newcas = ESMF(self.mol, spin=self.spin, ref_allowed=self.with_ref)
+        newcas = ESMF(self.integrals, spin=self.spin, with_ref=self.with_ref)
         newcas.initialise(self.mo_coeff, self.mat_ci, integrals=False)
         return newcas
+    
+    def update_integrals(self):
+        # Update integral object
+        self.mo_ints.update_orbitals(self.mo_coeff,0,self.nmo)
+
+        # One-electron Hamiltonian
+        self.h1e = self.mo_ints.oei_matrix(True)
+        # Two-electron MO integrals orbitals (physicists notation)
+        self.h2e = self.mo_ints.tei_array(True,False).transpose(0,2,1,3)
+        # Reduced density matrices 
+        self.dm1, self.dm2 = self.get_rdm12()
+
+        # Fock matrix for reference determinant
+        self.ref_fock = self.h1e + (2 * np.einsum('pqjj->pq',self.h2e[:,:,:self.nalfa,:self.nalfa]) 
+                                      - np.einsum('pjjq->pq',self.h2e[:,:self.nalfa,:self.nalfa,:]))
+        fao = self.mo_coeff.dot(self.ref_fock).dot(self.mo_coeff.T)
+        fao = self.integrals.overlap_matrix().dot(fao).dot(self.integrals.overlap_matrix()) 
+        # Energy for reference determinant
+        self.eref = self.integrals.scalar_potential() + (np.einsum('ii',self.h1e[:self.nalfa,:self.nalfa] + self.ref_fock[:self.nalfa,:self.nalfa]))
+
+        # Compute the Hamiltonian matrix
+        self.ham = self.get_ham()
+
+        # Core effective interaction
+        self.V = (2 * np.einsum('pqkk->pq', self.h2e[:,:,:self.nalfa,:self.nalfa], optimize='optimal') 
+                    - np.einsum('pkkq->pq', self.h2e[:,:self.nalfa,:self.nalfa,:], optimize='optimal'))
+        
+        self.sigma = self.ham.dot(self.mat_ci[:,0])
+        
 
     def overlap(self, them):
         """Compute the many-body overlap with another CAS waveunction (them)"""
-        return esmf_coupling(self, them, self.ovlp, with_ref=self.with_ref)[0]
+        ovlp  = self.integrals.overlap_matrix()
+        return esmf_coupling(self, them, ovlp, with_ref=self.with_ref)[0]
 
     def hamiltonian(self, them):
         """Compute the many-body Hamiltonian coupling with another CAS wavefunction (them)"""
-        eri = ao2mo.restore(1, self._scf._eri, self.mol.nao).reshape(self.mol.nao**2, self.mol.nao**2)
-        return esmf_coupling(self, them, self.ovlp, self.hcore, eri, self.enuc, with_ref=self.with_ref)
-
-
-    def get_ao_integrals(self):
-        self.enuc       = self._scf.energy_nuc()
-        self.v1e        = self.mol.intor('int1e_nuc')  # Nuclear repulsion matrix elements
-        self.t1e        = self.mol.intor('int1e_kin')  # Kinetic energy matrix elements
-        self.hcore      = self.t1e + self.v1e          # 1-electron matrix elements in the AO basis
-        self.norb       = self.hcore.shape[0]
-        self.ovlp       = self.mol.intor('int1e_ovlp') # Overlap matrix
-        self._scf._eri  = self.mol.intor("int2e", aosym="s8") # Two electron integrals
-
-
-    def initialise(self, mo_guess, ci_guess, integrals=True):
-        # Save orbital coefficients
-        mo_guess = orthogonalise(mo_guess, self.ovlp)
-        self.mo_coeff = mo_guess
-        self.nmo = self.mo_coeff.shape[1]
- 
-        # Save CI coefficients
-        ci_guess = orthogonalise(ci_guess, np.identity(self.nDet)) 
-        self.mat_ci = ci_guess
-
-        # Initialise integrals
-        if(integrals): self.update_integrals()
-
+        hcore = self.integrals.oei_matrix(True)
+        eri   = self.integrals.tei_array(True,False).transpose(0,2,1,3).reshape(self.nbsf**2,self.nbsf**2)
+        ovlp  = self.integrals.overlap_matrix()
+        enuc  = self.integrals.scalar_potential()
+        return esmf_coupling(self, them, ovlp, hcore, eri, enuc, with_ref=self.with_ref)
 
     def deallocate(self):
         # Reduce the memory footprint for storing 
@@ -159,53 +253,50 @@ class ESMF(Wavefunction):
         self.ref_fock = None
         self.F_cas    = None
         self.ham      = None
+    
+    def get_ham(self):
+        '''Build the full Hamiltonian in the CIS space'''
+        ne   = self.nalfa
+        nov  = self.nalfa * (self.nmo - self.nalfa)
+
+        dij = np.identity(self.nalfa)
+        dab = np.identity(self.nmo - self.nalfa)
+
+        ham = np.zeros((self.ndet, self.ndet))
+        if(self.with_ref):
+            ham[0,0]   = self.eref
+            ham[0,1:]  = np.sqrt(2) * np.reshape(self.ref_fock[:self.nalfa,self.nalfa:], (nov))
+            ham[1:,0]  = np.sqrt(2) * np.reshape(self.ref_fock[:self.nalfa,self.nalfa:], (nov))
+
+            hiajb = ( self.eref * np.einsum('ij,ab->iajb',dij,dab)
+                     + np.einsum('ab,ij->iajb',self.ref_fock[ne:,ne:],dij)
+                     - np.einsum('ij,ab->iajb',self.ref_fock[:ne,:ne],dab)
+                     + 2 * np.einsum('aijb->iajb',self.h2e[ne:,:ne,:ne,ne:])
+                         - np.einsum('abji->iajb',self.h2e[ne:,ne:,:ne,:ne]))
+            ham[1:,1:] = np.reshape(np.reshape(hiajb,(ne,self.nmo-self.nalfa,-1)),(self.ndet-1,-1))
+        else:
+            hiajb = ( self.eref * np.einsum('ij,ab->iajb',dij,dab)
+                     + np.einsum('ab,ij->iajb',self.ref_fock[ne:,ne:],dij)
+                     - np.einsum('ij,ab->iajb',self.ref_fock[:ne,:ne],dab)
+                     + 2 * np.einsum('aijb->iajb',self.h2e[ne:,:ne,:ne,ne:])
+                         - np.einsum('abji->iajb',self.h2e[ne:,ne:,:ne,:ne]))
+            ham[:,:] = np.reshape(np.reshape(hiajb,(ne,self.nmo-self.nalfa,-1)),(self.ndet,-1))
+        return ham
 
 
-    def update_integrals(self):
-        # One-electron Hamiltonian
-        self.h1e = np.einsum('ip,ij,jq->pq', self.mo_coeff, self.hcore, self.mo_coeff,optimize="optimal")
-
-        # Occupied orbitals
-        self.h2e = ao2mo.incore.general(self._scf._eri, 
-                                        (self.mo_coeff, self.mo_coeff, self.mo_coeff, self.mo_coeff), 
-                                        compact=False)
-        self.h2e = np.reshape(self.h2e, (self.nmo, self.nmo, self.nmo, self.nmo))
-
-        # Reduced density matrices 
-        self.dm1, self.dm2 = self.get_rdm12()
-
-        # Fock matrix for reference determinant
-        self.ref_fock = self.h1e + (2 * np.einsum('pqjj->pq',self.h2e[:,:,:self.na,:self.na]) 
-                                      - np.einsum('pjjq->pq',self.h2e[:,:self.na,:self.na,:]))
-        fao = self.mo_coeff.dot(self.ref_fock).dot(self.mo_coeff.T)
-        fao = self.ovlp.dot(fao).dot(self.ovlp) 
-        # Energy for reference determinant
-        self.eref = self.enuc + (np.einsum('ii',self.h1e[:self.na,:self.na] + self.ref_fock[:self.na,:self.na]))
-
-        self.ham = self.get_ham()
-
-        # Core effective interaction
-        self.V = (2 * np.einsum('pqkk->pq', self.h2e[:,:,:self.na,:self.na], optimize='optimal') 
-                    - np.einsum('pkkq->pq', self.h2e[:,:self.na,:self.na,:], optimize='optimal'))
-
-
-    def get_rdm1(self, v1, v2, transition=False):
-        '''Compute the total 1RDM for the current state'''
-
-        ne = self.na
+    def get_rdm1(self, v1, v2, transition=False):                                                                              
+        '''Compute the total 1RDM for the current state'''                                                                     
+        ne = self.nalfa
         if(self.with_ref):
             c1_0   = v1[0]
             c2_0   = v2[0]
-            t1     = 1/np.sqrt(2) * np.reshape(v1[1:], (self.na, self.nmo - self.na))
-            t2     = 1/np.sqrt(2) * np.reshape(v2[1:], (self.na, self.nmo - self.na))
+            t1     = 1/np.sqrt(2) * np.reshape(v1[1:], (self.nalfa, self.nmo - self.nalfa))
+            t2     = 1/np.sqrt(2) * np.reshape(v2[1:], (self.nalfa, self.nmo - self.nalfa))
         else:
             c1_0   = 0.0
             c2_0   = 0.0
-            t1     = 1/np.sqrt(2) * np.reshape(v1[:], (self.na, self.nmo - self.na))
-            t2     = 1/np.sqrt(2) * np.reshape(v2[:], (self.na, self.nmo - self.na))
-        kron = np.identity(self.nmo)
-        dij  = np.identity(ne)
-        dab  = np.identity(self.nmo-ne)
+            t1     = 1/np.sqrt(2) * np.reshape(v1[:], (self.nalfa, self.nmo - self.nalfa))
+            t2     = 1/np.sqrt(2) * np.reshape(v2[:], (self.nalfa, self.nmo - self.nalfa))
 
         # Derive temporary matrices        
         ttOcc = t1.dot(t2.T) # (tt)_{ij}
@@ -213,27 +304,24 @@ class ESMF(Wavefunction):
 
         # Compute the 1RDM
         dm1 = np.zeros((self.nmo,self.nmo))
-        dm1[:self.na,:self.na] = - ttOcc
-        dm1[:self.na,self.na:] = c2_0 * t1
-        dm1[self.na:,:self.na] = c1_0 * t2.T
-        dm1[self.na:,self.na:] = ttVir
-        if(not transition): dm1[:self.na,:self.na] += np.identity(self.na)
+        dm1[:self.nalfa,:self.nalfa] = - ttOcc
+        dm1[:self.nalfa,self.nalfa:] = c2_0 * t1
+        dm1[self.nalfa:,:self.nalfa] = c1_0 * t2.T
+        dm1[self.nalfa:,self.nalfa:] = ttVir
+        if(not transition): dm1[:self.nalfa,:self.nalfa] += np.identity(self.nanalfa)
 
         return 2 * dm1
 
-
     def get_rdm12(self):
         '''Compute the total 1RDM and 2RDM for the current state'''
-        ne = self.na
+        ne = self.nalfa
         if(self.with_ref):
             c0   = self.mat_ci[0,0]
-            t    = 1/np.sqrt(2) * np.reshape(self.mat_ci[1:,0],(self.na, self.nmo - self.na))
+            t    = 1/np.sqrt(2) * np.reshape(self.mat_ci[1:,0],(self.nalfa, self.nmo - self.nalfa))
         else:
             c0   = 0.0
-            t    = 1/np.sqrt(2) * np.reshape(self.mat_ci[:,0],(self.na, self.nmo - self.na))
+            t    = 1/np.sqrt(2) * np.reshape(self.mat_ci[:,0],(self.nalfa, self.nmo - self.nalfa))
         kron = np.identity(self.nmo)
-        dij  = np.identity(ne)
-        dab  = np.identity(self.nmo-ne)
 
         # Derive temporary matrices        
         ttOcc = t.dot(t.T) # (tt)_{ij}
@@ -241,13 +329,13 @@ class ESMF(Wavefunction):
 
         # Compute the 1RDM
         dm1 = np.zeros((self.nmo,self.nmo))
-        dm1[:self.na,:self.na] = (np.identity(self.na) - ttOcc)
-        dm1[:self.na,self.na:] = c0 * t
-        dm1[self.na:,:self.na] = c0 * t.T
-        dm1[self.na:,self.na:] = ttVir
+        dm1[:self.nalfa,:self.nalfa] = (np.identity(self.nalfa) - ttOcc)
+        dm1[:self.nalfa,self.nalfa:] = c0 * t
+        dm1[self.nalfa:,:self.nalfa] = c0 * t.T
+        dm1[self.nalfa:,self.nalfa:] = ttVir
         dm1 *= 2
 
-        # Dompute the 2RDM
+        # Compute the 2RDM
         dm2 = np.zeros((self.nmo,self.nmo,self.nmo,self.nmo))
         # ijkl block
         dm2[:ne,:ne,:ne,:ne] += 4 * np.einsum('ij,kl->ijkl', kron[:ne,:ne], kron[:ne,:ne])
@@ -275,23 +363,21 @@ class ESMF(Wavefunction):
 
         return dm1, dm2
 
-
+    
     def get_trdm12(self, v1, v2):
         '''Compute the total 1RDM and 2RDM for the current state'''
-        ne = self.na
+        ne = self.nalfa
         if(self.with_ref):
             c1_0   = v1[0]
             c2_0   = v2[0]
-            t1     = 1/np.sqrt(2) * np.reshape(v1[1:], (self.na, self.nmo - self.na))
-            t2     = 1/np.sqrt(2) * np.reshape(v2[1:], (self.na, self.nmo - self.na))
+            t1     = 1/np.sqrt(2) * np.reshape(v1[1:], (self.nalfa, self.nmo - self.nalfa))
+            t2     = 1/np.sqrt(2) * np.reshape(v2[1:], (self.nalfa, self.nmo - self.nalfa))
         else:
             c1_0   = 0.0
             c2_0   = 0.0
-            t1     = 1/np.sqrt(2) * np.reshape(v1[:], (self.na, self.nmo - self.na))
-            t2     = 1/np.sqrt(2) * np.reshape(v2[:], (self.na, self.nmo - self.na))
+            t1     = 1/np.sqrt(2) * np.reshape(v1[:], (self.nalfa, self.nmo - self.nalfa))
+            t2     = 1/np.sqrt(2) * np.reshape(v2[:], (self.nalfa, self.nmo - self.nalfa))
         kron = np.identity(self.nmo)
-        dij  = np.identity(ne)
-        dab  = np.identity(self.nmo-ne)
 
         # Derive temporary matrices        
         ttOcc = t1.dot(t2.T) # (tt)_{ij}
@@ -299,10 +385,10 @@ class ESMF(Wavefunction):
 
         # Compute the 1RDM
         dm1 = np.zeros((self.nmo,self.nmo))
-        dm1[:self.na,:self.na] = - ttOcc
-        dm1[:self.na,self.na:] = c2_0 * t1
-        dm1[self.na:,:self.na] = c1_0 * t2.T
-        dm1[self.na:,self.na:] = ttVir
+        dm1[:self.nalfa,:self.nalfa] = - ttOcc
+        dm1[:self.nalfa,self.nalfa:] = c2_0 * t1
+        dm1[self.nalfa:,:self.nalfa] = c1_0 * t2.T
+        dm1[self.nalfa:,self.nalfa:] = ttVir
         dm1 *= 2
 
         # Dompute the 2RDM
@@ -332,119 +418,45 @@ class ESMF(Wavefunction):
         return dm1, dm2
 
 
-    def get_ham(self):
-        '''Build the full Hamiltonian in the CIS space'''
-        ne   = self.na
-        nvir = self.nmo - self.na
-        nov  = self.na * (self.nmo - self.na)
-
-        dij = np.identity(self.na)
-        dab = np.identity(self.nmo - self.na)
-
-        ham = np.zeros((self.nDet, self.nDet))
-        if(self.with_ref):
-            ham[0,0]   = self.eref
-            ham[0,1:]  = np.sqrt(2) * np.reshape(self.ref_fock[:self.na,self.na:], (nov))
-            ham[1:,0]  = np.sqrt(2) * np.reshape(self.ref_fock[:self.na,self.na:], (nov))
-
-            hiajb = ( self.eref * np.einsum('ij,ab->iajb',dij,dab) 
-                     + np.einsum('ab,ij->iajb',self.ref_fock[ne:,ne:],dij)
-                     - np.einsum('ij,ab->iajb',self.ref_fock[:ne,:ne],dab) 
-                     + 2 * np.einsum('aijb->iajb',self.h2e[ne:,:ne,:ne,ne:]) 
-                         - np.einsum('abji->iajb',self.h2e[ne:,ne:,:ne,:ne])) 
-            ham[1:,1:] = np.reshape(np.reshape(hiajb,(ne,self.nmo-self.na,-1)),(self.nDet-1,-1))
-        else:
-            hiajb = ( self.eref * np.einsum('ij,ab->iajb',dij,dab) 
-                     + np.einsum('ab,ij->iajb',self.ref_fock[ne:,ne:],dij)
-                     - np.einsum('ij,ab->iajb',self.ref_fock[:ne,:ne],dab) 
-                     + 2 * np.einsum('aijb->iajb',self.h2e[ne:,:ne,:ne,ne:]) 
-                         - np.einsum('abji->iajb',self.h2e[ne:,ne:,:ne,:ne])) 
-            ham[:,:] = np.reshape(np.reshape(hiajb,(ne,self.nmo-self.na,-1)),(self.nDet,-1))
-        return ham
-
-
-    def restore_last_step(self):
-        # Restore coefficients
-        self.mo_coeff = self.mo_coeff_save.copy()
-        self.mat_ci   = self.mat_ci_save.copy()
-
-        # Finally, update our integrals for the new coefficients
-        self.update_integrals()
-
-
-    def save_last_step(self):
-        self.mo_coeff_save = self.mo_coeff.copy()
-        self.mat_ci_save   = self.mat_ci.copy()
-
-
-    def take_step(self,step):
-        # Save our last position
-        self.save_last_step()
-
-        # Take steps in orbital and CI space
-        self.rotate_orb(step[:self.nrot])
-        self.rotate_ci(step[self.nrot:])
-
-        # Finally, update our integrals for the new coefficients
-        self.canonicalise()
-        self.update_integrals()
-
-
-    def rotate_orb(self,step): 
-        '''Rotate the molecular orbital coefficients'''
-        # Transform the step into correct structure
-        orb_step = np.zeros((self.norb,self.norb))
-        orb_step[self.rot_idx] = step
-        self.mo_coeff = np.dot(self.mo_coeff, scipy.linalg.expm(orb_step - orb_step.T))
-
-
-    def rotate_ci(self,step): 
-        """Take rotation step in the CIS space"""
-        S       = np.zeros((self.nDet,self.nDet))
-        S[1:,0] = step
-        self.mat_ci = np.dot(self.mat_ci, scipy.linalg.expm(S - S.T))
-
-
-    def canonicalise(self):
+    def canonicalize(self):
         """Rotate to canonical CI representation"""
         if(self.with_ref):
-            c0   = self.mat_ci[0,0]
-            t    = 1/np.sqrt(2) * np.reshape(self.mat_ci[1:,0],(self.na, self.nmo - self.na))
+            t    = 1/np.sqrt(2) * np.reshape(self.mat_ci[1:,0],(self.nalfa, self.nmo - self.nalfa))
         else:
-            c0   = 0.0
-            t    = 1/np.sqrt(2) * np.reshape(self.mat_ci[:,0],(self.na, self.nmo - self.na))
+            t    = 1/np.sqrt(2) * np.reshape(self.mat_ci[:,0],(self.nalfa, self.nmo - self.nalfa))
 
         # Get SVD
         u, s, vt = np.linalg.svd(t)
         
         # Transform orbitals
-        self.mo_coeff[:,:self.na] = self.mo_coeff[:,:self.na].dot(u)
-        self.mo_coeff[:,self.na:] = self.mo_coeff[:,self.na:].dot(vt.T)
+        self.mo_coeff[:,:self.nalfa] = self.mo_coeff[:,:self.nalfa].dot(u)
+        self.mo_coeff[:,self.nalfa:] = self.mo_coeff[:,self.nalfa:].dot(vt.T)
 
         for k in range(self.mat_ci.shape[1]):
             if(self.with_ref):
-                tia = np.reshape(self.mat_ci[1:,k],(self.na, self.nmo - self.na))
+                tia = np.reshape(self.mat_ci[1:,k],(self.nalfa, self.nmo - self.nalfa))
                 tia = np.linalg.multi_dot((u.T, tia, vt.T))
-                self.mat_ci[1:,k] = np.reshape(tia,(self.na * (self.nmo - self.na)))
+                self.mat_ci[1:,k] = np.reshape(tia,(self.nalfa * (self.nmo - self.nalfa)))
             else:
-                tia    = np.reshape(self.mat_ci[:,k],(self.na, self.nmo - self.na))
+                tia    = np.reshape(self.mat_ci[:,k],(self.nalfa, self.nmo - self.nalfa))
                 tia = np.linalg.multi_dot((u.T, tia, vt.T))
-                self.mat_ci[:,k] = np.reshape(tia,(self.na * (self.nmo - self.na)))
+                self.mat_ci[:,k] = np.reshape(tia,(self.nalfa * (self.nmo - self.nalfa)))
+
 
     def get_gen_fock(self, v1, v2, transition=False):
         """Build generalised Fock matrix
            NOTE: This is a symmetrised version to minimise the number of einsums in 
                  the computation of transition generalised Fock matrices.
         """
-        ne = self.na
+        ne = self.nalfa
         if(self.with_ref):
             c1_0, c2_0 = v1[0], v2[0]
-            t1     = 1/np.sqrt(2) * np.reshape(v1[1:], (self.na, self.nmo - self.na))
-            t2     = 1/np.sqrt(2) * np.reshape(v2[1:], (self.na, self.nmo - self.na))
+            t1     = 1/np.sqrt(2) * np.reshape(v1[1:], (self.nalfa, self.nmo - self.nalfa))
+            t2     = 1/np.sqrt(2) * np.reshape(v2[1:], (self.nalfa, self.nmo - self.nalfa))
         else:
             c1_0, c2_0 = 0.0, 0.0
-            t1     = 1/np.sqrt(2) * np.reshape(v1[:], (self.na, self.nmo - self.na))
-            t2     = 1/np.sqrt(2) * np.reshape(v2[:], (self.na, self.nmo - self.na))
+            t1     = 1/np.sqrt(2) * np.reshape(v1[:], (self.nalfa, self.nmo - self.nalfa))
+            t2     = 1/np.sqrt(2) * np.reshape(v2[:], (self.nalfa, self.nmo - self.nalfa))
 
         if(transition): dij  = np.zeros((ne,ne))
         else: dij = np.identity(ne)
@@ -452,7 +464,7 @@ class ESMF(Wavefunction):
         # Compute the 1RDM
         gamma = np.zeros((self.nmo, self.nmo))
         gamma[:ne,:ne] = - t1.dot(t2.T)
-        if(not transition): gamma[:ne,:ne] += np.identity(self.na)
+        if(not transition): gamma[:ne,:ne] += np.identity(self.nalfa)
         gamma[ne:,ne:] = t2.T.dot(t1)
         if(self.with_ref):
             gamma[:ne,ne:] = c2_0 * t1
@@ -485,30 +497,12 @@ class ESMF(Wavefunction):
         return 2 * F
 
 
-    def get_orbital_gradient(self):
-        """Compute the orbital component of the energy gradient"""
-
-        g_orb = 2 * self.get_gen_fock(self.mat_ci[:,0], self.mat_ci[:,0], False)
-        return (g_orb.T - g_orb)[self.rot_idx]
-
-
-    def get_ci_gradient(self):
-        """Compute the CI component of the energy gradient"""
-        if(self.nDet > 1):
-            return 2.0 * np.einsum('i,ij,jk->k', np.asarray(self.mat_ci)[:,0], 
-                                                 self.ham, 
-                                                 self.mat_ci[:,1:],
-                                                 optimize="optimal")
-        else:
-            return np.zeros((0))
-
-
     def get_hessianOrbCI(self):
         """Compute the orbital-CIS component of the energy Hessian"""
         # Initialise with zeros
-        H_OCI = np.zeros((self.norb,self.norb,self.nDet-1))
+        H_OCI = np.zeros((self.nmo,self.nmo,self.ndet-1))
 
-        for k in range(1,self.nDet):
+        for k in range(1,self.ndet):
             # Get transition generalised Fock matrix
             F = 2 * self.get_gen_fock(self.mat_ci[:,k], self.mat_ci[:,0], True)
             # Save component
@@ -520,18 +514,18 @@ class ESMF(Wavefunction):
     def get_hessianOrbOrb(self):
         """Compute the orbital-orbital component of the energy Hessian"""
         # Get number of electrons
-        ne = self.na
+        ne = self.nalfa
         nmo = self.nmo
 
         if(self.with_ref):
             c0 = self.mat_ci[0,0]
-            t  = 1/np.sqrt(2) * np.reshape(self.mat_ci[1:,0], (self.na, self.nmo - self.na))
+            t  = 1/np.sqrt(2) * np.reshape(self.mat_ci[1:,0], (self.nalfa, self.nmo - self.nalfa))
         else:
             c0 = 0.0
-            t  = 1/np.sqrt(2) * np.reshape(self.mat_ci[:,0], (self.na, self.nmo - self.na))
+            t  = 1/np.sqrt(2) * np.reshape(self.mat_ci[:,0], (self.nalfa, self.nmo - self.nalfa))
         # Compute the 1RDM
         gamma = np.zeros((self.nmo, self.nmo))
-        gamma[:ne,:ne] = np.identity(self.na) - t.dot(t.T)
+        gamma[:ne,:ne] = np.identity(self.nalfa) - t.dot(t.T)
         gamma[ne:,ne:] = t.T.dot(t)
         if(self.with_ref):
             gamma[:ne,ne:] = c0 * t
@@ -539,11 +533,6 @@ class ESMF(Wavefunction):
 
         # Get the generalised Fock matrix
         F = self.get_gen_fock(self.mat_ci[:,0], self.mat_ci[:,0]) 
-
-        # Kroneckar-delta for later contractions
-        dij = np.identity(self.na)
-        dab = np.identity(self.nmo-self.na)
-        dqs = np.identity(self.nmo)
 
         # iajb 
         Y = np.zeros((nmo,nmo,nmo,nmo))
@@ -577,11 +566,11 @@ class ESMF(Wavefunction):
 
         # iajb
         tmp[:ne,ne:,:ne,ne:]   = 2 * np.einsum('ij,ab->iajb', self.dm1[:ne,:ne], self.h1e[ne:,ne:])
-        for a in range(self.na,self.nmo): tmp[:ne,a,:ne,a]  -= (F + F.T)[:ne,:ne]
+        for a in range(self.nalfa,self.nmo): tmp[:ne,a,:ne,a]  -= (F + F.T)[:ne,:ne]
         tmp[:ne,ne:,:ne,ne:]  += 2 * Y[:ne,ne:,:ne,ne:]
         # aibj
         tmp[ne:,:ne,ne:,:ne]   = 2 * np.einsum('ab,ij->aibj', self.dm1[ne:,ne:], self.h1e[:ne,:ne])
-        for i in range(self.na): tmp[ne:,i,ne:,i]  -= (F + F.T)[ne:,ne:]
+        for i in range(self.nalfa): tmp[ne:,i,ne:,i]  -= (F + F.T)[ne:,ne:]
         tmp[ne:,:ne,ne:,:ne]  += 2 * Y[ne:,:ne,ne:,:ne]
         # iabj
         tmp[:ne,ne:,ne:,:ne]   = 2 * np.einsum('ib,aj->iabj', self.dm1[:ne,ne:], self.h1e[ne:,:ne])
@@ -597,20 +586,17 @@ class ESMF(Wavefunction):
 
     def get_hessianCICI(self):
         """Compute the CIS-CIS component of the energy Hessian"""
-        if(self.nDet > 1):
+        if(self.ndet > 1):
             e0 = np.einsum('i,ij,j', np.asarray(self.mat_ci)[:,0], self.ham, np.asarray(self.mat_ci)[:,0],optimize="optimal")
             return 2.0 * np.einsum('ki,kl,lj->ij', 
-                    self.mat_ci[:,1:], self.ham - e0 * np.identity(self.nDet), self.mat_ci[:,1:],optimize="optimal")
+                    self.mat_ci[:,1:], self.ham - e0 * np.identity(self.ndet), self.mat_ci[:,1:],optimize="optimal")
         else: 
             return np.zeros((0,0))
 
 
-    def uniq_var_indices(self, nmo, frozen):
-        ''' This function creates a matrix of boolean of size (norb,norb). 
-            A True element means that this rotation should be taken into 
-            account during the optimization. Taken from pySCF.mcscf.casscf '''
-        mask = np.zeros((self.norb,self.norb),dtype=bool)
-        mask[self.na:,:self.na] = True    # Active-Core rotations
+    def uniq_var_indices(self, frozen):
+        mask = np.zeros((self.nmo, self.nmo),dtype=bool)
+        mask[self.nalfa:,:self.nalfa] = True    
         if frozen is not None:
             if isinstance(frozen, (int, np.integer)):
                 mask[:frozen] = mask[:,:frozen] = False

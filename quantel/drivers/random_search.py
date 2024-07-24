@@ -2,9 +2,12 @@
 
 import numpy
 from scipy.linalg import expm 
-from exelsis.utils.linalg import random_rot
+from quantel.utils.linalg import random_rot
+from quantel.wfn.rhf import RHF
+from quantel.opt.diis import DIIS
+from quantel import LibintInterface
 
-def random_search(mol, config):
+def random_search(ints, config):
     """Perform a random search for multiple solutions"""
 
     print("-----------------------------------------------")
@@ -13,30 +16,37 @@ def random_search(mol, config):
     print("    + Number of samples: {:d}".format(config["jobcontrol"]["search"]["nsample"]))
     print("-----------------------------------------------")
 
-    # Get reference RHF wavefunction
-    ref_mo = mol.RHF().run().mo_coeff.copy()
+    # Get RHF orbitals
+    rhf = RHF(ints)
+    rhf.get_orbital_guess()
+    DIIS().run(rhf)
+
+    ref_mo = rhf.mo_coeff.copy()
     ref_ci = None
 
     # Get information about the wavefunction defintion
     wfnconfig = config["wavefunction"][config["wavefunction"]["method"]]
     if config["wavefunction"]["method"] == "esmf":
-        from exelsis.wfn.esmf import ESMF as WFN
-        ref_ci = numpy.identity(WFN(mol, **wfnconfig).nDet)
+        from quantel.wfn.esmf import ESMF as WFN
+        ref_ci = numpy.identity(WFN(ints, **wfnconfig).ndet)
         ndet = ref_ci.shape[1]
     elif config["wavefunction"]["method"] == "casscf":
-        from exelsis.wfn.ss_casscf import SS_CASSCF as WFN
-        ref_ci = numpy.identity(WFN(mol, **wfnconfig).nDet)
+        from quantel.wfn.ss_casscf import SS_CASSCF as WFN
+        ref_ci = numpy.identity(WFN(ints, **wfnconfig).ndet)
         ndet = ref_ci.shape[1]
     elif config["wavefunction"]["method"] == "csf":
-        from exelsis.wfn.csf import CSF as WFN
-        ndet = 0
-    elif config["wavefunction"]["method"] == "pcid":
-        from exelsis.wfn.pcid import PCID as WFN
-        ref_ci = numpy.identity(WFN(mol, **wfnconfig).nDet)
-        ndet = ref_ci.shape[1]
-    elif config["wavefunction"]["method"] == "pp":
-        from exelsis.wfn.pp import PP as WFN
-        ndet = 0
+        from quantel.wfn.csf import GenealogicalCSF as WFN
+    elif config["wavefunction"]["method"] == "rhf":
+        from quantel.wfn.rhf import RHF as WFN
+    #elif config["wavefunction"]["method"] == "pcid":
+    #    from quantel.wfn.pcid import PCID as WFN
+    #    ref_ci = numpy.identity(WFN(mol, **wfnconfig).nDet)
+    #    ndet = ref_ci.shape[1]
+    #elif config["wavefunction"]["method"] == "pp":
+    #    from quantel.wfn.pp import PP as WFN
+    #    ndet = 0
+    else:
+        raise ValueError("Wavefunction method not recognised")
         
     # Get variables
     nmo  = ref_mo.shape[1]
@@ -44,9 +54,11 @@ def random_search(mol, config):
     # Select the optimiser
     optconfig = config["optimiser"][config["optimiser"]["algorithm"]]
     if config["optimiser"]["algorithm"] == "eigenvector_following":
-        from exelsis.opt.eigenvector_following import EigenFollow as OPT
+        from quantel.opt.eigenvector_following import EigenFollow as OPT
     elif config["optimiser"]["algorithm"] == "mode_control":
-        from exelsis.opt.mode_controlling import ModeControl as OPT
+        from quantel.opt.mode_controlling import ModeControl as OPT
+    elif config["optimiser"]["algorithm"] == "lbfgs":
+        from quantel.opt.lbfgs import LBFGS as OPT
 
     # Set numpy random seed
     numpy.random.seed(config["jobcontrol"]["search"]["seed"])
@@ -68,7 +80,7 @@ def random_search(mol, config):
         # Initialise optimisation object
         try: del myfun
         except: pass
-        myfun = WFN(mol, **wfnconfig)
+        myfun = WFN(ints, **wfnconfig)
         myfun.initialise(mo_guess, ci_guess)
 
         # Run the optimisation
@@ -78,7 +90,6 @@ def random_search(mol, config):
 
         # Check the Hessian index
         hindices = myfun.get_hessian_index()
-        myfun.update_integrals()
         if (hindices[0] != target_index) and (target_index is not None):
             continue
         
@@ -92,7 +103,7 @@ def random_search(mol, config):
         # Save the solution if it is a new one!
         if new: 
             if config["wavefunction"]["method"] == "esmf":
-                myfun.canonicalise()
+                myfun.canonicalize()
             # Get the prefix for this solution
             count += 1
             tag = "{:04d}".format(count)

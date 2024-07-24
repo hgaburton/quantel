@@ -1,27 +1,35 @@
 #!/usr/bin/python3
 
-from abc import ABCMeta, abstractmethod, abstractproperty
+from abc import ABCMeta, abstractmethod
 import numpy as np
 import scipy.linalg
 
 class Function(metaclass=ABCMeta):
     """Abstract base class for a real-valued objective function"""
-    @abstractproperty
+    @property
+    @abstractmethod
     def dim(self):
         """Number of variables"""
-        pass 
-
-    @abstractproperty
-    def value(self):
-        """Get the corresponding variational value"""
         pass
 
-    @abstractproperty
+    @property
+    @abstractmethod
+    def value(self):
+        """Get the corresponding variational value
+            
+        Returns:
+            The corresponding variational value.
+        """
+        pass
+
+    @property
+    @abstractmethod
     def gradient(self):
         """Get the function gradient"""
         pass
 
-    @abstractproperty
+    @property
+    @abstractmethod
     def hessian(self):
         """Get the Hessian matrix of second-derivatives"""
         pass

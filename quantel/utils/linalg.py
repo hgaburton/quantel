@@ -5,22 +5,70 @@ import numpy as np
 from scipy.linalg import expm as scipy_expm
 
 def random_rot(n, lmin, lmax):
+    """
+    Generate a random rotation matrix of size n x n.
+
+    Parameters:
+    - n (int): The size of the rotation matrix.
+    - lmin (float): The minimum value for the random matrix elements.
+    - lmax (float): The maximum value for the random matrix elements.
+
+    Returns:
+    - numpy.ndarray: The random rotation matrix.
+    """
     X = lmin + np.random.rand(n,n) * (lmax - lmin)
     X = np.tril(X)  - np.tril(X).T
     return scipy_expm(X)
 
+def delta_kron(i, j):
+    """
+    Returns the Kronecker delta function value for the given indices.
+
+    Parameters:
+    i (int): The first index.
+    j (int): The second index.
+
+    Returns:
+    int: The value of the Kronecker delta function.
+    """
+    if i == j:
+        return 1
+    else:
+        return 0
 def delta_kron(i,j):
     if i==j: return 1
     else: return 0
 
 def sym_orthogonalise(mat, metric, thresh=1e-10):
+    """
+    Orthogonalizes a matrix with respect to a symmetric metric.
+
+    Parameters:
+    - mat: The matrix to be orthogonalized.
+    - metric: The symmetric metric used for orthogonalization.
+    - thresh: The threshold value for eigenvalue truncation (default: 1e-10).
+
+    Returns:
+    - The orthogonalized matrix.
+    """
     S = mat.T.dot(metric.dot(mat))
     eigval, eigvec = np.linalg.eigh(S)
     X = eigvec.dot(np.diag(np.power(eigval,-0.5)))
     return mat.dot(X)
 
 def orthogonalise(mat, metric, thresh=1e-10, fill=True):
-    '''Orthogonalise the columns of mat with respect to the metric tensor'''
+    '''
+    Orthogonalise the columns of mat with respect to the metric tensor.
+
+    Parameters:
+        mat (ndarray): The matrix whose columns need to be orthogonalised.
+        metric (ndarray): The metric tensor used for orthogonalisation.
+        thresh (float, optional): The threshold for the orthogonality test. Defaults to 1e-10.
+        fill (bool, optional): Whether to fill the matrix with random values if the number of columns is less than the metric tensor. Defaults to True.
+
+    Returns:
+        ndarray: The orthogonalised matrix.
+    '''
     nc = mat.shape[1]
 
     if nc < metric.shape[1] and fill:

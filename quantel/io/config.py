@@ -32,11 +32,11 @@ class Config(dict):
 
     def parse_molecule(self):
         """Read keywords that define the molecular system"""
-        self["molecule"] = dict(charge = getvalue(self.lines,"charge",int,True),
-                                spin = getvalue(self.lines,"spin",int,True),
-                                basis = getvalue(self.lines,"basis",str,True), 
-                                unit = getvalue(self.lines,"units",str,False,"Ang")
+        self["molecule"] = dict(basis = getvalue(self.lines,"basis",str,True), 
+                                unit = getvalue(self.lines,"units",str,False,"angstrom")
                                )
+        if (self["molecule"]["unit"] == "ang") or (self["molecule"]["unit"] == "a"):
+            self["molecule"]["unit"] = "angstrom"
 
             
     def parse_wavefunction(self):
@@ -46,29 +46,19 @@ class Config(dict):
         # Get keywords for each allowed method
         if self["wavefunction"]["method"] == "esmf":
             # TODO: Add support for triplet states 
-            self["wavefunction"]["esmf"] = dict(ref_allowed = getbool(self.lines,"with_ref",False,True))
+            self["wavefunction"]["esmf"] = dict(with_ref = getbool(self.lines,"with_ref",False,True))
         
         elif self["wavefunction"]["method"] == "pp":
             self["wavefunction"]["pp"] = dict()
 
-        elif self["wavefunction"]["method"] == "pcid":
-            self["wavefunction"]["pcid"] = dict()
+        elif self["wavefunction"]["method"] == "rhf":
+            self["wavefunction"]["rhf"] = dict()
 
         elif self["wavefunction"]["method"] == "casscf":
             self["wavefunction"]["casscf"] = dict(active_space = getlist(self.lines,"active_space",int,True))
 
         elif self["wavefunction"]["method"] == "csf":
-            self["wavefunction"]["csf"] = dict(g_coupling = getvalue(self.lines,"genealogical_coupling",str,False),
-                                               mo_basis = getvalue(self.lines,"mo_basis",str,False),
-                                               active = getlist(self.lines,"active_orbitals",int,False),
-                                               active_space=getlist(self.lines,"active_space",int,False),
-                                               core = getlist(self.lines,"core_orbitals",int,False),
-                                               permutation = getlist(self.lines,"coupling_permutation",int,False),
-                                               stot = getvalue(self.lines,"total_spin",float,True),
-                                               csf_build = getvalue(self.lines,"csf_build",str,True),
-                                               localstots = getlist(self.lines,"local_spins",float,False),
-                                               active_subspaces = getlist(self.lines,"active_subspaces",int,False)
-                                              )
+            self["wavefunction"]["csf"] = dict(spin_coupling = getvalue(self.lines,"genealogical_coupling",str,True))
 
 
     def parse_optimiser(self):
@@ -87,6 +77,7 @@ class Config(dict):
                                                     maxstep = getvalue(self.lines,"maxstep",float,False,default=numpy.pi),
                                                     hesstol = getvalue(self.lines,"hesstol",float,False,1e-16)
                                                     )
+
 
         else:
             errstr = "Requested optimiser '"+self["optimiser"]["algorithm"]+"' is not available"

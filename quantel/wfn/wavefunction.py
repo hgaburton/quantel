@@ -1,11 +1,12 @@
 #!/usr/bin/python3
 
-from abc import ABCMeta, abstractmethod, abstractproperty
-from exelsis.opt.function import Function
+from abc import ABCMeta, abstractmethod
+from quantel.opt.function import Function
 
 class Wavefunction(Function,metaclass=ABCMeta):
     """Abstract base class for a wavefunction object"""
-    @abstractproperty
+    @property 
+    @abstractmethod
     def energy(self):
         """Get the wavefunction energy"""
         pass
