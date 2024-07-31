@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <tuple>
+#include <cstdint>
 #include "excitation.h"
 
 class Determinant {

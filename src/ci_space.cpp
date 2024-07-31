@@ -1,4 +1,5 @@
 #include "ci_space.h"
+#include <cstdint>
 #include <omp.h>
 
 void CIspace::initialize(std::string citype, std::vector<std::string> detlist)
