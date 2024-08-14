@@ -4,8 +4,8 @@
 
 import numpy as np
 import scipy, quantel, h5py, warnings
-from quantel.utils.csf_utils import get_csf_vector, get_vector_coupling, get_shells, get_shell_exchange
-from quantel.utils.linalg import delta_kron, orthogonalise
+from quantel.utils.csf_utils import get_csf_vector, get_shells, get_shell_exchange
+from quantel.utils.linalg import orthogonalise
 from quantel.gnme.csf_noci import csf_coupling
 from .wavefunction import Wavefunction
 import time
@@ -105,10 +105,9 @@ class GenealogicalCSF(Wavefunction):
         self.beta = get_shell_exchange(self.ncore,self.shell_indices, self.spin_coupling)
         self.nshell = len(self.shell_indices)
 
+        # Setup CI space        
         self.detlist, self.civec = get_csf_vector(spin_coupling)
         self.ndet = len(self.detlist)
-
-        # Setup CI space
         self.cispace = quantel.CIspace(self.mo_ints, self.cas_nmo, self.cas_nalfa, self.cas_nbeta)
         self.cispace.initialize('custom', self.detlist)
         self.csf_dm1, self.csf_dm2 = self.get_active_rdm_12()
@@ -206,12 +205,12 @@ class GenealogicalCSF(Wavefunction):
         # Slices for easy indexing
         self.pooo = self.pppo[:,:nocc,:nocc,:nocc]
         self.ppoo = self.pppo[:,:,:nocc,:nocc]
-        self.popo = self.pppo[:,:nocc,:,:nocc]
+        #self.popo = self.pppo[:,:nocc,:,:nocc]
 
         # Construct core potential outside active space
-        #dm_core = np.dot(self.mo_coeff[:,:self.ncore], self.mo_coeff[:,:self.ncore].T)
-        #v_jk = self.integrals.build_JK(dm_core)
-        #self.vhf_c = np.linalg.multi_dot([self.mo_coeff.T, v_jk, self.mo_coeff])
+        dm_core = np.dot(self.mo_coeff[:,:self.ncore], self.mo_coeff[:,:self.ncore].T)
+        v_jk = self.integrals.build_JK(dm_core)
+        self.vhf_c = np.linalg.multi_dot([self.mo_coeff.T, v_jk, self.mo_coeff])
         self.vhf_c = (2 * np.einsum('pqii->pq',self.pppo[:,:,:ncore,:ncore],optimize='optimal')
                         - np.einsum('ipqi->pq',self.pppo[:ncore,:,:,:ncore],optimize='optimal'))
 
@@ -654,37 +653,15 @@ class GenealogicalCSF(Wavefunction):
                 mask[frozen] = mask[:, frozen] = False
         return mask
 
-    def get_gcoupling_partition(self):
-        r"""
-        Partition a genealogical coupling scheme.
-        e.g. ++-- -> [2, 2]
-             +-+++--+ -> [1, 1, 3, 2, 1]
-        For ease of use, we will convert the integer array (A) into another array of equal dimension (B),
-        such that B[n] = A[0] + A[1] + ... +  A[n-1]
-        """
-        arr = []
-        g_coupling_arr = list(self.g_coupling)
-        count = 1
-        ref = g_coupling_arr[0]
-        for i, gfunc in enumerate(g_coupling_arr[1:]):
-            if gfunc == ref:
-                count += 1
-            else:
-                arr.append(count)
-                ref = gfunc
-                count = 1
-        remainder = len(g_coupling_arr) - np.sum(arr)
-        arr.append(remainder)
-        partition_instructions = [0]
-        for i, dim in enumerate(arr):
-            partition_instructions.append(dim + partition_instructions[-1])
-        return partition_instructions
-
     def canonicalize(self):
         """
         Forms the canonicalised MO coefficients by diagonalising invariant subblocks of the Fock matrix
         """
-        fock = self.F_core + self.F_active
+        # Compute Fock matrix in AO basis from J and K matrices
+        Fao  = self.integrals.oei_matrix(True) + self.J - 0.5 * np.einsum('ipq->pq',self.vK)
+        # Transform to MO basis
+        fock = np.linalg.multi_dot([self.mo_coeff.T, Fao, self.mo_coeff])
+
         # Get occ-occ and vir-vir blocks of (pseudo) Fock matrix
         foo = fock[:self.ncore, :self.ncore]
         faa = fock[self.ncore:self.nocc, self.ncore:self.nocc]
@@ -705,6 +682,5 @@ class GenealogicalCSF(Wavefunction):
         self.mo_occ = np.zeros(self.nmo)
         self.mo_occ[:self.ncore] = 2
         self.mo_occ[self.ncore:self.nocc] = 1
-
 
         return
