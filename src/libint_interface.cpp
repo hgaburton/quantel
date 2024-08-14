@@ -333,6 +333,42 @@ void LibintInterface::build_J(std::vector<double> &dens, std::vector<double> &J)
     }
 }
 
+void LibintInterface::build_multiple_JK(
+    std::vector<double> &DJ, std::vector<double> &vDK, 
+    std::vector<double> &J, std::vector<double> &vK, size_t nk)
+{
+    // Check dimensions of density matrix
+    assert(DJ.size() == m_nbsf * m_nbsf);
+    // Check dimensions of exchange matrices
+    assert(vDK.size() == nk * m_nbsf * m_nbsf);
+
+    // Resize J matrix
+    J.resize(m_nbsf*m_nbsf);
+    std::fill(J.begin(),J.end(),0.0);
+    // Resize K matrices
+    vK.resize(nk * m_nbsf * m_nbsf);
+    std::fill(vK.begin(),vK.end(),0.0);
+
+    // Loop over basis functions
+    #pragma omp parallel for collapse(2)
+    for(size_t p=0; p < m_nbsf; p++)
+    for(size_t q=0; q < m_nbsf; q++)
+    {
+        // Two-electron contribution
+        for(size_t s=0; s < m_nbsf; s++)
+        for(size_t r=0; r < m_nbsf; r++)
+        {
+            double vprqs = tei(p,r,q,s,true,false);
+            double vpsrq = tei(p,s,r,q,true,false);
+            // Build JK matrix
+            J[oei_index(p,q)] += DJ[oei_index(s,r)] * vprqs;
+            // Build K matrices
+            for(size_t k=0; k < nk; k++)
+                vK[k*m_nbsf*m_nbsf+oei_index(p,q)] += vDK[k*m_nbsf*m_nbsf+oei_index(s,r)] * vpsrq;
+        }
+    }
+}
+
 void LibintInterface::tei_ao_to_mo(
     std::vector<double> &C1, std::vector<double> &C2, 
     std::vector<double> &C3, std::vector<double> &C4, 

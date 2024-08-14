@@ -80,6 +80,15 @@ public:
     /// @param JK output JK matrix
     void build_JK(std::vector<double> &dens, std::vector<double> &JK);
 
+    /// Build J and K matrices from a list of density matrices
+    /// @param DJ density matrix
+    /// @param vDK Vector of density matrices
+    /// @param J output J matrix
+    /// @param vK Vector of output K matrix
+    /// @param nk number of density matrices for exchange build
+    void build_multiple_JK(std::vector<double> &DJ, std::vector<double> &vDK, 
+                           std::vector<double> &J, std::vector<double> &vK, size_t nk);
+
     /// Build a J matrix
     /// @param D density matrix
     /// @param J output J matrix

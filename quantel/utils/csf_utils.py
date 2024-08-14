@@ -1,5 +1,6 @@
 import sys, itertools
 import numpy as np
+from quantel.utils.guga import e_ijji
 
 def get_coupling_coefficient(Tn, Pn, tn, pn):
     """ Computes the coupling coefficient C_{tn, pn}^{Tn, Pn}
@@ -91,3 +92,79 @@ def get_csf_vector(csf):
     # Modify determinant list to occupation strings
     detlist = [det.replace('+','a').replace('-','b') for det in detlist]
     return detlist, civec
+
+def distinct_row_table(spin_coupling):
+    """ Get the distinct row table for a given spin coupling pattern
+            :param spin_coupling:
+            :return:
+    """
+    return np.array([1 if s == '+' else 2 for s in spin_coupling])
+
+def b_vector(spin_coupling):
+    """ Get the b vector for a given spin coupling pattern
+            :param spin_coupling:
+            :return:
+    """
+    delta_b = [1 if s == '+' else -1 for s in spin_coupling]
+    return np.cumsum(delta_b)
+
+def get_vector_coupling(nmo, ncore, nocc, spin_coupling):
+    """ Compute the vector coupling for active orbitals
+            Computes the alpha and beta coefficients for open-shell states
+    """
+    # Get the number of active orbitals
+    nact = nocc - ncore
+
+    # Coulomb coupling matrix
+    aij = np.zeros((nmo,nmo))
+    aij[:ncore,:ncore] = 4
+    aij[:ncore,ncore:nocc] = 2
+    aij[ncore:nocc,:ncore] = 2
+    aij[ncore:nocc,ncore:nocc] = 1
+
+    # Exchange coupling matrix
+    bij = np.zeros((nmo,nmo))
+    bij[:ncore,:ncore] = -2
+    bij[:ncore,ncore:nocc] = -1
+    bij[ncore:nocc,:ncore] = -1
+    # Contributions from GUGA
+    drt = distinct_row_table(spin_coupling)
+    bvec = b_vector(spin_coupling)
+    for i in range(nact):
+        for j in range(nact):
+            bij[i+ncore,j+ncore] = e_ijji(bvec,drt,i,j)
+
+    return aij, bij
+
+def get_shell_exchange(ncore, shell_indices, spin_coupling):
+    """ Compute the exchange contributions for each unique shell pair"""
+    # Get the distinct row table and b vector
+    drt = distinct_row_table(spin_coupling)
+    bvec = b_vector(spin_coupling)
+    
+    # Get the number of shells
+    nshell = len(shell_indices)
+    # Compute beta matrix
+    beta = np.zeros((nshell,nshell))
+    for w in range(nshell):
+        for v in range(w,nshell):
+            beta[w,v] = e_ijji(bvec,drt,shell_indices[w][0]-ncore,shell_indices[v][0]-ncore)
+            beta[v,w] = beta[w,v]
+    return beta
+
+def get_shells(ncore, spin_coupling):
+    """ Get the indices of orbitals within shells
+            :param ncore:
+            :param spin_coupling:
+            :return:
+    """
+    # Initialise with core (doubly occupied) shell
+    core_indices = list(range(ncore))
+    shell_indices = []
+    if(len(spin_coupling)>0):
+        # Get indices for each shell
+        active_shells = np.cumsum([0 if i==0 else spin_coupling[i-1]!=spin_coupling[i] 
+                                for i in range(len(spin_coupling ))])
+        for i in range(active_shells[-1]+1):
+            shell_indices.append((ncore+np.argwhere(active_shells==i).ravel()).tolist())
+    return core_indices, shell_indices

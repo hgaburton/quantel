@@ -15,16 +15,22 @@
 namespace py = pybind11;
 using namespace pybind11::literals;
 
-py::array_t<double,py::array::c_style> vec_to_np_array(size_t m, double *data)
+py::array_t<double,py::array::c_style> vec_to_np_array(size_t d1, double *data)
 {
-     py::array_t<double,py::array::c_style> array(m,data);
-     return array.reshape({m});
+     py::array_t<double,py::array::c_style> array(d1,data);
+     return array.reshape({d1});
 }
 
-py::array_t<double,py::array::c_style> vec_to_np_array(size_t m, size_t n, double *data)
+py::array_t<double,py::array::c_style> vec_to_np_array(size_t d1, size_t d2, double *data)
 {
-     py::array_t<double,py::array::c_style> array(m*n,data);
-     return array.reshape({m,n});
+     py::array_t<double,py::array::c_style> array(d1*d2,data);
+     return array.reshape({d1,d2});
+}
+
+py::array_t<double,py::array::c_style> vec_to_np_array(size_t d1, size_t d2, size_t d3, double *data)
+{
+     py::array_t<double,py::array::c_style> array(d1*d2*d3,data);
+     return array.reshape({d1,d2,d3});
 }
 
 py::array_t<double,py::array::c_style> vec_to_np_array(size_t d1, size_t d2, size_t d3, size_t d4, double *data)
@@ -254,6 +260,20 @@ PYBIND11_MODULE(_quantel, m) {
                return vec_to_np_array(nbsf,nbsf,v_j.data()); 
                },
                "Build J matrix from density matrix")
+          .def("build_multiple_JK", [](LibintInterface &ints, 
+                    py::array_t<double> &DJ, py::array_t<double> &vDK, size_t nk) {
+               size_t nbsf = ints.nbsf();
+               auto DJ_buf = DJ.request();
+               auto vDK_buf = vDK.request();
+               std::vector<double> v_DJ((double *) DJ_buf.ptr, (double *) DJ_buf.ptr + DJ_buf.size);
+               std::vector<double> v_vDK((double *) vDK_buf.ptr, (double *) vDK_buf.ptr + vDK_buf.size);
+               std::vector<double> v_J(nbsf*nbsf,0.0);
+               std::vector<double> v_K(nbsf*nbsf*nk,0.0);
+               ints.build_multiple_JK(v_DJ,v_vDK,v_J,v_K,nk);
+               return std::make_tuple(vec_to_np_array(nbsf,nbsf,v_J.data()), vec_to_np_array(nk,nbsf,nbsf,v_K.data()));
+               },
+               "Build J and K matrices from a list of density matrices"
+          )
           .def("overlap_matrix", [](LibintInterface &ints) { 
                return vec_to_np_array(ints.nbsf(), ints.nbsf(), ints.overlap_matrix()); 
                },

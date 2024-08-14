@@ -30,7 +30,8 @@ class EigenFollow:
         kernel_start_time = datetime.datetime.now() # Save initial time
 
         if plev>0: print()
-        if plev>0: print("  Initializing Eigenvector Following...")
+        if plev>0: print( "  Initializing Eigenvector Following...")
+        if plev>0 and (not index == None): print(f"    Target Hessian index = {index: 5d}") 
 
         # Initialise reference energy
         eref = obj.energy

@@ -4,10 +4,11 @@
 
 import numpy as np
 import scipy, quantel, h5py, warnings
-from quantel.utils.csf_utils import get_csf_vector
+from quantel.utils.csf_utils import get_csf_vector, get_vector_coupling, get_shells, get_shell_exchange
 from quantel.utils.linalg import delta_kron, orthogonalise
 from quantel.gnme.csf_noci import csf_coupling
 from .wavefunction import Wavefunction
+import time
 
 
 class GenealogicalCSF(Wavefunction):
@@ -94,8 +95,16 @@ class GenealogicalCSF(Wavefunction):
         self.nocc = self.ncore + self.cas_nmo
         self.sanity_check()
 
-        # Get determinant list and coefficient vector
+        # Get determinant list and CSF occupation/coupling vectors
         self.spin_coupling = spin_coupling
+        self.core_indices, self.shell_indices = get_shells(self.ncore,self.spin_coupling)
+        self.mo_occ = np.zeros(self.nmo)
+        self.mo_occ[:self.nocc] = 2
+        self.mo_occ[self.ncore:self.nocc] = 1
+        # Get information about the electron shells
+        self.beta = get_shell_exchange(self.ncore,self.shell_indices, self.spin_coupling)
+        self.nshell = len(self.shell_indices)
+
         self.detlist, self.civec = get_csf_vector(spin_coupling)
         self.ndet = len(self.detlist)
 
@@ -122,9 +131,17 @@ class GenealogicalCSF(Wavefunction):
         """ Compute the energy corresponding to a given set of
              one-el integrals, two-el integrals, 1- and 2-RDM
         """
-        E = self.energy_core
-        E += np.einsum('pq,pq', self.h1eff, self.csf_dm1, optimize="optimal")
-        E += 0.5 * np.einsum('pqrs,pqrs', self.h2eff, self.csf_dm2, optimize="optimal")
+        # Nuclear repulsion
+        E = self.integrals.scalar_potential()
+        # One-electron energy
+        E += np.einsum('pq,qp',self.dj,self.integrals.oei_matrix(True))
+        # Coulomb energy
+        E += 0.5 * np.einsum('pq,qp',self.dj,self.J)
+        # Exchange energy
+        E -= 0.25 * np.einsum('pq,qp',self.dj,self.vK[0])
+        for w in range(self.nshell):
+            E += 0.5 * np.einsum('pq,qp',self.vK[1+w], 
+                                         np.einsum('v,vpq->pq',self.beta[w],self.dk[1:]) - 0.5 * self.dk[0])
         return E
 
     @property
@@ -154,26 +171,6 @@ class GenealogicalCSF(Wavefunction):
             raise RuntimeError("Hessian calculation not allowed with 'nohess' flag")
         return (self.get_hessianOrbOrb()[:, :, self.rot_idx])[self.rot_idx, :]
 
-    def get_variance(self):
-        """ Compute the variance of the energy with respect to the current wave function
-            This approach makes use of MRCISD sigma vector"""
-        # Build full MO integral object
-        mo_ints = quantel.MOintegrals(self.integrals)
-        mo_ints.update_orbitals(self.mo_coeff,0,self.nmo)
-        
-        # Build full CI space
-        nvir = self.nmo - self.nocc
-        fulldets = [self.ncore*'2'+st+nvir*'0' for st in self.detlist]
-        mrcisd = quantel.CIspace(mo_ints, self.nmo, self.nalfa, self.nbeta)
-        mrcisd.initialize('custom', fulldets)
-
-        # Compute variance
-        E, var = mrcisd.get_variance(self.civec)
-        if(abs(E - self.energy) > 1e-12):
-            raise RuntimeError("GenealogicalCSF:get_variance: Energy mismatch in variance calculation")
-        
-        return var
-
     def get_active_rdm_12(self):
         """ Compute the 1- and 2-electron reduced density matrices in the active space.
             returns:
@@ -193,18 +190,18 @@ class GenealogicalCSF(Wavefunction):
     
     def update_integrals(self):
         """ Update the integrals with current set of orbital coefficients"""
-        #self.mo_ints.update_orbitals(self.mo_coeff,self.ncore,self.cas_nmo)
-        # Effective integrals in active space
-        #self.energy_core = self.mo_ints.scalar_potential()
-        #self.h1eff = self.mo_ints.oei_matrix(True)
-        #self.h2eff = self.mo_ints.tei_array(True,False).transpose(0,2,1,3)
-
         nocc = self.nocc
         ncore = self.ncore
+
+        # Update density matrices
+        self.dj, self.dk = self.get_density_matrices()
+        # Update JK matrices  
+        self.J, self.vK = self.get_JK_matrices(self.dj,self.dk)
 
         # 1 and 2 electron integrals outside active space
         self.h1e = np.linalg.multi_dot([self.mo_coeff.T, self.integrals.oei_matrix(True), self.mo_coeff])
         Cocc = self.mo_coeff[:,:nocc].copy()
+        Cact = self.mo_coeff[:,ncore:nocc].copy() 
         self.pppo = self.integrals.tei_ao_to_mo(self.mo_coeff,self.mo_coeff,self.mo_coeff,Cocc,True,False).transpose(0,2,1,3)
         # Slices for easy indexing
         self.pooo = self.pppo[:,:nocc,:nocc,:nocc]
@@ -233,7 +230,6 @@ class GenealogicalCSF(Wavefunction):
         self.get_fock_matrices()
         return 
 
-    
     def save_to_disk(self, tag):
         """Save a CSF to disk with prefix 'tag'"""
         # Save hdf5 file with mo coefficients and spin coupling
@@ -246,7 +242,7 @@ class GenealogicalCSF(Wavefunction):
         # Save numpy txt file with energy and Hessian index
         hindices = self.get_hessian_index()
         with open(tag+".solution", "w") as F:
-            F.write(f"{self.energy:18.12f} {hindices[0]:5d} {hindices[1]:5d} {self.s2:12.6f}\n")
+            F.write(f"{self.energy:18.12f} {hindices[0]:5d} {hindices[1]:5d} {self.s2:12.6f} {self.spin_coupling:s}\n")
         return 
     
     def read_from_disk(self, tag):
@@ -319,6 +315,57 @@ class GenealogicalCSF(Wavefunction):
         orb_step[self.rot_idx] = step
         self.mo_coeff = np.dot(self.mo_coeff, scipy.linalg.expm(orb_step - orb_step.T))
 
+    def get_density_matrices(self):
+        """ Compute total density matrix and relevant matrices for K build"""
+        # Total density for J matrix. Initialise with core contribution
+        dj = 2 * self.mo_coeff[:,:self.ncore] @ self.mo_coeff[:,:self.ncore].T
+        # Shell densities for K matrix
+        dk = np.zeros((self.nshell+1,self.nbsf,self.nbsf))
+        dk[0] = dj
+        # Loop over shells
+        for Ishell in range(self.nshell):
+            shell    = self.shell_indices[Ishell]
+            dk[Ishell+1] = self.mo_occ[shell[0]] * self.mo_coeff[:,shell] @ self.mo_coeff[:,shell].T
+            dj += dk[Ishell+1]
+        return dj, dk
+
+    def get_JK_matrices(self,dj,dk):
+        ''' Compute the JK matrices'''
+        # Call integrals object to build J and K matrices
+        J, vK = self.integrals.build_multiple_JK(dj,dk,1+self.nshell)        
+        return J, vK
+
+    def get_generalised_fock(self, csf_dm1, csf_dm2):
+        """ Compute the generalised Fock matrix"""
+        # Initialise memory
+        F = np.zeros((self.nmo, self.nmo))
+        
+        # Core contribution
+        Fcore_ao = 2*(self.integrals.oei_matrix(True) + self.J 
+                      - 0.5 * np.sum(self.vK[i] for i in range(self.nshell+1)))
+        # AO-to-MO transformation
+        Ccore = self.mo_coeff[:,:self.ncore]
+        F[:self.ncore,:] = np.linalg.multi_dot([Ccore.T, Fcore_ao, self.mo_coeff])
+
+        # Open-shell contributions
+        for W in range(self.nshell):
+            # Get shell indices and coefficients
+            shell = self.shell_indices[W]
+            Cw = self.mo_coeff[:,shell]
+            # One-electron matrix, Coulomb and core exchange
+            Fw_ao = self.integrals.oei_matrix(True) + self.J - 0.5 * self.vK[0]
+            # Different shell exchange
+            Fw_ao += np.einsum('v,vpq->pq',self.beta[W],self.vK[1:])
+            # AO-to-MO transformation
+            F[shell,:] = np.linalg.multi_dot([Cw.T, Fw_ao, self.mo_coeff])
+        return 2 * F.T
+
+    def get_orbital_gradient(self):
+        ''' This method builds the orbital part of the gradient '''
+        g_orb = self.get_generalised_fock(self.csf_dm1, self.csf_dm2)
+        return (g_orb - g_orb.T)[self.rot_idx]
+    
+
     def get_fock_matrices(self):
         ''' Compute the core part of the generalized Fock matrix '''
         # Core contribution is just effective 1-electron matrix
@@ -330,23 +377,6 @@ class GenealogicalCSF(Wavefunction):
         self.F_active = np.linalg.multi_dot([self.mo_coeff.T, self.F_active, self.mo_coeff])
         return
 
-    def get_generalised_fock(self, csf_dm1, csf_dm2):
-        """ Compute the generalised Fock matrix"""
-        ncore = self.ncore
-        nocc  = self.nocc
-        F = np.zeros((self.nmo, self.nmo))
-        F[:ncore, :] = 2 * (self.F_core[:,:ncore] + self.F_active[:, :ncore]).T
-        F[ncore:nocc,:] += np.dot(csf_dm1, self.F_core[:,ncore:nocc].T)
-
-        # 2-electron active space component
-        F[ncore:nocc,:] += np.einsum('vwxy,nwxy->vn',csf_dm2,self.pooo[:,ncore:,ncore:,ncore:],optimize='optimal')
-
-        return 2 * F.T
-
-    def get_orbital_gradient(self):
-        ''' This method builds the orbital part of the gradient '''
-        g_orb = self.get_generalised_fock(self.csf_dm1, self.csf_dm2)
-        return (g_orb - g_orb.T)[self.rot_idx]
 
     def get_hessianOrbOrb(self):
         ''' This method build the orb-orb part of the hessian '''
@@ -614,7 +644,7 @@ class GenealogicalCSF(Wavefunction):
         if self.spin_coupling is not None:
             mask[self.ncore:self.nocc, self.ncore:self.nocc] = self.edit_mask_by_gcoupling(
                 mask[self.ncore:self.nocc,self.ncore:self.nocc])
-
+            
         # Account for any frozen orbitals   
         if frozen is not None:
             if isinstance(frozen, (int, np.integer)):
