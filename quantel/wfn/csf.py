@@ -111,6 +111,9 @@ class GenealogicalCSF(Wavefunction):
         # Initialise integrals
         if (integrals): self.update_integrals()
 
+    def deallocate(self):
+        pass
+
     @property
     def dim(self):
         """Number of degrees of freedom"""
@@ -168,9 +171,10 @@ class GenealogicalCSF(Wavefunction):
         for i in range(self.nmo):
             Hess[i,:,i,:] += 2 * self.mo_occ[i] * h1e
             Hess[:,i,:,i] -= F
-
+       
         # Apply permutation symmetries
-        Hess = Hess - Hess.transpose(1,0,2,3) - Hess.transpose(0,1,3,2) + Hess.transpose(1,0,3,2)
+        Hess = Hess - Hess.transpose(1,0,2,3)
+        Hess = Hess - Hess.transpose(0,1,3,2)
 
         # Reshape and return
         return (Hess[:, :, self.rot_idx])[self.rot_idx, :]
