@@ -69,29 +69,31 @@ def get_determinant_coefficient(det, tn, Tn):
 
     return coeff * phase
 
-
-def get_csf_vector(csf):
-    """ Get the list of determinants and their coefficients for a given CSF
+def get_csf_vector(spin_coupling):
+    """ Iterate over the list of determinants and their coefficients for a given CSF
             :param csf:
             :return:
     """   
     # Check CSF vector is valid
-    if(len(csf)==0):
-        return [''], [1]
-    if(csf[0]!='+'):
+    n  = len(spin_coupling)
+    if(n==0):
+        return '', 1
+    if(spin_coupling[0]!='+'):
         raise RuntimeError("Invalid spin coupling pattern")
+
     # Get the CSF vectors
-    tn, Tn = get_Tn(csf)
+    tn, Tn = get_Tn(spin_coupling)
 
-    # Get the determinant list and corresponding CI vector
-    detlist = list(set([''.join(p) for p in itertools.permutations(csf)]))
-    detlist.sort()
-    civec = [get_determinant_coefficient(det, tn, Tn) for det in detlist]
-    civec = civec / np.linalg.norm(civec)
-
-    # Modify determinant list to occupation strings
-    detlist = [det.replace('+','a').replace('-','b') for det in detlist]
-    return detlist, civec
+    na = np.sum([s=='+' for s in spin_coupling])
+    for occa in itertools.combinations(range(n),na):
+        # Set occupation vector
+        occ = np.zeros(n)
+        occ[list(occa)] = 1
+        # Get determinant string
+        det = ''.join(['+' if oi==1 else '-' for oi in occ])
+        # Get coefficient
+        coeff = get_determinant_coefficient(det, tn, Tn)
+        yield det.replace('+','a').replace('-','b'), coeff
 
 def distinct_row_table(spin_coupling):
     """ Get the distinct row table for a given spin coupling pattern

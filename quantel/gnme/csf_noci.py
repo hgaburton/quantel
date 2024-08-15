@@ -1,5 +1,6 @@
 from pygnme import wick, owndata
 from quantel.gnme.utils import occstring_to_bitset
+from quantel.utils.csf_utils import get_csf_vector
 
 def csf_coupling(csf1, csf2, metric, hcore=None, eri=None, enuc=0.0, thresh=1e-10):
     # Convert integral matrices to pygnme-friendly format
@@ -37,12 +38,12 @@ def csf_coupling(csf1, csf2, metric, hcore=None, eri=None, enuc=0.0, thresh=1e-1
         h2e = owndata(eri)
         mb.add_two_body(h2e)
 
-    for cix, detx in zip(csf1.civec, csf1.detlist):
+    for (detx, cix) in get_csf_vector(csf1.spin_coupling):
         if(abs(cix) < thresh):
             continue
         bax, bbx = occstring_to_bitset(detx)
         
-        for ciw, detw in zip(csf2.civec, csf2.detlist):
+        for detw, ciw in get_csf_vector(csf2.spin_coupling):
             if(abs(ciw) < thresh):
                 continue
             baw, bbw = occstring_to_bitset(detw)

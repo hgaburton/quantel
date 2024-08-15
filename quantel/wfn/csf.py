@@ -23,7 +23,7 @@ class GenealogicalCSF(Wavefunction):
             - save_last_step
             - restore_step
     """
-    def __init__(self, integrals, spin_coupling, verbose=0, nohess=False):
+    def __init__(self, integrals, spin_coupling, verbose=0):
         """ Initialise the CSF wave function
                 integrals     : quantel integral interface
                 spin_coupling : genealogical coupling pattern
@@ -44,8 +44,6 @@ class GenealogicalCSF(Wavefunction):
         # Get number of basis functions and linearly independent orbitals
         self.nbsf       = integrals.nbsf()
         self.nmo        = integrals.nmo()
-        # Record whether Hessian allowed
-        self.nohess     = nohess
     
     
     def sanity_check(self):
@@ -105,13 +103,6 @@ class GenealogicalCSF(Wavefunction):
         self.beta = get_shell_exchange(self.ncore,self.shell_indices, self.spin_coupling)
         self.nshell = len(self.shell_indices)
 
-        # Setup CI space        
-        self.detlist, self.civec = get_csf_vector(spin_coupling)
-        self.ndet = len(self.detlist)
-        self.cispace = quantel.CIspace(self.mo_ints, self.cas_nmo, self.cas_nalfa, self.cas_nbeta)
-        self.cispace.initialize('custom', self.detlist)
-        self.csf_dm1, self.csf_dm2 = self.get_active_rdm_12()
-
         # Save mapping indices for unique orbital rotations
         self.frozen     = None
         self.rot_idx    = self.uniq_var_indices(self.frozen)
@@ -140,13 +131,13 @@ class GenealogicalCSF(Wavefunction):
         E -= 0.25 * np.einsum('pq,qp',self.dj,self.vK[0])
         for w in range(self.nshell):
             E += 0.5 * np.einsum('pq,qp',self.vK[1+w], 
-                                         np.einsum('v,vpq->pq',self.beta[w],self.dk[1:]) - 0.5 * self.dk[0])
+                          np.einsum('v,vpq->pq',self.beta[w],self.dk[1:]) - 0.5 * self.dk[0])
         return E
 
     @property
     def sz(self):
         """<S_z> value of the current wave function"""
-        return 0.5*(self.cas_nalfa - self.cas_nbeta)
+        return 0.5 * np.sum([1 if s=='+' else -1 for s in self.spin_coupling])
 
     @property
     def s2(self):
@@ -155,78 +146,84 @@ class GenealogicalCSF(Wavefunction):
                 <S^2> = <Sz> * (<Sz> + 1) + <Nb> - sum_pq G^{ab}_{pqqp} 
             where G^{ab}_{pqqp} is the alfa-beta component of the 2-RDM
         """
-        rdm2ab = self.cispace.rdm2(self.civec,True,False).transpose(0,2,1,3)
-        return abs(self.sz * (self.sz + 1)  + self.cas_nbeta - np.einsum('pqqp',rdm2ab))
+        ms = np.sum([0.5 if s=='+' else -0.5 for s in self.spin_coupling])
+        return self.sz * (self.sz + 1)
 
     @property
     def gradient(self):
         """ Compute the gradient of the energy with respect to the orbital rotations"""
-        return self.get_orbital_gradient()
+        return 2 * (self.gen_fock.T - self.gen_fock)[self.rot_idx]
 
     @property
     def hessian(self):
         ''' This method finds orb-orb part of the Hessian '''
-        if(self.nohess):
-            raise RuntimeError("Hessian calculation not allowed with 'nohess' flag")
-        return (self.get_hessianOrbOrb()[:, :, self.rot_idx])[self.rot_idx, :]
+        # Get generalised Fock and symmetrise
+        F = self.gen_fock + self.gen_fock.T
 
-    def get_active_rdm_12(self):
-        """ Compute the 1- and 2-electron reduced density matrices in the active space.
-            returns:
-                dm1_csf: 1-electron reduced density matrix
-                dm2_csf: 2-electron reduced density matrix
+        # Get one-electron matrix elements 
+        h1e = np.linalg.multi_dot([self.mo_coeff.T, self.integrals.oei_matrix(True), self.mo_coeff])
+
+        # Combine intermediates (Eq. 10.8.53 in Helgaker book) 
+        Hess = 2 * self.get_Y_intermediate()
+        for i in range(self.nmo):
+            Hess[i,:,i,:] += 2 * self.mo_occ[i] * h1e
+            Hess[:,i,:,i] -= F
+
+        # Apply permutation symmetries
+        Hess = Hess - Hess.transpose(1,0,2,3) - Hess.transpose(0,1,3,2) + Hess.transpose(1,0,3,2)
+
+        # Reshape and return
+        return (Hess[:, :, self.rot_idx])[self.rot_idx, :]
+
+    def get_rdm12(self):
+        """ Compute the 1- and 2-electron reduced matrices from the shell coupling in occupied space
+            returns: 
+                dm1: 1-electron reduced density matrix
+                dm2: 2-electron reduced density matrix
         """
-        # Make RDM1
-        csf_rdm1a = self.cispace.rdm1(self.civec, True)
-        csf_rdm1b = self.cispace.rdm1(self.civec, False)
-        csf_rdm1 = csf_rdm1a + csf_rdm1b
-        # Make RDM2 (need to convert phys -> chem notation)
-        csf_rdm2aa = self.cispace.rdm2(self.civec, True, True).transpose(0,2,1,3)
-        csf_rdm2bb = self.cispace.rdm2(self.civec, False, False).transpose(0,2,1,3)
-        csf_rdm2ab = self.cispace.rdm2(self.civec, True, False).transpose(0,2,1,3)
-        csf_rdm2 = csf_rdm2aa + csf_rdm2bb + csf_rdm2ab + csf_rdm2ab.transpose(2,3,0,1)
-        return csf_rdm1, csf_rdm2
-    
-    def update_integrals(self):
-        """ Update the integrals with current set of orbital coefficients"""
+        # Numbers 
         nocc = self.nocc
         ncore = self.ncore
 
-        # Update density matrices
+        # 1-RDM
+        dm1 = np.diag(self.mo_occ[:nocc])
+
+        # 2-RDM
+        dm2 = np.zeros((nocc,nocc,nocc,nocc))
+        for p in range(ncore):
+            for q in range(ncore):
+                if(p==q):
+                    dm2[p,p,p,p] = 2
+                else:
+                    dm2[p,q,p,q] = 4
+                    dm2[p,q,q,p] = - 2
+            for w in range(ncore,nocc):
+                dm2[p,w,p,w] = 2
+                dm2[p,w,w,p] = -1
+                dm2[w,p,w,p] = 2
+                dm2[w,p,p,w] = -1
+
+        for W, sW in enumerate(self.shell_indices):
+            for V, sV in enumerate(self.shell_indices):
+                for w in sW:
+                    for v in sV:
+                        if(w==v):
+                            dm2[w,w,w,w] = 0
+                        else:
+                            dm2[w,v,w,v] = 1 
+                            dm2[w,v,v,w] = self.beta[W,V]
+        return dm1, dm2
+    
+    def update_integrals(self):
+        """ Update the integrals with current set of orbital coefficients"""
+        # Update density matrices (AO basis)
         self.dj, self.dk = self.get_density_matrices()
-        # Update JK matrices  
+        # Update JK matrices (AO basis) 
         self.J, self.vK = self.get_JK_matrices(self.dj,self.dk)
-
-        # 1 and 2 electron integrals outside active space
-        self.h1e = np.linalg.multi_dot([self.mo_coeff.T, self.integrals.oei_matrix(True), self.mo_coeff])
-        Cocc = self.mo_coeff[:,:nocc].copy()
-        Cact = self.mo_coeff[:,ncore:nocc].copy() 
-        self.pppo = self.integrals.tei_ao_to_mo(self.mo_coeff,self.mo_coeff,self.mo_coeff,Cocc,True,False).transpose(0,2,1,3)
-        # Slices for easy indexing
-        self.pooo = self.pppo[:,:nocc,:nocc,:nocc]
-        self.ppoo = self.pppo[:,:,:nocc,:nocc]
-        #self.popo = self.pppo[:,:nocc,:,:nocc]
-
-        # Construct core potential outside active space
-        dm_core = np.dot(self.mo_coeff[:,:self.ncore], self.mo_coeff[:,:self.ncore].T)
-        v_jk = self.integrals.build_JK(dm_core)
-        self.vhf_c = np.linalg.multi_dot([self.mo_coeff.T, v_jk, self.mo_coeff])
-        self.vhf_c = (2 * np.einsum('pqii->pq',self.pppo[:,:,:ncore,:ncore],optimize='optimal')
-                        - np.einsum('ipqi->pq',self.pppo[:ncore,:,:,:ncore],optimize='optimal'))
-
-        # Get effective 1-body Hamiltonian in active space
-        self.h1eff = self.h1e[ncore:nocc,ncore:nocc] + self.vhf_c[ncore:nocc,ncore:nocc]
-
-        # Get effective core energy
-        self.energy_core = self.integrals.scalar_potential()
-        self.energy_core += 2 * np.trace(self.h1e[:ncore,:ncore]) 
-        self.energy_core += np.trace(self.vhf_c[:ncore,:ncore])
-
-        # Get effective 2-body Hamiltonian
-        self.h2eff = self.pppo[ncore:nocc,ncore:nocc,ncore:nocc,ncore:nocc]
-
-        # Fock matrices
-        self.get_fock_matrices()
+        # Get Fock matrix (AO basis)
+        self.fock = self.integrals.oei_matrix(True) + self.J - 0.5 * np.einsum('mpq->pq',self.vK)
+        # Get generalized Fock matrices
+        self.gen_fock = self.get_generalised_fock()
         return 
 
     def save_to_disk(self, tag):
@@ -283,16 +280,6 @@ class GenealogicalCSF(Wavefunction):
         enuc  = self.integrals.scalar_potential()
         return csf_coupling(self, them, ovlp, hcore, eri, enuc)
 
-    def deallocate(self):
-        """ Reduce the memory footprint for storing"""
-        self.ppoo = None
-        self.popo = None
-        self.h1e = None
-        self.h1eff = None
-        self.h2eff = None
-        self.F_core = None
-        self.F_active = None
-
     def restore_last_step(self):
         """ Restore MO coefficients to previous step"""
         self.mo_coeff = self.mo_coeff_save.copy()
@@ -320,7 +307,7 @@ class GenealogicalCSF(Wavefunction):
         dj = 2 * self.mo_coeff[:,:self.ncore] @ self.mo_coeff[:,:self.ncore].T
         # Shell densities for K matrix
         dk = np.zeros((self.nshell+1,self.nbsf,self.nbsf))
-        dk[0] = dj
+        dk[0] = dj.copy()
         # Loop over shells
         for Ishell in range(self.nshell):
             shell    = self.shell_indices[Ishell]
@@ -334,7 +321,7 @@ class GenealogicalCSF(Wavefunction):
         J, vK = self.integrals.build_multiple_JK(dj,dk,1+self.nshell)        
         return J, vK
 
-    def get_generalised_fock(self, csf_dm1, csf_dm2):
+    def get_generalised_fock(self):
         """ Compute the generalised Fock matrix"""
         # Initialise memory
         F = np.zeros((self.nmo, self.nmo))
@@ -357,256 +344,55 @@ class GenealogicalCSF(Wavefunction):
             Fw_ao += np.einsum('v,vpq->pq',self.beta[W],self.vK[1:])
             # AO-to-MO transformation
             F[shell,:] = np.linalg.multi_dot([Cw.T, Fw_ao, self.mo_coeff])
-        return 2 * F.T
 
-    def get_orbital_gradient(self):
-        ''' This method builds the orbital part of the gradient '''
-        g_orb = self.get_generalised_fock(self.csf_dm1, self.csf_dm2)
-        return (g_orb - g_orb.T)[self.rot_idx]
+        return F
     
-
-    def get_fock_matrices(self):
-        ''' Compute the core part of the generalized Fock matrix '''
-        # Core contribution is just effective 1-electron matrix
-        self.F_core = self.h1e + self.vhf_c
-        # Active space contribution
-        Cactive = self.mo_coeff[:,self.ncore:self.nocc].copy()
-        dm_active = np.linalg.multi_dot([Cactive, self.csf_dm1, Cactive.T])
-        self.F_active = 0.5 * self.integrals.build_JK(dm_active)
-        self.F_active = np.linalg.multi_dot([self.mo_coeff.T, self.F_active, self.mo_coeff])
-        return
-
-
-    def get_hessianOrbOrb(self):
-        ''' This method build the orb-orb part of the hessian '''
-        norb = self.nmo
+    def get_Y_intermediate(self):
+        """ Compute the Y intermediate required for Hessian evaluation
+        """
+        # Get required constants
+        nmo   = self.nmo
         ncore = self.ncore
-        ncas = self.cas_nmo
-        nocc = ncore + ncas
-        nvir = norb - nocc
+        nocc = self.nocc
 
-        Htmp = np.zeros((norb, norb, norb, norb))
-        F_tot = self.F_core + self.F_active
+        # Get required two-electron MO integrals
+        Cocc = self.mo_coeff[:,:nocc].copy()
+        ppoo = self.integrals.tei_ao_to_mo(self.mo_coeff,self.mo_coeff,Cocc,Cocc,True,False)
+        popo = self.integrals.tei_ao_to_mo(self.mo_coeff,Cocc,self.mo_coeff,Cocc,True,False)
 
-        # Temporary identity matrices
-        id_cor = np.identity(ncore)
-        id_vir = np.identity(nvir)
-        id_cas = np.identity(ncas)
+        # K and J in MO basis
+        Jmn  = np.einsum('pm,pq,qn->mn',self.mo_coeff, self.J, self.mo_coeff)
+        vKmn = np.einsum('pm,wpq,qn->wmn',self.mo_coeff, self.vK, self.mo_coeff)
+        Kmn  = np.einsum('wpq->pq', vKmn)
 
-        # virtual-core virtual-core H_{ai,bj}
-        if ncore > 0 and nvir > 0:
-            aibj = self.popo[nocc:,:ncore,nocc:,:ncore]
-            abij = self.ppoo[nocc:,nocc:,:ncore,:ncore].transpose((0,2,1,3))
+        # Build Ypqrs
+        Y = np.zeros((nmo,nmo,nmo,nmo))
+        # Y_imjn
+        Y[:ncore,:,:ncore,:] += 8 * np.einsum('mnij->imjn',ppoo[:,:,:ncore,:ncore]) 
+        Y[:ncore,:,:ncore,:] -= 2 * np.einsum('mnji->imjn',ppoo[:,:,:ncore,:ncore])
+        Y[:ncore,:,:ncore,:] -= 2 * np.einsum('mjni->imjn',popo[:,:ncore,:,:ncore])
+        for i in range(ncore):
+            Y[i,:,i,:] += 2 * Jmn - Kmn
 
-            Htmp[nocc:,:ncore,nocc:,:ncore] = 4*(4*aibj-abij-aibj.transpose((0,3,2,1)))
-            for i in range(ncore):
-                Htmp[nocc:,i,nocc:,i] += 4 * F_tot[nocc:,nocc:]
-            for a in range(nocc,norb):
-                Htmp[a,:ncore,a,:ncore] -= 4 * F_tot[:ncore,:ncore]
+        # Y_imwn
+        Y[:ncore,:,ncore:nocc,:] = (4 * ppoo[:,:,:ncore,ncore:nocc].transpose(2,0,3,1)
+                                      - ppoo[:,:,ncore:nocc,:ncore].transpose(3,0,2,1)
+                                      - popo[:,ncore:nocc,:,:ncore].transpose(3,0,1,2))
+        Y[ncore:nocc,:,:ncore,:] = Y[:ncore,:,ncore:nocc,:].transpose(2,3,0,1)
 
-        # virtual-core virtual-active H_{ai,bt}
-        if ncore > 0 and nvir > 0 and ncas > 0:
-            aibv = self.popo[nocc:,:ncore,nocc:,ncore:nocc]
-            avbi = self.popo[nocc:,ncore:nocc,nocc:,:ncore]
-            abvi = self.ppoo[nocc:,nocc:,ncore:nocc,:ncore]
+        # Y_wmvn
+        for W in range(self.nshell):
+            wKmn = np.einsum('v,vmn->mn',self.beta[W], vKmn[1:])
+            for V in range(W,self.nshell):
+                for w in self.shell_indices[W]:
+                    for v in self.shell_indices[V]:
+                        if(w==v):
+                            Y[w,:,w,:] = Jmn - popo[:,w,:,w] + ppoo[:,:,w,w] - 0.5 * vKmn[0] + wKmn
+                        else:
+                            Y[w,:,v,:] = 2 * ppoo[:,:,w,v] + self.beta[W,V] * (ppoo[:,:,v,w] + popo[:,v,:,w])
+                            Y[v,:,w,:] = Y[w,:,v,:].T
+        return Y
 
-            Htmp[nocc:,:ncore,nocc:,ncore:nocc] = (
-                2 * np.einsum('tv,aibv->aibt', self.csf_dm1,
-                    4 * aibv - avbi.transpose((0,3,2,1))-abvi.transpose((0,3,1,2)),optimize="optimal")
-                - 2 * np.einsum('ab,tvxy,vixy ->aibt', id_vir, 0.5 * self.csf_dm2,
-                    self.ppoo[ncore:nocc,:ncore,ncore:nocc,ncore:nocc], optimize="optimal")
-                - 2 * np.einsum('ab,ti->aibt',id_vir,F_tot[ncore:nocc,:ncore],optimize="optimal")
-                - 1 * np.einsum('ab,tv,vi->aibt',id_vir,self.csf_dm1,self.F_core[ncore:nocc,:ncore],optimize="optimal"))
-
-        # virtual-active virtual-core H_{bt,ai}
-        if ncore > 0 and nvir > 0 and ncas > 0:
-            Htmp[nocc:,ncore:nocc,nocc:,:ncore] = np.einsum(
-                'aibt->btai',Htmp[nocc:,:ncore,nocc:,ncore:nocc],optimize="optimal")
-
-        # virtual-core active-core H_{ai,tj}
-        if ncore > 0 and nvir > 0 and ncas > 0:
-            aivj = self.ppoo[nocc:,:ncore,ncore:nocc,:ncore]
-            avji = self.ppoo[nocc:,ncore:nocc,:ncore,:ncore]
-            ajvi = self.ppoo[nocc:,:ncore,ncore:nocc,:ncore]
-
-            Htmp[nocc:,:ncore,ncore:nocc,:ncore] = (
-                2 * np.einsum('tv,aivj->aitj', (2 * id_cas - self.csf_dm1),
-                    4 * aivj - avji.transpose((0,3,1,2))-ajvi.transpose((0,3,2,1)),optimize="optimal")
-                - np.einsum('ji,tvxy,avxy -> aitj',id_cor,self.csf_dm2,
-                    self.ppoo[nocc:,ncore:nocc,ncore:nocc,ncore:nocc],optimize="optimal")
-                + 4 * np.einsum('ij,at-> aitj',id_cor,F_tot[nocc:,ncore:nocc],optimize="optimal")
-                - np.einsum('ij,tv,av-> aitj',id_cor,self.csf_dm1,self.F_core[nocc:,ncore:nocc],optimize="optimal"))
-
-        # active-core virtual-core H_{tj,ai}
-        if ncore > 0 and nvir > 0 and ncas > 0:
-            Htmp[ncore:nocc, :ncore, nocc:, :ncore] = np.einsum('aitj->tjai', Htmp[nocc:, :ncore, ncore:nocc, :ncore],
-                                                                optimize="optimal")
-
-        # virtual-active virtual-active H_{at,bu}
-        if nvir > 0 and ncas > 0:
-            Htmp[nocc:, ncore:nocc, nocc:, ncore:nocc] = (4 * np.einsum('tuvx,abvx->atbu', 0.5 * self.csf_dm2,
-                                                                        self.ppoo[nocc:, nocc:, ncore:nocc, ncore:nocc],
-                                                                        optimize="optimal")
-                                                          + 4 * np.einsum('txvu,axbv->atbu', 0.5 * self.csf_dm2,
-                                                                          self.popo[nocc:, ncore:nocc, nocc:,
-                                                                          ncore:nocc], optimize="optimal")
-                                                          + 4 * np.einsum('txuv,axbv->atbu', 0.5 * self.csf_dm2,
-                                                                          self.popo[nocc:, ncore:nocc, nocc:,
-                                                                          ncore:nocc], optimize="optimal"))
-            Htmp[nocc:, ncore:nocc, nocc:, ncore:nocc] -= (
-                    2 * np.einsum('ab,tvxy,uvxy->atbu', id_vir, 0.5 * self.csf_dm2,
-                                  self.ppoo[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc], optimize="optimal")
-                    + 1 * np.einsum('ab,tv,uv->atbu', id_vir, self.csf_dm1, self.F_core[ncore:nocc, ncore:nocc],
-                                    optimize="optimal"))
-            Htmp[nocc:, ncore:nocc, nocc:, ncore:nocc] -= (
-                    2 * np.einsum('ab,uvxy,tvxy->atbu', id_vir, 0.5 * self.csf_dm2,
-                                  self.ppoo[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc], optimize="optimal")
-                    + 1 * np.einsum('ab,uv,tv->atbu', id_vir, self.csf_dm1, self.F_core[ncore:nocc, ncore:nocc],
-                                    optimize="optimal"))
-            Htmp[nocc:, ncore:nocc, nocc:, ncore:nocc] += 2 * np.einsum('tu,ab->atbu', self.csf_dm1,
-                                                                        self.F_core[nocc:, nocc:], optimize="optimal")
-
-        # active-core virtual-active H_{ti,au}
-        if ncore > 0 and nvir > 0 and ncas > 0:
-            avti = self.ppoo[nocc:, ncore:nocc, ncore:nocc, :ncore]
-            aitv = self.ppoo[nocc:, :ncore, ncore:nocc, ncore:nocc]
-
-            Htmp[ncore:nocc, :ncore, nocc:, ncore:nocc] = (- 4 * np.einsum('tuvx,aivx->tiau', 0.5 * self.csf_dm2,
-                                                                           self.ppoo[nocc:, :ncore, ncore:nocc,
-                                                                           ncore:nocc], optimize="optimal")
-                                                           - 4 * np.einsum('tvux,axvi->tiau', 0.5 * self.csf_dm2,
-                                                                           self.ppoo[nocc:, ncore:nocc, ncore:nocc,
-                                                                           :ncore], optimize="optimal")
-                                                           - 4 * np.einsum('tvxu,axvi->tiau', 0.5 * self.csf_dm2,
-                                                                           self.ppoo[nocc:, ncore:nocc, ncore:nocc,
-                                                                           :ncore], optimize="optimal"))
-            Htmp[ncore:nocc, :ncore, nocc:, ncore:nocc] += (2 * np.einsum('uv,avti->tiau', self.csf_dm1,
-                                                                          4 * avti - aitv.transpose(
-                                                                              (0, 3, 2, 1)) - avti.transpose(
-                                                                              (0, 2, 1, 3)), optimize="optimal")
-                                                            - 2 * np.einsum('tu,ai->tiau', self.csf_dm1,
-                                                                            self.F_core[nocc:, :ncore],
-                                                                            optimize="optimal")
-                                                            + 2 * np.einsum('tu,ai->tiau', id_cas, F_tot[nocc:, :ncore],
-                                                                            optimize="optimal"))
-
-            # virtual-active active-core  H_{au,ti}
-            Htmp[nocc:, ncore:nocc, ncore:nocc, :ncore] = np.einsum('auti->tiau',
-                                                                    Htmp[ncore:nocc, :ncore, nocc:, ncore:nocc],
-                                                                    optimize="optimal")
-
-        # active-core active-core H_{ti,uj} Nick 18 Mar
-        if ncore > 0 and ncas > 0:
-            gixyj = self.popo[:ncore, ncore:nocc, ncore:nocc, :ncore]
-            gtijx = self.popo[ncore:nocc, :ncore, :ncore, ncore:nocc]
-            gtxji = self.popo[ncore:nocc, ncore:nocc, :ncore, :ncore]
-            gtwxy = self.popo[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc]
-            tiuj = 2 * np.einsum("tu,ij->tiuj", self.csf_dm1, self.F_core[:ncore, :ncore]) + \
-                   4 * np.einsum("ij,tu->tiuj", id_cor, F_tot[ncore:nocc, ncore:nocc]) - \
-                   np.einsum("ij,tw,uw->tiuj", id_cor, self.csf_dm1, self.F_core[ncore:nocc, ncore:nocc]) - \
-                   np.einsum("ij,twxy,uwxy->tiuj", id_cor, self.csf_dm2, gtwxy) - \
-                   np.einsum("ij,uw,tw->tiuj", id_cor, self.csf_dm1, self.F_core[ncore:nocc, ncore:nocc]) - \
-                   np.einsum("ij,uwxy,twxy->tiuj", id_cor, self.csf_dm2, gtwxy) - \
-                   2 * np.einsum("tu,ji->tiuj", id_cas, F_tot[:ncore, :ncore]) - \
-                   2 * np.einsum("tu,ij->tiuj", id_cas, F_tot[:ncore, :ncore]) + \
-                   2 * np.einsum("xu,tijx->tiuj", id_cas - self.csf_dm1,
-                                 4 * gtijx - gtijx.transpose((0, 2, 1, 3)) - gtxji.transpose((0, 3, 2, 1))) + \
-                   2 * np.einsum("xt,xiju->tiuj", id_cas - self.csf_dm1,
-                                 4 * gtijx - gtijx.transpose((0, 2, 1, 3)) - gtxji.transpose((0, 3, 2, 1))) + \
-                   2 * np.einsum("txuy,ixyj->tiuj", self.csf_dm2, gixyj) + \
-                   2 * np.einsum("txyu,ixyj->tiuj", self.csf_dm2, gixyj) + \
-                   2 * np.einsum("tuxy,ijxy->tiuj", self.csf_dm2, gtxji.transpose((3, 2, 1, 0)))
-            Htmp[ncore:nocc, :ncore, ncore:nocc, :ncore] = tiuj
-            Htmp[ncore:nocc, :ncore, ncore:nocc, :ncore] = np.einsum("tiuj->ujti", tiuj)
-
-        # Nick: Active-active Hessian contributions
-        # active-active active-core H_{xy,ti}
-        if ncore > 0 and ncas > 0:
-            gxvit = self.ppoo[ncore:nocc, ncore:nocc, :ncore, ncore:nocc]
-            gxivt = self.popo[ncore:nocc, :ncore, ncore:nocc, ncore:nocc]
-            gxtiv = self.ppoo[ncore:nocc, ncore:nocc, :ncore, ncore:nocc]
-            xyti = 2 * np.einsum("xt,yi->xyti", self.csf_dm1, self.F_core[ncore:nocc, :ncore], optimize="optimal") + \
-                   2 * np.einsum("xvtw,yvwi->xyti", self.csf_dm2, self.popo[ncore:nocc, ncore:nocc, ncore:nocc, :ncore],
-                                 optimize="optimal") + \
-                   2 * np.einsum("xvwt,yvwi->xyti", self.csf_dm2, self.popo[ncore:nocc, ncore:nocc, ncore:nocc, :ncore],
-                                 optimize="optimal") + \
-                   2 * np.einsum("xtvw,yivw->xyti", self.csf_dm2, self.popo[ncore:nocc, :ncore, ncore:nocc, ncore:nocc],
-                                 optimize="optimal") + \
-                   2 * np.einsum("yv,xvit->xyti", self.csf_dm1,
-                                 4 * gxvit - gxivt.transpose((0, 2, 1, 3)) - gxtiv.transpose((0, 3, 2, 1)),
-                                 optimize="optimal") + \
-                   np.einsum("yt,xw,iw->xyti", id_cas, self.csf_dm1, self.F_core[:ncore, ncore:nocc],
-                             optimize="optimal") + \
-                   np.einsum("yt,xuwz,iuwz->xyti", id_cas, self.csf_dm2,
-                             self.popo[:ncore, ncore:nocc, ncore:nocc, ncore:nocc],
-                             optimize="optimal") + \
-                   2 * np.einsum("xi,yt->xyti", F_tot[ncore:nocc, :ncore], id_cas, optimize="optimal")
-            Htmp[ncore:nocc, ncore:nocc, ncore:nocc, :ncore] = xyti - np.einsum("xyti->yxti", xyti)
-        # active-core active-active H_{ti, xy}
-        if ncore > 0 and ncas > 0:
-            Htmp[ncore:nocc, :ncore, ncore:nocc, ncore:nocc] = np.einsum("xyti->tixy",
-                                                                         Htmp[ncore:nocc, ncore:nocc, ncore:nocc,
-                                                                         :ncore])
-
-        # active-active virtual-core H_{xy,ai}, as well as virtual-core active-active H_{ai,xy}
-        if ncore > 0 and nvir > 0 and ncas > 0:
-            gyvai = self.popo[ncore:nocc, ncore:nocc, nocc:, :ncore]
-            gyiav = self.popo[ncore:nocc, :ncore, nocc:, ncore:nocc]
-            gayiv = self.popo[nocc:, ncore:nocc, :ncore, ncore:nocc]
-            Yxyia = 2 * np.einsum("xv,yvai->xyai", self.csf_dm1,
-                                  4 * gyvai - gyiav.transpose((0, 3, 2, 1)) - gayiv.transpose((1, 3, 0, 2)),
-                                  optimize="optimal")
-            Htmp[ncore:nocc, ncore:nocc, nocc:, :ncore] = -Yxyia + np.einsum("xyai->yxai", Yxyia)
-            Htmp[nocc:, :ncore, ncore:nocc, ncore:nocc] = np.einsum("xyai->aixy",
-                                                                    Htmp[ncore:nocc, ncore:nocc, nocc:, :ncore])
-
-        # active-active virtual-active H_{xy,at}
-        if nvir > 0 and ncas > 0:
-            xyat = 2 * np.einsum("yt,xa->xyat", self.csf_dm1, self.F_core[ncore:nocc, nocc:], optimize="optimal") + \
-                   np.einsum("xt,aw,yw->xyat", id_cas, self.F_core[nocc:, ncore:nocc], self.csf_dm1,
-                             optimize="optimal") + \
-                   np.einsum("xt,yuwz,auwz->xyat", id_cas, self.csf_dm2,
-                             self.popo[nocc:, ncore:nocc, ncore:nocc, ncore:nocc], optimize="optimal") + \
-                   2 * np.einsum("yvtw,xvaw->xyat", self.csf_dm2, self.popo[ncore:nocc, ncore:nocc, nocc:, ncore:nocc],
-                                 optimize="optimal") + \
-                   2 * np.einsum("yvwt,xvaw->xyat", self.csf_dm2, self.popo[ncore:nocc, ncore:nocc, nocc:, ncore:nocc],
-                                 optimize="optimal") + \
-                   2 * np.einsum("ytvw,axvw->xyat", self.csf_dm2, self.popo[nocc:, ncore:nocc, ncore:nocc, ncore:nocc],
-                                 optimize="optimal")
-            Htmp[ncore:nocc, ncore:nocc, nocc:, ncore:nocc] = xyat - np.einsum("xyat->yxat", xyat)
-
-        # virtual-active active-active H_{at, xy}
-        if nvir > 0 and ncas > 0:
-            Htmp[nocc:, ncore:nocc, ncore:nocc, ncore:nocc] = np.einsum("xyat->atxy",
-                                                                        Htmp[ncore:nocc, ncore:nocc, nocc:, ncore:nocc])
-
-        # active-active active-active H_{xy,tv}
-        if ncas > 0:
-            xytv = 2 * np.einsum("xt,yv->xytv", self.csf_dm1, self.F_core[ncore:nocc, ncore:nocc], optimize="optimal") + \
-                   2 * np.einsum("xwtz,ywzv->xytv", self.csf_dm2,
-                                 self.popo[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc],
-                                 optimize="optimal") + \
-                   2 * np.einsum("xwzt,ywzv->xytv", self.csf_dm2,
-                                 self.popo[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc],
-                                 optimize="optimal") + \
-                   2 * np.einsum("xtwz,yvwz->xytv", self.csf_dm2,
-                                 self.popo[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc],
-                                 optimize="optimal") - \
-                   np.einsum("yv,xw,tw->xytv", id_cas, self.csf_dm1, self.F_core[ncore:nocc, ncore:nocc],
-                             optimize="optimal") - \
-                   np.einsum("yv,tw,xw->xytv", id_cas, self.csf_dm1, self.F_core[ncore:nocc, ncore:nocc],
-                             optimize="optimal") - \
-                   np.einsum("yv,xuwz,tuwz->xytv", id_cas, self.csf_dm2,
-                             self.popo[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc],
-                             optimize="optimal") - \
-                   np.einsum("yv,tuwz,xuwz->xytv", id_cas, self.csf_dm2,
-                             self.popo[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc],
-                             optimize="optimal")
-            Htmp[ncore:nocc, ncore:nocc, ncore:nocc, ncore:nocc] = xytv - \
-                                                                   np.einsum("xytv->yxtv", xytv) - \
-                                                                   np.einsum("xytv->xyvt", xytv) + \
-                                                                   np.einsum("xytv->yxvt", xytv)
-        return (Htmp)
 
     def edit_mask_by_gcoupling(self, mask):
         r"""
@@ -624,6 +410,7 @@ class GenealogicalCSF(Wavefunction):
                 else:
                     break
         return mask
+
 
     def uniq_var_indices(self, frozen):
         """ This function creates a matrix of boolean of size (norb,norb).
@@ -653,34 +440,30 @@ class GenealogicalCSF(Wavefunction):
                 mask[frozen] = mask[:, frozen] = False
         return mask
 
+
     def canonicalize(self):
         """
         Forms the canonicalised MO coefficients by diagonalising invariant subblocks of the Fock matrix
         """
-        # Compute Fock matrix in AO basis from J and K matrices
-        Fao  = self.integrals.oei_matrix(True) + self.J - 0.5 * np.einsum('ipq->pq',self.vK)
-        # Transform to MO basis
-        fock = np.linalg.multi_dot([self.mo_coeff.T, Fao, self.mo_coeff])
+        # Transform Fock matrix to MO basis
+        fock = np.linalg.multi_dot([self.mo_coeff.T, self.fock, self.mo_coeff])
 
         # Get occ-occ and vir-vir blocks of (pseudo) Fock matrix
         foo = fock[:self.ncore, :self.ncore]
         faa = fock[self.ncore:self.nocc, self.ncore:self.nocc]
         fvv = fock[self.nocc:, self.nocc:]
+
         # Get transformations
         self.mo_energy = np.zeros(self.nmo)
         self.mo_energy[:self.ncore], Qoo = np.linalg.eigh(foo)
         self.mo_energy[self.nocc:], Qvv = np.linalg.eigh(fvv)
         self.mo_energy[self.ncore:self.nocc] = np.diag(faa)
+
         # Apply transformations
         self.mo_coeff[:,:self.ncore] = np.dot(self.mo_coeff[:,:self.ncore], Qoo)
         self.mo_coeff[:,self.nocc:] = np.dot(self.mo_coeff[:,self.nocc:], Qvv)
         
         # Update integrals
         self.update_integrals()
-
-        # Set occupation numbers
-        self.mo_occ = np.zeros(self.nmo)
-        self.mo_occ[:self.ncore] = 2
-        self.mo_occ[self.ncore:self.nocc] = 1
 
         return
