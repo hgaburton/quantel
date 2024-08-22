@@ -329,13 +329,19 @@ class GenealogicalCSF(Wavefunction):
         """ Compute the generalised Fock matrix"""
         # Initialise memory
         F = np.zeros((self.nmo, self.nmo))
+
+        # Memory for diagonal elements
+        self.gen_fock_diag = np.zeros((self.nmo,self.nmo))
         
         # Core contribution
         Fcore_ao = 2*(self.integrals.oei_matrix(True) + self.J 
                       - 0.5 * np.sum(self.vK[i] for i in range(self.nshell+1)))
         # AO-to-MO transformation
         Ccore = self.mo_coeff[:,:self.ncore]
-        F[:self.ncore,:] = np.linalg.multi_dot([Ccore.T, Fcore_ao, self.mo_coeff])
+        Fcore_mo = np.linalg.multi_dot([self.mo_coeff.T, Fcore_ao, self.mo_coeff])
+        for i in range(self.ncore):
+            self.gen_fock_diag[i,:] = Fcore_mo.diagonal()
+        F[:self.ncore,:] = Fcore_mo[:self.ncore,:]
 
         # Open-shell contributions
         for W in range(self.nshell):
@@ -347,8 +353,11 @@ class GenealogicalCSF(Wavefunction):
             # Different shell exchange
             Fw_ao += np.einsum('v,vpq->pq',self.beta[W],self.vK[1:])
             # AO-to-MO transformation
-            F[shell,:] = np.linalg.multi_dot([Cw.T, Fw_ao, self.mo_coeff])
-
+            Fw_mo = np.linalg.multi_dot([self.mo_coeff.T, Fw_ao, self.mo_coeff])
+            for w in shell:
+                self.gen_fock_diag[w,:] = Fw_mo.diagonal()
+            F[shell,:] = Fw_mo[shell,:]
+        
         return F
     
     def get_Y_intermediate(self):
@@ -390,13 +399,24 @@ class GenealogicalCSF(Wavefunction):
             for V in range(W,self.nshell):
                 for w in self.shell_indices[W]:
                     for v in self.shell_indices[V]:
+                        Y[w,:,v,:] = 2 * ppoo[:,:,w,v] + self.beta[W,V] * (ppoo[:,:,v,w] + popo[:,v,:,w])
                         if(w==v):
-                            Y[w,:,w,:] = Jmn - popo[:,w,:,w] + ppoo[:,:,w,w] - 0.5 * vKmn[0] + wKmn
+                            Y[w,:,w,:] = Y[w,:,w,:] + Jmn - 0.5 * vKmn[0] + wKmn
                         else:
-                            Y[w,:,v,:] = 2 * ppoo[:,:,w,v] + self.beta[W,V] * (ppoo[:,:,v,w] + popo[:,v,:,w])
                             Y[v,:,w,:] = Y[w,:,v,:].T
         return Y
 
+    def get_preconditioner(self):
+        fock = np.linalg.multi_dot([self.mo_coeff.T, self.fock, self.mo_coeff])
+
+        Q = np.zeros((self.nmo,self.nmo))
+        
+        for p in range(self.nmo):
+            for q in range(self.nmo):
+                Q[p,q] = 2 * ( (self.gen_fock_diag[p,q] - self.gen_fock_diag[q,q]) 
+                             + (self.gen_fock_diag[q,p] - self.gen_fock_diag[p,p]) )
+
+        return np.power(np.abs(Q[self.rot_idx]),-0.5)
 
     def edit_mask_by_gcoupling(self, mask):
         r"""

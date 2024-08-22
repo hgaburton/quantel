@@ -54,7 +54,8 @@ def random_search(ints, config):
     # Select the optimiser
     optconfig = config["optimiser"][config["optimiser"]["algorithm"]]
     if config["optimiser"]["algorithm"] == "eigenvector_following":
-        from quantel.opt.eigenvector_following import EigenFollow as OPT
+        #from quantel.opt.eigenvector_following import EigenFollow as OPT
+        from quantel.opt.lsr1 import SR1 as OPT
     elif config["optimiser"]["algorithm"] == "mode_control":
         from quantel.opt.mode_controlling import ModeControl as OPT
     elif config["optimiser"]["algorithm"] == "lbfgs":

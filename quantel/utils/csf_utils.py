@@ -77,7 +77,9 @@ def get_csf_vector(spin_coupling):
     # Check CSF vector is valid
     n  = len(spin_coupling)
     if(n==0):
-        return '', 1
+        yield '', 1
+        return
+
     if(spin_coupling[0]!='+'):
         raise RuntimeError("Invalid spin coupling pattern")
 

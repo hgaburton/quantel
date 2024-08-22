@@ -77,8 +77,6 @@ class Config(dict):
                                                     maxstep = getvalue(self.lines,"maxstep",float,False,default=numpy.pi),
                                                     hesstol = getvalue(self.lines,"hesstol",float,False,1e-16)
                                                     )
-
-
         else:
             errstr = "Requested optimiser '"+self["optimiser"]["algorithm"]+"' is not available"
             raise ValueError(errstr)

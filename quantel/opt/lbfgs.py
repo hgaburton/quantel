@@ -3,7 +3,7 @@
 import datetime
 import numpy as np
 
-def LBFGS(obj, thresh=1e-8, maxit=1000, index=None, plev=0):
+def LBFGS(obj, thresh=1e-8, maxit=1000, index=None, plev=1):
     ''' This function is the one that we will run the Newton-Raphson calculation for a given NR_CASSCF object '''
     kernel_start_time = datetime.datetime.now() # Save initial time
 
@@ -37,7 +37,7 @@ def LBFGS(obj, thresh=1e-8, maxit=1000, index=None, plev=0):
     k = 0
     while conv > thresh and k < maxit:
         # Get gradient
-        g    = obj.get_gradient()
+        g    = obj.gradient
         conv = np.linalg.norm(g) * np.sqrt(1.0/g.size)
 
         # Take steepest descent on first step
