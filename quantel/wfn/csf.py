@@ -305,6 +305,24 @@ class GenealogicalCSF(Wavefunction):
         orb_step[self.rot_idx] = step
         self.mo_coeff = np.dot(self.mo_coeff, scipy.linalg.expm(orb_step - orb_step.T))
 
+    def transform_vector(self,vec,step):
+        """ Perform orbital rotation for vector in tangent space"""
+        # Construct transformation matrix
+        orb_step = np.zeros((self.nmo, self.nmo))
+        orb_step[self.rot_idx] = step
+        Q = scipy.linalg.expm(orb_step - orb_step.T)
+
+        # Build vector in antisymmetric form
+        kappa = np.zeros((self.nmo, self.nmo))
+        kappa[self.rot_idx] = vec
+        kappa = kappa - kappa.T
+
+        # Apply transformation
+        kappa = kappa @ Q
+        kappa = Q.T @ kappa
+        # Return transformed vector
+        return kappa[self.rot_idx]
+
     def get_density_matrices(self):
         """ Compute total density matrix and relevant matrices for K build"""
         # Total density for J matrix. Initialise with core contribution
@@ -359,7 +377,7 @@ class GenealogicalCSF(Wavefunction):
             F[shell,:] = Fw_mo[shell,:]
         
         return F
-    
+
     def get_Y_intermediate(self):
         """ Compute the Y intermediate required for Hessian evaluation
         """
@@ -407,8 +425,8 @@ class GenealogicalCSF(Wavefunction):
         return Y
 
     def get_preconditioner(self):
+        """Compute approximate diagonal of Hessian"""
         fock = np.linalg.multi_dot([self.mo_coeff.T, self.fock, self.mo_coeff])
-
         Q = np.zeros((self.nmo,self.nmo))
         
         for p in range(self.nmo):
@@ -416,7 +434,7 @@ class GenealogicalCSF(Wavefunction):
                 Q[p,q] = 2 * ( (self.gen_fock_diag[p,q] - self.gen_fock_diag[q,q]) 
                              + (self.gen_fock_diag[q,p] - self.gen_fock_diag[p,p]) )
 
-        return np.power(np.abs(Q[self.rot_idx]),-0.5)
+        return Q[self.rot_idx]
 
     def edit_mask_by_gcoupling(self, mask):
         r"""
