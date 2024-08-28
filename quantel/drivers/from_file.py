@@ -27,6 +27,10 @@ def from_file(ints, config):
     optconfig = config["optimiser"][config["optimiser"]["algorithm"]]
     if config["optimiser"]["algorithm"] == "eigenvector_following":
         from quantel.opt.eigenvector_following import EigenFollow as OPT
+    elif config["optimiser"]["algorithm"] == "lsr1":
+        from quantel.opt.lsr1 import SR1 as OPT
+    elif config["optimiser"]["algorithm"] == "gmf":
+        from quantel.opt.gmf import GMF as OPT
     elif config["optimiser"]["algorithm"] == "mode_control":
         from quantel.opt.mode_controlling import ModeControl as OPT
 

@@ -54,12 +54,13 @@ def random_search(ints, config):
     # Select the optimiser
     optconfig = config["optimiser"][config["optimiser"]["algorithm"]]
     if config["optimiser"]["algorithm"] == "eigenvector_following":
-        #from quantel.opt.eigenvector_following import EigenFollow as OPT
+        from quantel.opt.eigenvector_following import EigenFollow as OPT
+    elif config["optimiser"]["algorithm"] == "lsr1":
         from quantel.opt.lsr1 import SR1 as OPT
+    elif config["optimiser"]["algorithm"] == "gmf":
+        from quantel.opt.gmf import GMF as OPT
     elif config["optimiser"]["algorithm"] == "mode_control":
         from quantel.opt.mode_controlling import ModeControl as OPT
-    elif config["optimiser"]["algorithm"] == "lbfgs":
-        from quantel.opt.lbfgs import LBFGS as OPT
 
     # Set numpy random seed
     numpy.random.seed(config["jobcontrol"]["search"]["seed"])
