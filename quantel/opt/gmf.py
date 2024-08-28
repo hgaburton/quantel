@@ -6,14 +6,22 @@ from .trust_radius import TrustRadius
 from quantel.utils.linalg import orthogonalise  
 import scipy
 
-class SR1:
+class GMF:
+    '''
+       Class to implement the generalised mode following optimisation for targeting saddle
+       points of a particular Hessian index.
+
+       This implementation follows the approach outlined in 
+          Y. L. A. Schmerwitz, G. Levi, H. Jonsson
+          J. Chem. Theory Cmput. 19, 3634 (2023)
+       with minor modifications to control the step size with damping and truncation.
+    '''
 
     def __init__(self, **kwargs):
-        '''Initialise the eigenvector following instance'''
-
+        '''Initialise the GMF instance'''
         self.control = dict()
         self.control["minstep"] = 0.01
-        self.control["maxstep"] = 0.1
+        self.control["maxstep"] = 0.2
         self.control["rtrust"]  = 0.15
         self.control["hesstol"] = 1e-16
 
@@ -23,15 +31,29 @@ class SR1:
             else: 
                 self.control[key] = kwargs[key]
 
-    def run(self, obj, thresh=1e-8, maxit=100, index=0, plev=1, nss=20):
-        ''' This function is the one that we will run the Newton-Raphson calculation for a given NR_CASSCF object '''
-        kernel_start_time = datetime.datetime.now() # Save initial time
+        # Initialise the trust radius controller
+        self.__trust = TrustRadius(self.control["rtrust"], self.control["minstep"], self.control["maxstep"])
+
+    def run(self, obj, thresh=1e-8, maxit=100, index=0, plev=1, max_subspace=20, damping=0.02):
+        ''' Run the optimisation for a particular objective function obj.
+            
+            obj must have the following methods implemented:
+              + energy
+              + gradient
+              + dim
+              + take_step()
+              + transform_vector()
+              + get_preconditioner()
+              + canonicalize()
+        '''
+        # Save initial time
+        kernel_start_time = datetime.datetime.now()
 
         # Canonicalise, might put Fock matrices in more diagonal form
         obj.canonicalize()
 
         if plev>0: print()
-        if plev>0: print( "  Initializing Eigenvector Following...")
+        if plev>0: print( "  Initializing Generalized Mode Following...")
         if plev>0 and (not index == None): print(f"    Target Hessian index = {index: 5d}") 
 
         # Initialise reference energy
@@ -40,12 +62,16 @@ class SR1:
         grad = obj.gradient
         gmod, evec = self.get_gmf_gradient(obj,grad,index)
 
-        print(f"  # MOs        = {obj.nmo: 6d}")
-        print(f"  # parameters = {obj.dim: 6d}")
+        if plev>0:
+            print(f"    > Num. MOs     = {obj.nmo: 6d}")
+            print(f"    > Num. params  = {obj.dim: 6d}")
+            print(f"    > Max subspace = {max_subspace: 6d}")
+            print(f"    > Damping fac  = {damping: 6.3f}")
+            print()
 
         # Initialise lists for subspace vectors
         v_step = []
-        v_grad = [gmod]
+        v_gmod = [gmod]
 
         if plev>0: print("  ================================================================")
         if plev>0: print("       {:^16s}    {:^8s}    {:^8s}".format("   Energy / Eh","Step Len","Error"))
@@ -56,7 +82,7 @@ class SR1:
             # Get gradient and check convergence
             conv = np.linalg.norm(grad) * np.sqrt(1.0/grad.size)
             eref = obj.energy
-
+            
             #hess_analytic = obj.hessian
             cur_hind = 0 #np.sum(np.linalg.eigvalsh(hess_analytic)<0)
 
@@ -68,22 +94,26 @@ class SR1:
             sys.stdout.flush()
 
             # Check if we have convergence
-            if(conv < thresh): 
+            if(conv < thresh):
                 converged = True
                 break
 
             # Get L-BFGS quasi-Newton step
-            qn_step = self.get_lbfgs_step(v_grad,v_step)
-            if(np.dot(qn_step, v_grad[-1]) > 0):
-                print("Step has positive component along gradient... reversing direction")
-                qn_step *= -1
+            qn_step = self.get_lbfgs_step(v_gmod,v_step)
 
             # Apply damping 
-            alpha = 1 if (istep == 0) else 0.02
-#            print(alpha, self.backtrack(obj, qn_step, grad))
+            if(istep == 0):
+                alpha = 1
+            else:
+                alpha = damping
+                comment = "damped"
             step = alpha * qn_step
-            step = np.clip(step,-self.control["maxstep"],self.control["maxstep"])
-            comment = ""
+
+            # Truncate the max step size
+            lstep = np.linalg.norm(step)
+            if(lstep > self.control["maxstep"]):
+                step = self.control["maxstep"] * step / lstep
+                comment = "truncated"
   
             # Check for step length converged
             step_length = np.linalg.norm(step)
@@ -92,11 +122,14 @@ class SR1:
 
             # Take the step
             obj.take_step(step)
+
             # Save step
             v_step.append(step.copy())
-            # Parallel transport vectors
-            v_grad = [obj.transform_vector(v, 0.5 * step) for v in v_grad] 
+
+            # Parallel transport previous vectors
+            v_gmod = [obj.transform_vector(v, 0.5 * step) for v in v_gmod] 
             v_step = [obj.transform_vector(v, 0.5 * step) for v in v_step] 
+
             # Compute new GMF gradient (need to parallel transport Hessian eigenvector)
             xguess = np.empty((dim,index))
             for i in range(index):
@@ -104,29 +137,33 @@ class SR1:
             # Save gradient
             grad = obj.gradient
             gmod, evec = self.get_gmf_gradient(obj,grad,index,xguess=evec)
-            v_grad.append(gmod.copy())
+            v_gmod.append(gmod.copy())
 
             # Remove oldest vectors if subspace is saturated
-            if(len(v_step)>nss):
-                v_grad.pop(0)
+            if(len(v_step)>max_subspace):
+                v_gmod.pop(0)
                 v_step.pop(0)
 
             # Increment the iteration counter
             istep += 1
 
         if plev>0: print("  ================================================================")
-        if(converged):
-            print("Outcome = {:6d} {: 16.10f} {:6.4e} {:6d}".format(np.sum(np.linalg.eigvalsh(obj.hessian)<0), obj.energy, np.linalg.norm(obj.gradient), istep))
-        else:
-            print("Outcome = failed")
-        kernel_end_time = datetime.datetime.now() # Save end time
+
+        # Save end time and report duration
+        kernel_end_time = datetime.datetime.now()
         computation_time = kernel_end_time - kernel_start_time
-        if plev>0: print("  Eigenvector-following walltime: ", computation_time.total_seconds(), " seconds")
+        if plev>0: print("  Generalised mode following walltime: ", computation_time.total_seconds(), " seconds")
 
         return converged
 
+
     def get_gmf_gradient(self,obj,grad,n,xguess=None):
-        """ Compute modified gradient for n-index saddle point search using generalised mode following"""
+        """ Compute modified gradient for n-index saddle point search using generalised mode following
+
+            This gradient corresponds to Eq. (11) in  
+              Y. L. A. Schmerwitz, G. Levi, H. Jonsson
+              J. Chem. Theory Cmput. 19, 3634 (2023)
+        """
         if(n==0):
             return grad, None
         # Compute n lowest eigenvalues
@@ -136,14 +173,20 @@ class SR1:
         if(e[n-1] < 0):
             gmod = grad - 2 * x @ (x.T @ grad)
         else:
+            gmod = np.zeros((grad.size))
             for i in range(n):
                 if(e[i] >= 0):
-                    gmod = grad - x[:,i] @ np.dot(x[:,i], grad)
+                    gmod = gmod - x[:,i] * np.dot(x[:,i], grad)
 
         return gmod, x
     
+
     def get_lbfgs_step(self,v_grad,v_step): 
-        """Compute the L-BFGS step from gradient and steps"""
+        """ Compute the L-BFGS step from previous gradient and step vectors
+
+            This routine follows Algorithm 7.4 on page 178 in 
+               Numerical Optimization, J. Nocedal and S. J. Wright
+        """
         # Subspace size
         nvec = len(v_step)
         assert(len(v_grad)==nvec+1)
@@ -170,45 +213,20 @@ class SR1:
             r = r + sk[i] * (alpha[i] - beta) 
         return -r
 
-    def backtrack(self, obj, p, grad):
-        """Compute optimal step length with backtracking for sufficient decrease"""
-        scale = 0.1
-        alpha = 1
-        c = 1e-4
-
-        obj.save_last_step
-        f0 = obj.energy
-        sg = c * np.dot(p, grad)
-        while 1:
-            obj.take_step(alpha * p)
-            f = obj.energy
-            obj.restore_last_step()
-            if(f <= f0 + sg * alpha):
-                break
-            alpha = alpha * scale
-        return alpha
-
-    def get_sr1_hess(self, ssvec, nvec, hess_diag, tol=1e-8):
-        """Compute the SR1 Hessian approximation in the subspace"""
-        # Access relevant memory      
-        ss_grads = ssvec[:,:nvec+1]
-        ss_steps = ssvec[:,nvec+1:]
-        
-        Bk = np.diag(hess_diag)
-        for k in range(nvec):
-            sk = ss_steps[:,k]
-            yk = ss_grads[:,k+1] - ss_grads[:,k]
-            rk = yk - Bk @ sk
-            rho = np.dot(sk,rk)
-
-            if(abs(rho) >= tol * np.linalg.norm(sk) * np.linalg.norm(rk)):
-                Bk = Bk + np.outer(rk, rk) / rho
-                
-        return Bk
 
     def get_Hessian_eigenpairs(self,obj,g0,n,xguess=None,max_iter=100,eps=1e-5,tol=1e-2,nreset=50):
+        """ Compute the lowest n eigenvectors and eigenvalues of the Hessian using the 
+            Davidson algorithm. 
+
+            The Hessian vector product H @ v is computed approximately using the forward finite 
+            difference approach given by Eq. (12) in
+              Y. L. A. Schmerwitz, G. Levi, H. Jonsson
+              J. Chem. Theory Cmput. 19, 3634 (2023)
+
+            An initial guess for the eigenvectors can be provided by the optional argument xguess.
+        """
         # Initialise Krylov subspace
-        dim = obj.dim
+        dim = g0.size
         K   = np.empty((dim, 0))
         
         # Get approximate diagonal of Hessian
@@ -217,8 +235,9 @@ class SR1:
         # If no guess provided, start with identity
         if(xguess is None):
             K = np.column_stack([K,np.identity(dim)[:,:n]]) 
-            K += 0.01 * np.random.rand(dim,n)
+            K += 0.1 * np.random.rand(dim,n)
         else:
+            assert(xguess.shape[1] == n)
             K = xguess.copy()
         K = orthogonalise(K,np.identity(dim),fill=False)
 
@@ -267,7 +286,6 @@ class SR1:
             for i in range(n):
                 ri = r[:,i]
                 if(residuals[i] > tol):
-                    # TODO: Get a suitable preconditioner
                     prec = e[i] - Qdiag
                     v_new = ri / prec
                     v_new = v_new - K @ (K.T @ v_new)

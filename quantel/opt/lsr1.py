@@ -47,6 +47,7 @@ class SR1:
         if plev>0:
             print(f"    > Num. MOs     = {obj.nmo: 6d}")
             print(f"    > Num. params  = {obj.dim: 6d}")
+            print(f"    > Max subspace = {max_subspace: 6d}")
             print(f"    > precmin      = {precmin: 6.2e}")
             print()
 

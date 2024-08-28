@@ -44,6 +44,9 @@ class TrustRadius:
     def minstep(self, minstep):
         self.__minstep = minstep
 
+    def update_rtrust(self,rtrust):
+        self.__rtrust = rtrust
+
     def dogleg_step(self, pu, pb):
         '''Compute an optimal dogleg step for the trust region
         
