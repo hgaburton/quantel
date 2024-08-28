@@ -7,15 +7,22 @@ from quantel.utils.linalg import orthogonalise
 import scipy
 
 class SR1:
+    """Class to implement limited-memory Symmetric-Rank-1 (l-SR1) optimisation for targeting 
+       saddle points. 
+
+       This implementation follows the algorithm described in
+          Numerical Optimization, J. Nocedal and S. J. Wright
+       with a trust radius approach to truncate the step length.
+    """
 
     def __init__(self, **kwargs):
-        '''Initialise the eigenvector following instance'''
+        """Initialise the l-SR1 instance"""
         self.control = dict()
         self.control["minstep"] = 0.01
         self.control["maxstep"] = np.pi
         self.control["rtrust"]  = 0.15
-        self.control["hesstol"] = 1e-16
         self.control["precmin"] = 1e0
+        self.control["max_subspace"] = 20
 
         for key in kwargs:
             if not key in self.control.keys():
@@ -26,8 +33,20 @@ class SR1:
         # Initialise the trust radius controller
         self.__trust = TrustRadius(self.control["rtrust"], self.control["minstep"], self.control["maxstep"])
 
-    def run(self, obj, thresh=1e-8, maxit=100, index=0, plev=1, max_subspace=10):
-        ''' This function is the one that we will run the Newton-Raphson calculation for a given NR_CASSCF object '''
+    def run(self, obj, thresh=1e-8, maxit=100, index=0, plev=1):
+        """ Run the optimisation for a particular objective function obj.
+            
+            obj must have the following methods implemented:
+              + energy
+              + gradient
+              + dim
+              + take_step()
+              + save_last_step()
+              + restore_last_step()
+              + transform_vector()
+              + get_preconditioner()
+              + canonicalize()
+        """
         kernel_start_time = datetime.datetime.now() # Save initial time
 
         # Canonicalise, might put Fock matrices in more diagonal form
@@ -43,6 +62,7 @@ class SR1:
 
         # Get parameters
         precmin = self.control["precmin"]
+        max_subspace = self.control["max_subspace"]
 
         if plev>0:
             print(f"    > Num. MOs     = {obj.nmo: 6d}")
@@ -140,14 +160,11 @@ class SR1:
             istep += 1
 
         if plev>0: print("  ================================================================")
-        if(converged):
-            print("Outcome = {:6d} {: 16.10f} {:6.4e} {:6d}".format(np.sum(np.linalg.eigvalsh(obj.hessian)<0), 
-                                   obj.energy, np.linalg.norm(obj.gradient), istep))
-        else:
-            print("Outcome = failed")
-        kernel_end_time = datetime.datetime.now() # Save end time
+
+        # Save end time and report 
+        kernel_end_time = datetime.datetime.now()
         computation_time = kernel_end_time - kernel_start_time
-        if plev>0: print("  Eigenvector-following walltime: ", computation_time.total_seconds(), " seconds")
+        if plev>0: print("  Limited-memory SR1 walltime: ", computation_time.total_seconds(), " seconds")
 
         return converged
 

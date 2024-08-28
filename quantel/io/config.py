@@ -68,7 +68,7 @@ class Config(dict):
         if self["optimiser"]["algorithm"] == "eigenvector_following":
             self["optimiser"]["eigenvector_following"] = dict(minstep = getvalue(self.lines,"minstep",float,False,default=0),
                                                               rtrust  = getvalue(self.lines,"rtrust",float,False,default=0.15),
-                                                              maxstep = getvalue(self.lines,"maxstep",float,False,default=numpy.pi),
+                                                              maxstep = getvalue(self.lines,"maxstep",float,False,default=0.2),
                                                               hesstol = getvalue(self.lines,"hesstol",float,False,1e-16)
                                                              )
         elif self["optimiser"]["algorithm"] == "mode_control":
@@ -77,6 +77,20 @@ class Config(dict):
                                                     maxstep = getvalue(self.lines,"maxstep",float,False,default=numpy.pi),
                                                     hesstol = getvalue(self.lines,"hesstol",float,False,1e-16)
                                                     )
+        elif self["optimiser"]["algorithm"] == "gmf":
+            self["optimiser"]["gmf"] = dict(minstep = getvalue(self.lines,"minstep",float,False,default=0),
+                                            rtrust  = getvalue(self.lines,"rtrust",float,False,default=0.15),
+                                            maxstep = getvalue(self.lines,"maxstep",float,False,default=0.2),
+                                            max_subspace = getvalue(self.lines,"max_subspace",int,False,default=20),
+                                            damping = getvalue(self.lines,"damping",float,False,default=0.02)
+                                            )
+        elif self["optimiser"]["algorithm"] == "lsr1":
+            self["optimiser"]["lsr1"] = dict(minstep = getvalue(self.lines,"minstep",float,False,default=0),
+                                            rtrust  = getvalue(self.lines,"rtrust",float,False,default=0.15),
+                                            maxstep = getvalue(self.lines,"maxstep",float,False,default=0.2),
+                                            max_subspace = getvalue(self.lines,"max_subspace",int,False,default=10),
+                                            precmin = getvalue(self.lines,"precmin",float,False,default=1)
+                                            )
         else:
             errstr = "Requested optimiser '"+self["optimiser"]["algorithm"]+"' is not available"
             raise ValueError(errstr)

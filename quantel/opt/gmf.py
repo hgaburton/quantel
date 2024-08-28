@@ -23,7 +23,8 @@ class GMF:
         self.control["minstep"] = 0.01
         self.control["maxstep"] = 0.2
         self.control["rtrust"]  = 0.15
-        self.control["hesstol"] = 1e-16
+        self.control["max_subspace"] = 20
+        self.control["damping"] = 0.02
 
         for key in kwargs:
             if not key in self.control.keys():
@@ -34,7 +35,7 @@ class GMF:
         # Initialise the trust radius controller
         self.__trust = TrustRadius(self.control["rtrust"], self.control["minstep"], self.control["maxstep"])
 
-    def run(self, obj, thresh=1e-8, maxit=100, index=0, plev=1, max_subspace=20, damping=0.02):
+    def run(self, obj, thresh=1e-8, maxit=100, index=0, plev=1):
         ''' Run the optimisation for a particular objective function obj.
             
             obj must have the following methods implemented:
@@ -55,6 +56,10 @@ class GMF:
         if plev>0: print()
         if plev>0: print( "  Initializing Generalized Mode Following...")
         if plev>0 and (not index == None): print(f"    Target Hessian index = {index: 5d}") 
+
+        # Extract key parameters
+        max_subspace = self.control["max_subspace"]
+        damping = self.control["damping"]
 
         # Initialise reference energy
         eref = obj.energy
@@ -166,6 +171,7 @@ class GMF:
         """
         if(n==0):
             return grad, None
+
         # Compute n lowest eigenvalues
         e, x = self.get_Hessian_eigenpairs(obj,grad,n,xguess=xguess)
 
