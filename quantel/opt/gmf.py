@@ -220,7 +220,7 @@ class GMF:
         return -r
 
 
-    def get_Hessian_eigenpairs(self,obj,g0,n,xguess=None,max_iter=100,eps=1e-5,tol=1e-2,nreset=50):
+    def get_Hessian_eigenpairs(self,obj,g0,n,xguess=None,max_iter=100,eps=1e-5,tol=1e-2,nreset=10):
         """ Compute the lowest n eigenvectors and eigenvalues of the Hessian using the 
             Davidson algorithm. 
 
@@ -235,13 +235,18 @@ class GMF:
         dim = g0.size
         K   = np.empty((dim, 0))
         
+        # Shifted objected
+        shift = obj.copy()
+
         # Get approximate diagonal of Hessian
         Qdiag = obj.get_preconditioner()
 
         # If no guess provided, start with identity
         if(xguess is None):
-            K = np.column_stack([K,np.identity(dim)[:,:n]]) 
-            K += 0.1 * np.random.rand(dim,n)
+            inds = np.argsort(Qdiag)[:n]
+            K = 0.01 * np.ones((dim,n))
+            for i,j in enumerate(inds):
+                K[j,i] = 1
         else:
             assert(xguess.shape[1] == n)
             K = xguess.copy()
@@ -257,9 +262,9 @@ class GMF:
                 # Get step
                 sk = K[:,ik]
                 # Get forward gradient
-                obj.take_step(eps * sk)
-                g1 = obj.gradient.copy()
-                obj.restore_last_step()
+                shift.initialise(obj.mo_coeff,spin_coupling=obj.spin_coupling,integrals=False)
+                shift.take_step(eps * sk)
+                g1 = shift.gradient.copy()
                 # Parallel transport back to current position
                 g1 = obj.transform_vector(g1, -0.5 * eps * sk)
                 # Get approximation to H @ sk
@@ -294,8 +299,10 @@ class GMF:
                 if(residuals[i] > tol):
                     prec = e[i] - Qdiag
                     v_new = ri / prec
+                    # Perform Gram-Schmidt orthogonalisation twice
                     v_new = v_new - K @ (K.T @ v_new)
                     v_new = v_new - K @ (K.T @ v_new)
+                    # Add vector to Krylov subspace if norm is non-vanishing
                     nv = np.linalg.norm(v_new)
                     if(np.linalg.norm(v_new) > 1e-10):
                         v_new = v_new / np.linalg.norm(v_new)

@@ -266,7 +266,7 @@ class GenealogicalCSF(Wavefunction):
     def copy(self):
         """Return a copy of the current object"""
         newcsf = GenealogicalCSF(self.integrals, self.spin_coupling, verbose=self.verbose)
-        newcsf.initialise(self.mo_coeff)
+        newcsf.initialise(self.mo_coeff,spin_coupling=self.spin_coupling)
         return newcsf
 
     def overlap(self, them):
