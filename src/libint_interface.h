@@ -25,8 +25,8 @@ private:
     std::vector<double> m_oei_a;
     std::vector<double> m_oei_b;
     /// Store J and K versions of two-electron integrals
-    std::vector<double> m_tei_J; /// [p,q,r,s] = (pq|rs)
-    std::vector<double> m_tei_K; /// [p,q,r,s] = (ps|rq)
+    std::vector<double> m_tei; /// [p,q,r,s] = (pq|rs)
+    double thresh = 1e-12;
 
 public:
 
@@ -61,21 +61,13 @@ public:
     /// @param alpha spin of the integral
     void set_oei(size_t p, size_t q, double value, bool alpha);
 
-    /// Set an element of the two-electron J integrals (pq|rs)
+    /// Set an element of the two-electron integrals (pq|rs)
     /// @param p integral index
     /// @param q integral index
     /// @param r integral index 
     /// @param s integral index
     /// @param value value of the integral
-    void set_tei_J(size_t p, size_t q, size_t r, size_t s, double value);
-
-    /// Set an element of the two-electron K integrals (ps|rq)
-    /// @param p integral index
-    /// @param q integral index
-    /// @param r integral index 
-    /// @param s integral index
-    /// @param value value of the integral
-    void set_tei_K(size_t p, size_t q, size_t r, size_t s, double value);
+    void set_tei(size_t p, size_t q, size_t r, size_t s, double value);
 
     /// Build fock matrix from restricted density matrix in AO basis
     /// @param D density matrix
@@ -120,14 +112,7 @@ public:
     /// @param q integral index
     /// @param r integral index 
     /// @param s integral index
-    double tei_J(size_t p, size_t q, size_t r, size_t s);
-
-    /// Get an element of the two-electron integrals (ps|rq)
-    /// @param p integral index
-    /// @param q integral index
-    /// @param r integral index 
-    /// @param s integral index
-    double tei_K(size_t p, size_t q, size_t r, size_t s);
+    double tei(size_t p, size_t q, size_t r, size_t s);
 
     /// Perform AO to MO eri transformation
     /// @param C1 transformation matrix
@@ -159,11 +144,8 @@ public:
     /// @param alpha spin of the integrals
     double *oei_matrix(bool alpha) { return alpha ? m_oei_a.data() : m_oei_b.data(); }
 
-    /// Get a pointer to the two-electron J integral array
-    double *tei_J_array() { return m_tei_J.data(); }
-
-    /// Get a pointer to the two-electron K integral array
-    double *tei_K_array() { return m_tei_K.data(); }
+    /// Get a pointer to the two-electron integral array
+    double *tei_array() { return m_tei.data(); }
 
     /// Get the number of basis functions
     size_t nbsf() const { return m_nbsf; }
