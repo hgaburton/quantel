@@ -231,7 +231,8 @@ PYBIND11_MODULE(_quantel, m) {
           .def("scalar_potential", &LibintInterface::scalar_potential, "Get value of the scalar potential")
           .def("overlap", &LibintInterface::overlap, "Get element of overlap matrix")
           .def("oei", &LibintInterface::oei, "Get element of one-electron Hamiltonian matrix")
-          .def("tei", &LibintInterface::tei, "Get element of two-electron integral array")
+          .def("tei_J", &LibintInterface::tei_J, "Get element of two-electron integral J array")
+          .def("tei_K", &LibintInterface::tei_K, "Get element of two-electron integral K array")
           .def("molecule", &LibintInterface::molecule, "Get molecule object")
           .def("build_fock", [](LibintInterface &ints, py::array_t<double> &dens) {
                size_t nbsf = ints.nbsf();
@@ -338,11 +339,16 @@ PYBIND11_MODULE(_quantel, m) {
                },
                "Perform AO to MO transformation for one-electron integrals"
           )
-          .def("tei_array", [](LibintInterface &ints, bool alpha1, bool alpha2) { 
+          .def("tei_J_array", [](LibintInterface &ints) { 
                size_t nbsf = ints.nbsf();
-               return vec_to_np_array(nbsf, nbsf, nbsf, nbsf, ints.tei_array(alpha1, alpha2)); 
+               return vec_to_np_array(nbsf, nbsf, nbsf, nbsf, ints.tei_J_array());
                },
-               "Return two-electron integral array")
+               "Return two-electron integral J array")
+          .def("tei_K_array", [](LibintInterface &ints) { 
+               size_t nbsf = ints.nbsf();
+               return vec_to_np_array(nbsf, nbsf, nbsf, nbsf, ints.tei_K_array());
+               },
+               "Return two-electron integral K array")
           ;
 
      m.def("det_str", &det_str,"Print the determinant");

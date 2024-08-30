@@ -24,10 +24,9 @@ private:
     /// One-electron integrals
     std::vector<double> m_oei_a;
     std::vector<double> m_oei_b;
-    /// Two-electron integrals
-    std::vector<double> m_tei_aa;
-    std::vector<double> m_tei_bb;
-    std::vector<double> m_tei_ab;
+    /// Store J and K versions of two-electron integrals
+    std::vector<double> m_tei_J; /// [p,q,r,s] = (pq|rs)
+    std::vector<double> m_tei_K; /// [p,q,r,s] = (ps|rq)
 
 public:
 
@@ -62,13 +61,21 @@ public:
     /// @param alpha spin of the integral
     void set_oei(size_t p, size_t q, double value, bool alpha);
 
-    /// Set the value of two-electron integrals (antisymmetrised physicist notation)
-    /// @param p integral index for bra 
-    /// @param q integral index for ket
+    /// Set an element of the two-electron J integrals (pq|rs)
+    /// @param p integral index
+    /// @param q integral index
+    /// @param r integral index 
+    /// @param s integral index
     /// @param value value of the integral
-    /// @param alpha1 spin of electron 1
-    /// @param alpha2 spin of electron 2
-    void set_tei(size_t p, size_t q, size_t r, size_t s, double value, bool alpha1, bool alpha2);
+    void set_tei_J(size_t p, size_t q, size_t r, size_t s, double value);
+
+    /// Set an element of the two-electron K integrals (ps|rq)
+    /// @param p integral index
+    /// @param q integral index
+    /// @param r integral index 
+    /// @param s integral index
+    /// @param value value of the integral
+    void set_tei_K(size_t p, size_t q, size_t r, size_t s, double value);
 
     /// Build fock matrix from restricted density matrix in AO basis
     /// @param D density matrix
@@ -108,14 +115,19 @@ public:
     /// @param alpha spin of the integral
     double oei(size_t p, size_t q, bool alpha);
 
-    /// Get an element of the two-electron integrals <pq||rs>
+    /// Get an element of the two-electron integrals (pq|rs)
     /// @param p integral index
     /// @param q integral index
     /// @param r integral index 
     /// @param s integral index
-    /// @param alpha1 spin of electron 1
-    /// @param alpha2 spin of electron 2
-    double tei(size_t p, size_t q, size_t r, size_t s, bool alpha1, bool alpha2);
+    double tei_J(size_t p, size_t q, size_t r, size_t s);
+
+    /// Get an element of the two-electron integrals (ps|rq)
+    /// @param p integral index
+    /// @param q integral index
+    /// @param r integral index 
+    /// @param s integral index
+    double tei_K(size_t p, size_t q, size_t r, size_t s);
 
     /// Perform AO to MO eri transformation
     /// @param C1 transformation matrix
@@ -147,18 +159,11 @@ public:
     /// @param alpha spin of the integrals
     double *oei_matrix(bool alpha) { return alpha ? m_oei_a.data() : m_oei_b.data(); }
 
-    /// Get a point to the two-electron integral array
-    /// @param alpha1 spin of electron 1
-    /// @param alpha2 spin of electron 2
-    double *tei_array(bool alpha1, bool alpha2) { 
-        if(alpha1 == true and alpha2 == true)
-            return m_tei_aa.data();
-        if(alpha1 == true and alpha2 == false)
-            return m_tei_ab.data();
-        if(alpha1 == false and alpha2 == false)    
-            return m_tei_bb.data();
-        return nullptr;
-    }
+    /// Get a pointer to the two-electron J integral array
+    double *tei_J_array() { return m_tei_J.data(); }
+
+    /// Get a pointer to the two-electron K integral array
+    double *tei_K_array() { return m_tei_K.data(); }
 
     /// Get the number of basis functions
     size_t nbsf() const { return m_nbsf; }

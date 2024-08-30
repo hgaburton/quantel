@@ -32,18 +32,16 @@ double LibintInterface::oei(size_t p, size_t q, bool alpha)
     return alpha ? m_oei_a[oei_index(p,q)] : m_oei_b[oei_index(p,q)];
 }
 
-double LibintInterface::tei(size_t p, size_t q, size_t r, size_t s, bool alpha1, bool alpha2) 
+double LibintInterface::tei_J(size_t p, size_t q, size_t r, size_t s) 
 {
-    size_t index = tei_index(p,q,r,s);
-    if(alpha1 == true and alpha2 == true)
-        return m_tei_aa[index];
-    if(alpha1 == true and alpha2 == false)
-        return m_tei_ab[index];
-    if(alpha1 == false and alpha2 == false)    
-        return m_tei_bb[index];
-    
-    return 0;
+    return m_tei_J[tei_index(p,q,r,s)];
 }
+
+double LibintInterface::tei_K(size_t p, size_t q, size_t r, size_t s) 
+{
+    return m_tei_K[tei_index(p,q,r,s)];
+}
+
 
 void LibintInterface::set_scalar_potential(double value) 
 {
@@ -61,15 +59,14 @@ void LibintInterface::set_oei(size_t p, size_t q, double value, bool alpha)
     oei[oei_index(p,q)] = value;
 }
 
-void LibintInterface::set_tei(size_t p, size_t q, size_t r, size_t s, double value, bool alpha1, bool alpha2)
+void LibintInterface::set_tei_J(size_t p, size_t q, size_t r, size_t s, double value)
 {
-    size_t index = tei_index(p,q,r,s);
-    if(alpha1 == true and alpha2 == true)
-        m_tei_aa[index] = value;
-    if(alpha1 == true and alpha2 == false)
-        m_tei_ab[index] = value;
-    if(alpha1 == false and alpha2 == false)    
-        m_tei_bb[index] = value;
+    m_tei_J[tei_index(p,q,r,s)] = value;
+}
+
+void LibintInterface::set_tei_K(size_t p, size_t q, size_t r, size_t s, double value)
+{
+    m_tei_K[tei_index(p,q,r,s)] = value;
 }
 
 
@@ -80,12 +77,10 @@ void LibintInterface::compute_two_electron_integrals()
     size_t strides[3];
 
     // Resize and zero the two-electron integral arrays
-    m_tei_aa.resize(m_nbsf*m_nbsf*m_nbsf*m_nbsf);
-    m_tei_ab.resize(m_nbsf*m_nbsf*m_nbsf*m_nbsf);
-    m_tei_bb.resize(m_nbsf*m_nbsf*m_nbsf*m_nbsf);
-    std::fill(m_tei_aa.begin(), m_tei_aa.end(), 0.0);
-    std::fill(m_tei_ab.begin(), m_tei_ab.end(), 0.0);
-    std::fill(m_tei_bb.begin(), m_tei_bb.end(), 0.0);
+    m_tei_J.resize(m_nbsf*m_nbsf*m_nbsf*m_nbsf);
+    m_tei_K.resize(m_nbsf*m_nbsf*m_nbsf*m_nbsf);
+    std::fill(m_tei_J.begin(), m_tei_J.end(), 0.0);
+    std::fill(m_tei_K.begin(), m_tei_K.end(), 0.0);
 
     // Compute integrals
     Engine coul_engine(Operator::coulomb, m_basis.max_nprim(), m_basis.max_l());
@@ -124,20 +119,9 @@ void LibintInterface::compute_two_electron_integrals()
         {
             // Save value for aabb block in physicists notation
             double value = ints[f1*strides[0] + f2*strides[1] + f3*strides[2] + f4];
-            // NOTE: Here we convert from chemists to physicists notation
-            set_tei(bf1+f1, bf3+f3, bf2+f2, bf4+f4, value, true, false);
+            set_tei_J(bf1+f1,bf2+f2,bf3+f3,bf4+f4,value);
+            set_tei_K(bf1+f1,bf4+f4,bf3+f3,bf2+f2,value);
         }
-    }
-
-    // Compute aaaa and bbbb blocks with anntisymmetrisation
-    for(size_t p=0; p < m_nbsf; p++)
-    for(size_t q=0; q < m_nbsf; q++)
-    for(size_t r=0; r < m_nbsf; r++)
-    for(size_t s=0; s < m_nbsf; s++)
-    {
-        double IIpqrs = tei(p,q,r,s,true,false) - tei(p,q,s,r,true,false);
-        set_tei(p,q,r,s,IIpqrs,true,true);
-        set_tei(p,q,r,s,IIpqrs,false,false);
     }
 }
 
@@ -260,114 +244,109 @@ void LibintInterface::compute_one_electron_matrix()
 
 void LibintInterface::build_fock(std::vector<double> &dens, std::vector<double> &fock)
 {
+    size_t n2 = m_nbsf * m_nbsf;
     // Check dimensions of density matrix
-    assert(dens.size() == m_nbsf * m_nbsf);
+    assert(dens.size() == n2);
 
-    // Resize fock matrix
-    fock.resize(m_nbsf * m_nbsf);
-    std::fill(fock.begin(), fock.end(), 0.0);
+    // First get JK
+    build_JK(dens,fock);
 
-    // Loop over basis functions
-    for(size_t p=0; p < m_nbsf; p++)
-    for(size_t q=0; q < m_nbsf; q++)
-    {
-        // One-electron contribution
-        fock[oei_index(p,q)] += oei(p,q,true);
-
-        // Two-electron contribution
-        for(size_t s=0; s < m_nbsf; s++)
-        for(size_t r=0; r < m_nbsf; r++)
-        {
-            // Build fock matrix
-            fock[oei_index(p,q)] += dens[oei_index(s,r)] * (2.0 * tei(p,r,q,s,true,false) - tei(p,r,s,q,true,false));
-        }
-    }
+    // Then add one-electron
+    # pragma omp_parallel for
+    for(size_t pq=0; pq < n2; pq++)
+        fock[pq] += m_oei_a[pq];
 }
 
 void LibintInterface::build_JK(std::vector<double> &dens, std::vector<double> &JK)
 {
+    // Get size of n2 for indexing later
+    size_t n2 = m_nbsf * m_nbsf;
     // Check dimensions of density matrix
-    assert(dens.size() == m_nbsf * m_nbsf);
+    assert(dens.size() == n2);
 
     // Resize JK matrix
-    JK.resize(m_nbsf*m_nbsf);
+    JK.resize(n2);
     std::fill(JK.begin(),JK.end(),0.0);
 
+    std::vector<double> J(n2), K(n2);
+    std::fill(J.begin(),J.end(),0.0);
+    std::fill(K.begin(),K.end(),0.0);
+
     // Loop over basis functions
-    #pragma omp parallel for collapse(2)
-    for(size_t p=0; p < m_nbsf; p++)
-    for(size_t q=0; q < m_nbsf; q++)
-    {
-        // Two-electron contribution
-        for(size_t s=0; s < m_nbsf; s++)
-        for(size_t r=0; r < m_nbsf; r++)
-        {
-            // Build JK matrix
-            JK[oei_index(p,q)] += dens[oei_index(s,r)] * (2.0 * tei(p,r,q,s,true,false) - tei(p,r,s,q,true,false));
-        }
-    }
+    // TODO: HGAB 30/08/2024
+    //       Need to add OMP memory management here so we can loop over pqrs values freely 
+    //       and accumulate the result from each thresd
+    //for(size_t p=0; p<m_nbsf; p++)
+    //for(size_t q=p; q<m_nbsf; q++)
+    //for(size_t r=0; r<m_nbsf; r++)
+    //for(size_t s=r; s<m_nbsf; s++)
+    //{
+    //    size_t pq = p*m_nbsf+q;
+    //    size_t rs = r*m_nbsf+s;
+    //    J[p*m_nbsf+q] += dens[r*m_nbsf+s] * m_tei_J[pq*n2+rs];
+    //    if(p!=q)
+    //        J[q*m_nbsf+p] += dens[r*m_nbsf+s] * m_tei_J[pq*n2+rs];
+    //    if(r!=s)
+    //        J[p*m_nbsf+q] += dens[s*m_nbsf+r] * m_tei_J[pq*n2+rs];
+    //    if(r!=s and p!=q)
+    //        J[q*m_nbsf+p] += dens[s*m_nbsf+r] * m_tei_J[pq*n2+rs];
+    //}
+
+    #pragma omp parallel for
+    for(size_t pq=0; pq < n2; pq++)
+        for(size_t sr=0; sr < n2; sr++)
+            JK[pq] += dens[sr] * (2.0 * m_tei_J[pq*n2+sr] - m_tei_K[pq*n2+sr]);
 }
 
 
 void LibintInterface::build_J(std::vector<double> &dens, std::vector<double> &J)
 {
+    // Get size of n2 for indexing later
+    size_t n2 = m_nbsf * m_nbsf;
     // Check dimensions of density matrix
-    assert(dens.size() == m_nbsf * m_nbsf);
+    assert(dens.size() == n2);
 
     // Resize JK matrix
-    J.resize(m_nbsf*m_nbsf);
+    J.resize(n2);
     std::fill(J.begin(),J.end(),0.0);
 
     // Loop over basis functions
-    #pragma omp parallel for collapse(2)
-    for(size_t p=0; p < m_nbsf; p++)
-    for(size_t q=0; q < m_nbsf; q++)
-    {
-        // Two-electron contribution
-        for(size_t s=0; s < m_nbsf; s++)
-        for(size_t r=0; r < m_nbsf; r++)
-        {
-            // Build JK matrix
-            J[oei_index(p,q)] += dens[oei_index(s,r)] * tei(p,r,q,s,true,false);
-        }
-    }
+    #pragma omp parallel for
+    for(size_t pq=0; pq < n2; pq++)
+        for(size_t sr=0; sr < n2; sr++)
+            J[pq] += dens[sr] * m_tei_J[pq*n2+sr];
 }
 
 void LibintInterface::build_multiple_JK(
     std::vector<double> &DJ, std::vector<double> &vDK, 
     std::vector<double> &J, std::vector<double> &vK, size_t nk)
 {
+    // Get size of n2 for indexing later
+    size_t n2 = m_nbsf * m_nbsf;
+
     // Check dimensions of density matrix
-    assert(DJ.size() == m_nbsf * m_nbsf);
+    assert(DJ.size() == n2);
     // Check dimensions of exchange matrices
-    assert(vDK.size() == nk * m_nbsf * m_nbsf);
+    assert(vDK.size() == nk * n2);
 
     // Resize J matrix
-    J.resize(m_nbsf*m_nbsf);
+    J.resize(n2);
     std::fill(J.begin(),J.end(),0.0);
     // Resize K matrices
-    vK.resize(nk * m_nbsf * m_nbsf);
+    vK.resize(nk * n2);
     std::fill(vK.begin(),vK.end(),0.0);
 
     // Loop over basis functions
-    #pragma omp parallel for collapse(2)
-    for(size_t p=0; p < m_nbsf; p++)
-    for(size_t q=0; q < m_nbsf; q++)
-    {
-        // Two-electron contribution
-        for(size_t s=0; s < m_nbsf; s++)
-        for(size_t r=0; r < m_nbsf; r++)
+    #pragma omp parallel for 
+    for(size_t pq=0; pq < n2; pq++)
+        for(size_t sr=0; sr < n2; sr++)
         {
-            double vprqs = tei(p,r,q,s,true,false);
-            double vpsrq = tei(p,s,r,q,true,false);
-            // Build JK matrix
-            J[oei_index(p,q)] += DJ[oei_index(s,r)] * vprqs;
-            // Build K matrices
+            J[pq] += DJ[sr] * m_tei_J[pq*n2+sr];
             for(size_t k=0; k < nk; k++)
-                vK[k*m_nbsf*m_nbsf+oei_index(p,q)] += vDK[k*m_nbsf*m_nbsf+oei_index(s,r)] * vpsrq;
+                vK[k*n2+pq] += vDK[k*n2+sr] * m_tei_K[pq*n2+sr];
         }
-    }
 }
+
 
 void LibintInterface::tei_ao_to_mo(
     std::vector<double> &C1, std::vector<double> &C2, 
@@ -377,14 +356,13 @@ void LibintInterface::tei_ao_to_mo(
     // Tolerance for screening
     double tol = 1e-14;
 
+    size_t n2 = m_nbsf * m_nbsf;
+
     // Check dimensions
     assert(C1.size() % m_nbsf == 0);
     assert(C2.size() % m_nbsf == 0);
     assert(C3.size() % m_nbsf == 0);
     assert(C4.size() % m_nbsf == 0);
-
-    // Access relevant two-electron integrals
-    double *v_tei = tei_array(alpha1,alpha2);
     
     // Get number of columns of transformation matrices
     size_t d1 = C1.size() / m_nbsf;
@@ -393,8 +371,23 @@ void LibintInterface::tei_ao_to_mo(
     size_t d4 = C4.size() / m_nbsf;
 
     // Define temporary memory
-    std::vector<double> tmp1(m_nbsf*m_nbsf*m_nbsf*m_nbsf, 0.0);
-    std::vector<double> tmp2(m_nbsf*m_nbsf*m_nbsf*m_nbsf, 0.0);    
+    std::vector<double> tmp1(n2*n2, 0.0);
+    std::vector<double> tmp2(n2*n2, 0.0);    
+
+    // Set tmp2 to the antisymmetrised values as appropriate and convert chemist to physicist
+    double scale = (alpha1 == alpha2) ? 1.0 : 0.0; 
+    #pragma omp parallel for collapse(4)
+    for(size_t mu=0; mu < m_nbsf; mu++)
+    for(size_t nu=0; nu < m_nbsf; nu++)
+    for(size_t sg=0; sg < m_nbsf; sg++)
+    for(size_t ta=0; ta < m_nbsf; ta++)
+    {
+        size_t i1 = (mu*m_nbsf+nu)*n2 + sg*m_nbsf+ta;
+        size_t i2 = (mu*m_nbsf+sg)*n2 + nu*m_nbsf+ta;
+        // <mn||st> = J[m,s,n,t] - K[m,s,n,t]
+        tmp2[i1] = m_tei_J[i2] - scale * m_tei_K[i2];
+    }
+
  
     // Transform s index
     #pragma omp parallel for collapse(2)
@@ -402,7 +395,7 @@ void LibintInterface::tei_ao_to_mo(
     for(size_t nu=0; nu < m_nbsf; nu++)
     {
         // Define memory buffers
-        double *buff1 = &v_tei[mu*m_nbsf*m_nbsf*m_nbsf + nu*m_nbsf*m_nbsf];
+        double *buff1 = &tmp2[mu*m_nbsf*m_nbsf*m_nbsf + nu*m_nbsf*m_nbsf];
         double *buff2 = &tmp1[mu*m_nbsf*m_nbsf*d4 + nu*m_nbsf*d4];
         // Perform inner loop
         for(size_t sg=0; sg < m_nbsf; sg++)
@@ -420,6 +413,7 @@ void LibintInterface::tei_ao_to_mo(
     } 
 
     // Transform r index
+    std::fill(tmp2.begin(), tmp2.end(), 0.0);
     #pragma omp parallel for collapse(2)
     for(size_t mu=0; mu < m_nbsf; mu++)
     for(size_t nu=0; nu < m_nbsf; nu++)
