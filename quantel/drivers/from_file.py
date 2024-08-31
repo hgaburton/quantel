@@ -31,6 +31,8 @@ def from_file(ints, config):
         from quantel.opt.lsr1 import SR1 as OPT
     elif config["optimiser"]["algorithm"] == "gmf":
         from quantel.opt.gmf import GMF as OPT
+    elif config["optimiser"]["algorithm"] == "lbfgs":
+        from quantel.opt.lbfgs import LBFGS as OPT
     elif config["optimiser"]["algorithm"] == "mode_control":
         from quantel.opt.mode_controlling import ModeControl as OPT
 

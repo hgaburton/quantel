@@ -91,6 +91,12 @@ class Config(dict):
                                             max_subspace = getvalue(self.lines,"max_subspace",int,False,default=10),
                                             precmin = getvalue(self.lines,"precmin",float,False,default=1)
                                             )
+        elif self["optimiser"]["algorithm"] == "lbfgs":
+            self["optimiser"]["lbfgs"] = dict(minstep = getvalue(self.lines,"minstep",float,False,default=0),
+                                            maxstep = getvalue(self.lines,"maxstep",float,False,default=0.2),
+                                            max_subspace = getvalue(self.lines,"max_subspace",int,False,default=10),
+                                            backtrack_scale = getvalue(self.line,"backtrack_scale",float,False,default=0.1)
+                                            )
         else:
             errstr = "Requested optimiser '"+self["optimiser"]["algorithm"]+"' is not available"
             raise ValueError(errstr)

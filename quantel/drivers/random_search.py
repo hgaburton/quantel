@@ -17,12 +17,13 @@ def random_search(ints, config):
     print("-----------------------------------------------")
 
     # Get RHF orbitals
-    rhf = RHF(ints)
-    rhf.get_orbital_guess()
-    DIIS().run(rhf)
+    #rhf = RHF(ints)
+    #rhf.get_orbital_guess()
+    #DIIS().run(rhf)
 
-    ref_mo = rhf.mo_coeff.copy()
+    #ref_mo = rhf.mo_coeff.copy()
     ref_ci = None
+    ref_mo = numpy.random.rand(ints.nbsf(),ints.nmo())
 
     # Get information about the wavefunction defintion
     wfnconfig = config["wavefunction"][config["wavefunction"]["method"]]
@@ -59,6 +60,8 @@ def random_search(ints, config):
         from quantel.opt.lsr1 import SR1 as OPT
     elif config["optimiser"]["algorithm"] == "gmf":
         from quantel.opt.gmf import GMF as OPT
+    elif config["optimiser"]["algorithm"] == "lbfgs":
+        from quantel.opt.lbfgs import LBFGS as OPT
     elif config["optimiser"]["algorithm"] == "mode_control":
         from quantel.opt.mode_controlling import ModeControl as OPT
 

@@ -105,9 +105,11 @@ class GMF:
 
             # Get L-BFGS quasi-Newton step
             qn_step = self.get_lbfgs_step(v_gmod,v_step)
+            if(np.dot(qn_step,grad) > 0):
+                qn_step *= -1
 
             # Apply damping 
-            if(istep == 0):
+            if(True): #istep == 0):
                 alpha = 1
             else:
                 alpha = damping
@@ -119,6 +121,8 @@ class GMF:
             if(lstep > self.control["maxstep"]):
                 step = self.control["maxstep"] * step / lstep
                 comment = "truncated"
+            else: 
+                comment = ""
   
             # Check for step length converged
             step_length = np.linalg.norm(step)
@@ -213,7 +217,7 @@ class GMF:
         for i in range(nvec-1,-1,-1):
             alpha[i] = rho[i] * np.dot(sk[i], q) 
             q = q - alpha[i] * yk[i]
-        r = q
+        r = gamma_k * q
         for i in range(nvec):
             beta = rho[i] * np.dot(yk[i], r)
             r = r + sk[i] * (alpha[i] - beta) 
