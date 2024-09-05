@@ -14,7 +14,6 @@ class GMF:
        This implementation follows the approach outlined in 
           Y. L. A. Schmerwitz, G. Levi, H. Jonsson
           J. Chem. Theory Cmput. 19, 3634 (2023)
-       with minor modifications to control the step size with damping and truncation.
     '''
 
     def __init__(self, **kwargs):
@@ -24,7 +23,6 @@ class GMF:
         self.control["maxstep"] = 0.2
         self.control["rtrust"]  = 0.15
         self.control["max_subspace"] = 20
-        self.control["damping"] = 0.02
 
         for key in kwargs:
             if not key in self.control.keys():
@@ -59,7 +57,7 @@ class GMF:
 
         # Extract key parameters
         max_subspace = self.control["max_subspace"]
-        damping = self.control["damping"]
+        maxstep = self.control["maxstep"]
 
         # Initialise reference energy
         eref = obj.energy
@@ -71,7 +69,7 @@ class GMF:
             print(f"    > Num. MOs     = {obj.nmo: 6d}")
             print(f"    > Num. params  = {obj.dim: 6d}")
             print(f"    > Max subspace = {max_subspace: 6d}")
-            print(f"    > Damping fac  = {damping: 6.3f}")
+            print(f"    > Max step     = {maxstep: 6.3f}")
             print()
 
         # Initialise lists for subspace vectors
@@ -87,9 +85,6 @@ class GMF:
             # Get gradient and check convergence
             conv = np.linalg.norm(grad) * np.sqrt(1.0/grad.size)
             eref = obj.energy
-            
-            #hess_analytic = obj.hessian
-            cur_hind = 0 #np.sum(np.linalg.eigvalsh(hess_analytic)<0)
 
             if istep > 0 and plev > 0:
                 print(" {: 5d} {: 16.10f}    {:8.2e}    {:8.2e}    {:10s}".format(
@@ -104,17 +99,12 @@ class GMF:
                 break
 
             # Get L-BFGS quasi-Newton step
-            qn_step = self.get_lbfgs_step(v_gmod,v_step)
-            if(np.dot(qn_step,grad) > 0):
-                qn_step *= -1
-
-            # Apply damping 
-            if(True): #istep == 0):
-                alpha = 1
-            else:
-                alpha = damping
-                comment = "damped"
-            step = alpha * qn_step
+            step = self.get_lbfgs_step(v_gmod,v_step)
+            if(np.dot(step,grad) > 0):
+                # Need to make sure  s.g < 0 to maintain positive-definite L-BFGS Hessian 
+                print("Step has positive overlap with gradient - reversing direction")
+                step *= -1
+                comment = comment + "reversed "
 
             # Truncate the max step size
             lstep = np.linalg.norm(step)

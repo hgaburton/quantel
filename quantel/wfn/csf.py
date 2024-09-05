@@ -69,7 +69,6 @@ class GenealogicalCSF(Wavefunction):
             spin_coupling = self.spin_coupling
         if(spin_coupling == 'cs'):
             spin_coupling = ''
-        
         # Save orbital coefficients
         mo_guess      = orthogonalise(mo_guess, self.integrals.overlap_matrix())
         if(mo_guess.shape[1] != self.nmo):

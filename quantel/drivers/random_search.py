@@ -17,13 +17,12 @@ def random_search(ints, config):
     print("-----------------------------------------------")
 
     # Get RHF orbitals
-    #rhf = RHF(ints)
-    #rhf.get_orbital_guess()
-    #DIIS().run(rhf)
+    rhf = RHF(ints)
+    rhf.get_orbital_guess()
+    DIIS().run(rhf)
 
-    #ref_mo = rhf.mo_coeff.copy()
+    ref_mo = rhf.mo_coeff.copy()
     ref_ci = None
-    ref_mo = numpy.random.rand(ints.nbsf(),ints.nmo())
 
     # Get information about the wavefunction defintion
     wfnconfig = config["wavefunction"][config["wavefunction"]["method"]]
@@ -76,7 +75,8 @@ def random_search(ints, config):
     count = 0
     for itest in range(config["jobcontrol"]["search"]["nsample"]):
         # Randomly perturb CI and MO coefficients
-        mo_guess = ref_mo.dot(random_rot(nmo,  -numpy.pi, numpy.pi))
+        mo_range = config["jobcontrol"]["search"]["mo_rot_range"]
+        mo_guess = ref_mo.dot(random_rot(nmo,  -mo_range, mo_range))
         if(ref_ci) is None:
             ci_guess = None
         else:

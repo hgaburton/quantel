@@ -2,8 +2,6 @@
 
 import datetime, sys
 import numpy as np
-from quantel.utils.linalg import orthogonalise  
-import scipy
 
 class LBFGS:
     '''
@@ -13,14 +11,15 @@ class LBFGS:
           Numerical Optimization, J. Nocedal and S. J. Wright
        with a backtracking routine to avoid overstepping.
     '''
-
     def __init__(self, **kwargs):
-        '''Initialise the GMF instance'''
+        '''Initialise the LBFGS instance'''
         self.control = dict()
         self.control["minstep"] = 0.01
         self.control["maxstep"] = 0.2
         self.control["max_subspace"] = 20
         self.control["backtrack_scale"] = 0.1
+        self.control["with_transport"] = True
+        self.control['gamma_preconditioner'] = False
 
         for key in kwargs:
             if not key in self.control.keys():
@@ -28,7 +27,7 @@ class LBFGS:
             else: 
                 self.control[key] = kwargs[key]
 
-    def run(self, obj, thresh=1e-8, maxit=100, index=0, plev=1):
+    def run(self, obj, thresh=1e-6, maxit=100, index=0, plev=1, ethresh=1e-8):
         ''' Run the optimisation for a particular objective function obj.
             
             obj must have the following methods implemented:
@@ -47,44 +46,41 @@ class LBFGS:
         obj.canonicalize()
 
         if plev>0: print()
-        if plev>0: print( "  Initializing Generalized Mode Following...")
-        if plev>0 and (not index == None): print(f"    Target Hessian index = {index: 5d}") 
+        if plev>0: print( "  Initializing L-BFGS optimisation...")
 
         # Extract key parameters
         max_subspace = self.control["max_subspace"]
-        rescale = self.control["backtrack_scale"]
-
-        # Initialise reference energy
-        eref = obj.energy
         dim = obj.dim
-        grad = obj.gradient
 
         if plev>0:
             print(f"    > Num. MOs     = {obj.nmo: 6d}")
             print(f"    > Num. params  = {dim: 6d}")
             print(f"    > Max subspace = {max_subspace: 6d}")
-            print(f"    > Backtracking = {rescale: 6.3f}")
+            print(f"    > Backtracking = {self.control['backtrack_scale']: 6.3f}")
+            print(f"    > Parallel tr. = {self.control['with_transport']}")
+            print(f"    > Hybrid prec. = {not self.control['gamma_preconditioner']}")
             print()
 
         # Initialise lists for subspace vectors
         v_step = []
-        v_grad = [grad]
+        v_grad = []
 
         if plev>0: print("  ================================================================")
-        if plev>0: print("       {:^16s}    {:^8s}    {:^8s}".format("   Energy / Eh","Step Len","Error"))
+        if plev>0: print("       {:^16s}    {:^8s}    {:^8s}".format("   Energy / Eh","Step Len","RMSGrad"))
         if plev>0: print("  ================================================================")
 
         converged = False
         for istep in range(maxit+1):
-            # Get gradient and check convergence
+            # Get energy, gradient and check convergence
+            ecur = obj.energy
+            grad = obj.gradient
             conv = np.linalg.norm(grad) * np.sqrt(1.0/grad.size)
-            eref = obj.energy
             
             if istep > 0 and plev > 0:
                 print(" {: 5d} {: 16.10f}    {:8.2e}    {:8.2e}    {:10s}".format(
-                      istep, eref, step_length, conv, comment))
+                      istep, ecur, step_length, conv, comment))
             elif plev > 0:
-                print(" {: 5d} {: 16.10f}                {:8.2e}".format(istep, eref, conv))
+                print(" {: 5d} {: 16.10f}                {:8.2e}".format(istep, ecur, conv))
             sys.stdout.flush()
 
             # Check if we have convergence
@@ -92,55 +88,60 @@ class LBFGS:
                 converged = True
                 break
 
-            # Get L-BFGS quasi-Newton step
-            qn_step = self.get_lbfgs_step(v_grad,v_step)
+            # Check if we have sufficient decrease
+            if(istep == 0):
+                wolfe1 = True
+            else:
+                wolfe1 = (ecur - eref) <= 1e-4 * np.dot(step,gref)
+
+            # Obtain new step
             comment = ""
-            if(np.dot(qn_step,grad) > 0):
-                # Need to make sure  s.g < 0 to maintain positive-definite L-BFGS Hessian 
-                print("Step has positive overlap with gradient - reversing direction")
-                qn_step *= -1
-                comment = comment + "reversed "
+            if(wolfe1):
+                # Accept the step, update origin and compute new L-BFGS step
+                obj.save_last_step()
+                # Save reference energy and gradient
+                eref = ecur
+                gref = grad.copy()
 
-            # Apply backtracking to satisfy Wolfe sufficient decrease
-            # Eq. (3.6a) in Nocedal and Wright (page 34)
-            sg = np.dot(qn_step,grad)
-            alpha = 1
-            obj.save_last_step()
-            backtrack = False
-            while not backtrack:
-                obj.take_step(alpha * qn_step)
-                if obj.energy <= eref + 1e-4 * alpha * sg: 
-                    backtrack = True
-                else:
-                    alpha *= rescale
-                    comment = comment + "backtrack "
+                # Parallel transport previous vectors
+                if(self.control["with_transport"]):
+                    v_grad = [obj.transform_vector(v, 0.5 * step) for v in v_grad] 
+                    v_step = [obj.transform_vector(v, 0.5 * step) for v in v_step] 
+
+                # Save new gradient
+                v_grad.append(grad.copy())
+
+                # Get L-BFGS quasi-Newton step
+                prec = obj.get_preconditioner()
+                step = self.get_lbfgs_step(v_grad,v_step,prec)
+
+                # Need to make sure s.g < 0 to maintain positive-definite L-BFGS Hessian 
+                if(np.dot(step,gref) > 0):
+                    print("Step has positive overlap with gradient - reversing direction")
+                    step *= -1
+                
+                # Truncate the max step size
+                lscale = self.control["maxstep"] / np.linalg.norm(step)
+                if(lscale < 1):
+                    step = lscale * step
+                    comment = "truncated"
+
+            else:
+                print(f"Insufficient decrease - reducing step size by {self.control['backtrack_scale']:4.2f}")
+                # Insufficient decrease in energy, restore last position
                 obj.restore_last_step()
-            step = alpha * qn_step
 
-            # Truncate the max step size
-            lstep = np.linalg.norm(step)
-            if(lstep > self.control["maxstep"]):
-                step = self.control["maxstep"] * step / lstep
-                comment = comment + "truncated "
-  
-            # Check for step length converged
+                # Rescale step and remove last step from memory
+                step = step * self.control["backtrack_scale"]
+                v_step.pop(-1)
+                comment = "backtrack"
+            
+            # Save step and length
             step_length = np.linalg.norm(step)
-            if(step_length < thresh*thresh):
-                return True
+            v_step.append(step.copy())
 
             # Take the step
             obj.take_step(step)
-
-            # Save step
-            v_step.append(step.copy())
-
-            # Parallel transport previous vectors
-            v_grad = [obj.transform_vector(v, 0.5 * step) for v in v_grad] 
-            v_step = [obj.transform_vector(v, 0.5 * step) for v in v_step] 
-
-            # Save new gradient
-            grad = obj.gradient
-            v_grad.append(grad.copy())
 
             # Remove oldest vectors if subspace is saturated
             if(len(v_step)>max_subspace):
@@ -154,17 +155,24 @@ class LBFGS:
 
         # Save end time and report duration
         kernel_end_time = datetime.datetime.now()
-        computation_time = kernel_end_time - kernel_start_time
-        if plev>0: print("  L-BFGS walltime: ", computation_time.total_seconds(), " seconds")
+        computation_time = (kernel_end_time - kernel_start_time).total_seconds()
+        if(not converged):
+            if plev>0: print(f"  L-BFGS failed to converge in {istep: 6d} iterations ({computation_time: 6.2f} seconds)")
+        else:
+            if plev>0: print(f"  L-BFGS converged in {istep: 6d} iterations ({computation_time: 6.2f} seconds)")
 
         return converged
 
 
-    def get_lbfgs_step(self,v_grad,v_step):
+    def get_lbfgs_step(self,v_grad,v_step,prec):
         """ Compute the L-BFGS step from previous gradient and step vectors
 
             This routine follows Algorithm 7.4 on page 178 in 
                Numerical Optimization, J. Nocedal and S. J. Wright
+            
+            The step is preconditioned by the diagonal elements of an approximate Hessian.
+            If any of the diagonal elements are negative, the approximate inverse Hessian is defined
+            using Nocedal's formula.
         """
         # Subspace size
         nvec = len(v_step)
@@ -177,7 +185,7 @@ class LBFGS:
 
         # Get gamma_k
         gamma_k = np.dot(sk[-1], yk[-1]) / np.dot(yk[-1], yk[-1]) if (nvec > 0) else 1 
-
+            
         # Initialise step from last gradient
         q = v_grad[-1].copy()
 
@@ -186,9 +194,19 @@ class LBFGS:
         for i in range(nvec-1,-1,-1):
             alpha[i] = rho[i] * np.dot(sk[i], q) 
             q = q - alpha[i] * yk[i]
-        # Including gamma_k is vital for preconditioning the step length
-        r = gamma_k * q
+
+        # Including preconditioning is vital to control the step length
+        if(self.control["gamma_preconditioner"] or np.any(prec <= 0)):
+            # If out preciditioner is not positive definite, we assume that we are not 
+            # in a quadratic region and use Nocedal's formula to approximate the inverse Hessian
+            r = gamma_k * q
+        else:
+            # Recall preconditioner is Hessian, not inverse
+            r = q / prec
+
+        # Second loop of L-BFGS
         for i in range(nvec):
             beta = rho[i] * np.dot(yk[i], r)
             r = r + sk[i] * (alpha[i] - beta) 
+
         return - r

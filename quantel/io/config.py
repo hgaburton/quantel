@@ -81,8 +81,7 @@ class Config(dict):
             self["optimiser"]["gmf"] = dict(minstep = getvalue(self.lines,"minstep",float,False,default=0),
                                             rtrust  = getvalue(self.lines,"rtrust",float,False,default=0.15),
                                             maxstep = getvalue(self.lines,"maxstep",float,False,default=0.2),
-                                            max_subspace = getvalue(self.lines,"max_subspace",int,False,default=20),
-                                            damping = getvalue(self.lines,"damping",float,False,default=0.02)
+                                            max_subspace = getvalue(self.lines,"max_subspace",int,False,default=20)
                                             )
         elif self["optimiser"]["algorithm"] == "lsr1":
             self["optimiser"]["lsr1"] = dict(minstep = getvalue(self.lines,"minstep",float,False,default=0),
@@ -95,7 +94,9 @@ class Config(dict):
             self["optimiser"]["lbfgs"] = dict(minstep = getvalue(self.lines,"minstep",float,False,default=0),
                                             maxstep = getvalue(self.lines,"maxstep",float,False,default=0.2),
                                             max_subspace = getvalue(self.lines,"max_subspace",int,False,default=10),
-                                            backtrack_scale = getvalue(self.line,"backtrack_scale",float,False,default=0.1)
+                                            backtrack_scale = getvalue(self.lines,"backtrack_scale",float,False,default=0.1),
+                                            with_transport = getbool(self.lines,"parallel_transport",False,default=True),
+                                            gamma_preconditioner = getbool(self.lines,"gamma_prec",False,default=False)
                                             )
         else:
             errstr = "Requested optimiser '"+self["optimiser"]["algorithm"]+"' is not available"
@@ -122,7 +123,8 @@ class Config(dict):
         
         if self["jobcontrol"]["guess"] == "random":
             self["jobcontrol"]["search"] = dict(nsample = getvalue(self.lines,"nsample",int,False,default=10),
-                                                seed = getvalue(self.lines,"seed",int,False,default=7)
+                                                seed = getvalue(self.lines,"seed",int,False,default=7),
+                                                mo_rot_range= getvalue(self.lines,"mo_rot_range",float,False,default=numpy.pi)
                                                )
 
         elif self["jobcontrol"]["guess"] == "fromfile":
