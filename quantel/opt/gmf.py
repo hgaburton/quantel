@@ -3,8 +3,6 @@
 import datetime, sys
 import numpy as np
 from .trust_radius import TrustRadius
-from quantel.utils.linalg import orthogonalise  
-import scipy
 
 class GMF:
     '''

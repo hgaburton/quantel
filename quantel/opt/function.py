@@ -3,6 +3,7 @@
 from abc import ABCMeta, abstractmethod
 import numpy as np
 import scipy.linalg
+from quantel.opt.davidson import Davidson
 
 class Function(metaclass=ABCMeta):
     """Abstract base class for a real-valued objective function"""
@@ -123,6 +124,38 @@ class Function(metaclass=ABCMeta):
             elif i > tol: nuphl +=1
             else:         nzero +=1 
         return (ndown, nzero, nuphl)
+
+    def get_davidson_hessian_index(self, ntarget=5, eps=1e-5):
+        """Iteratively compute Hessian index from gradient only. 
+           This approach uses the Davidson algorithm."""
+        # Get approximate diagonal terms
+        diag = self.get_preconditioner()
+
+        # Start with 5 eigenvalues
+        nv = ntarget
+        david = Davidson(nreset=50)
+        x = None
+        while True:
+            # Get lowest eigenvalues through Davidson algorithm
+            eigs, x = david.run(self.approx_hess_on_vec,diag,nv,xguess=x,tol=1e-4,maxit=1000,Hv_args=dict(eps=1e-5))
+            if(np.any(eigs > 0)):
+                # We have found the first positive eigenvalue, so we can break
+                break
+
+            # Augment with more columns and try again
+            x  = np.column_stack([x, np.random.rand(diag.size,5)])
+            nv = x.shape[1]
+
+        # Count the Hessian index
+        ndown = 0
+        nzero = 0
+        for i in eigs:
+            if i < -1e-16:  ndown += 1
+            elif not i>1e-16:  nzero +=1 
+
+        # Save the result
+        self.hess_index = (ndown, nzero)
+        return
 
 
     def pushoff(self, n, angle=np.pi/2):

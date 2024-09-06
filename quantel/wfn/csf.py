@@ -178,6 +178,31 @@ class GenealogicalCSF(Wavefunction):
         # Reshape and return
         return (Hess[:, :, self.rot_idx])[self.rot_idx, :]
 
+    def approx_hess_on_vec(self, vec, eps=1e-3):
+        """ Compute the approximate Hess * vec product using forward finite difference """
+        # Get current gradient
+        g0 = self.gradient.copy()
+
+        # Save current position
+        mo_save = self.mo_coeff.copy()
+
+        # Get forward gradient
+        self.take_step(eps * vec)
+        g1 = self.gradient.copy()
+
+        # Restore to origin
+        self.mo_coeff = mo_save.copy()
+        self.update_integrals()
+
+        # Parallel transport back to current position
+        g1 = self.transform_vector(g1, -0.5 * eps * vec)
+
+        # Get approximation to H @ sk
+        return (g1 - g0) / eps
+
+    def hess_on_vec(self, vec):
+        return self.hessian @ vec
+
     def get_rdm12(self):
         """ Compute the 1- and 2-electron reduced matrices from the shell coupling in occupied space
             returns: 
@@ -239,7 +264,7 @@ class GenealogicalCSF(Wavefunction):
             F.create_dataset("s2", data=self.s2)
         
         # Save numpy txt file with energy and Hessian index
-        hindices = self.get_hessian_index()
+        hindices = self.hess_index
         with open(tag+".solution", "w") as F:
             F.write(f"{self.energy:18.12f} {hindices[0]:5d} {hindices[1]:5d} {self.s2:12.6f} {self.spin_coupling:s}\n")
         return 
