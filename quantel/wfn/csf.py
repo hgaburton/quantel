@@ -307,6 +307,17 @@ class GenealogicalCSF(Wavefunction):
         ovlp  = self.integrals.overlap_matrix()
         enuc  = self.integrals.scalar_potential()
         return csf_coupling(self, them, ovlp, hcore, eri, enuc)
+    
+    def get_orbital_guess(self, method="Core"):
+        """Get a guess for the molecular orbital coefficients"""
+        if(method == "Core"):
+            # Get core Hamiltonian
+            h1e = self.integrals.oei_matrix(True)
+            s = self.integrals.overlap_matrix()
+            e, Cguess = scipy.linalg.eigh(h1e, s)
+        else:
+            raise NotImplementedError(f"Orbital guess method {method} not implemented")
+        self.initialise(Cguess, spin_coupling=self.spin_coupling)
 
     def restore_last_step(self):
         """ Restore MO coefficients to previous step"""
@@ -329,7 +340,7 @@ class GenealogicalCSF(Wavefunction):
         orb_step[self.rot_idx] = step
         self.mo_coeff = np.dot(self.mo_coeff, scipy.linalg.expm(orb_step - orb_step.T))
 
-    def transform_vector(self,vec,step):
+    def transform_vector(self,vec,step,X=None):
         """ Perform orbital rotation for vector in tangent space"""
         # Construct transformation matrix
         orb_step = np.zeros((self.nmo, self.nmo))
@@ -344,8 +355,15 @@ class GenealogicalCSF(Wavefunction):
         # Apply transformation
         kappa = kappa @ Q
         kappa = Q.T @ kappa
+
+        # Also apply horizontal transform
+        if not X is None:
+            kappa = kappa @ X
+            kappa = X.T @ kappa
+
         # Return transformed vector
         return kappa[self.rot_idx]
+
 
     def get_density_matrices(self):
         """ Compute total density matrix and relevant matrices for K build"""
@@ -450,7 +468,6 @@ class GenealogicalCSF(Wavefunction):
 
     def get_preconditioner(self):
         """Compute approximate diagonal of Hessian"""
-        fock = np.linalg.multi_dot([self.mo_coeff.T, self.fock, self.mo_coeff])
         Q = np.zeros((self.nmo,self.nmo))
         
         for p in range(self.nmo):
@@ -514,22 +531,35 @@ class GenealogicalCSF(Wavefunction):
         # Transform Fock matrix to MO basis
         fock = np.linalg.multi_dot([self.mo_coeff.T, self.fock, self.mo_coeff])
 
-        # Get occ-occ and vir-vir blocks of (pseudo) Fock matrix
-        foo = fock[:self.ncore, :self.ncore]
-        faa = fock[self.ncore:self.nocc, self.ncore:self.nocc]
-        fvv = fock[self.nocc:, self.nocc:]
-
-        # Get transformations
+        # Initialise transformation matrix
         self.mo_energy = np.zeros(self.nmo)
-        self.mo_energy[:self.ncore], Qoo = np.linalg.eigh(foo)
-        self.mo_energy[self.nocc:], Qvv = np.linalg.eigh(fvv)
-        self.mo_energy[self.ncore:self.nocc] = np.diag(faa)
+        Q = np.zeros((self.nmo,self.nmo))
 
-        # Apply transformations
-        self.mo_coeff[:,:self.ncore] = np.dot(self.mo_coeff[:,:self.ncore], Qoo)
-        self.mo_coeff[:,self.nocc:] = np.dot(self.mo_coeff[:,self.nocc:], Qvv)
+        # Get core transformation
+        foo = fock[self.core_indices,:][:,self.core_indices]
+        self.mo_energy[:self.ncore], Qoo = np.linalg.eigh(foo)
+        for i, ii in enumerate(self.core_indices):
+            for j, jj in enumerate(self.core_indices):
+                Q[ii,jj] = Qoo[i,j]
+
+        # Loop over shells
+        for W in self.shell_indices:
+            fww = fock[W,:][:,W]
+            self.mo_energy[W], Qww = np.linalg.eigh(fww)
+            for i, ii in enumerate(W):
+                for j, jj in enumerate(W):
+                    Q[ii,jj] = Qww[i,j]
+
+        # Virtual transformation
+        fvv = fock[self.nocc:, self.nocc:]
+        self.mo_energy[self.nocc:], Qvv = np.linalg.eigh(fvv)
+        Q[self.nocc:,self.nocc:] = Qvv
+
+        # Apply transformation
+        if(np.linalg.det(Q) < 0):
+            Q[:,0] *= -1
+        self.mo_coeff = self.mo_coeff @ Q
         
         # Update integrals
         self.update_integrals()
-
-        return
+        return Q

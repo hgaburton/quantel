@@ -96,6 +96,8 @@ class Config(dict):
                                             max_subspace = getvalue(self.lines,"max_subspace",int,False,default=10),
                                             backtrack_scale = getvalue(self.lines,"backtrack_scale",float,False,default=0.1),
                                             with_transport = getbool(self.lines,"parallel_transport",False,default=True),
+                                            with_canonical = getbool(self.lines,"pseudo-canonicalise",False,default=True),
+                                            canonical_interval = getvalue(self.lines,"canonical_interval",int,False,default=10),
                                             gamma_preconditioner = getbool(self.lines,"gamma_prec",False,default=False)
                                             )
         else:

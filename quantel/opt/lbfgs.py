@@ -15,10 +15,12 @@ class LBFGS:
         '''Initialise the LBFGS instance'''
         self.control = dict()
         self.control["minstep"] = 0.01
-        self.control["maxstep"] = 0.2
+        self.control["maxstep"] = 0.5
         self.control["max_subspace"] = 20
         self.control["backtrack_scale"] = 0.1
         self.control["with_transport"] = True
+        self.control["with_canonical"] = True
+        self.control["canonical_interval"] = 10
         self.control['gamma_preconditioner'] = False
 
         for key in kwargs:
@@ -27,7 +29,7 @@ class LBFGS:
             else: 
                 self.control[key] = kwargs[key]
 
-    def run(self, obj, thresh=1e-6, maxit=100, index=0, plev=1, ethresh=1e-8):
+    def run(self, obj, thresh=1e-6, maxit=100, plev=1, ethresh=1e-8, index=0):
         ''' Run the optimisation for a particular objective function obj.
             
             obj must have the following methods implemented:
@@ -42,9 +44,6 @@ class LBFGS:
         # Save initial time
         kernel_start_time = datetime.datetime.now()
 
-        # Canonicalise, might put Fock matrices in more diagonal form
-        obj.canonicalize()
-
         if plev>0: print()
         if plev>0: print( "  Initializing L-BFGS optimisation...")
 
@@ -53,12 +52,14 @@ class LBFGS:
         dim = obj.dim
 
         if plev>0:
-            print(f"    > Num. MOs     = {obj.nmo: 6d}")
-            print(f"    > Num. params  = {dim: 6d}")
-            print(f"    > Max subspace = {max_subspace: 6d}")
-            print(f"    > Backtracking = {self.control['backtrack_scale']: 6.3f}")
-            print(f"    > Parallel tr. = {self.control['with_transport']}")
-            print(f"    > Hybrid prec. = {not self.control['gamma_preconditioner']}")
+            print(f"    > Num. MOs       = {obj.nmo: 6d}")
+            print(f"    > Num. params    = {dim: 6d}")
+            print(f"    > Max subspace   = {max_subspace: 6d}")
+            print(f"    > Backtracking   = {self.control['backtrack_scale']: 6.3f}")
+            print(f"    > Parallel tr.   = {self.control['with_transport']}")
+            print(f"    > Pseudo-canon.  = {self.control['with_canonical']}")
+            print(f"    > Canon interval = {self.control['canonical_interval']}")
+            print(f"    > Hybrid prec.   = {not self.control['gamma_preconditioner']}")
             print()
 
         # Initialise lists for subspace vectors
@@ -66,21 +67,24 @@ class LBFGS:
         v_grad = []
 
         if plev>0: print("  ================================================================")
-        if plev>0: print("       {:^16s}    {:^8s}    {:^8s}".format("   Energy / Eh","Step Len","RMSGrad"))
+        if plev>0: print("       {:^16s}    {:^8s}    {:^8s}".format("   Energy / Eh","Step Len","Max(|G_i|)"))
         if plev>0: print("  ================================================================")
 
         converged = False
+        qn_count = 0
         for istep in range(maxit+1):
             # Get energy, gradient and check convergence
             ecur = obj.energy
             grad = obj.gradient
-            conv = np.linalg.norm(grad) * np.sqrt(1.0/grad.size)
+            c1 = np.linalg.norm(grad,ord=2) * np.sqrt(1.0/dim)
+            c2 = np.linalg.norm(grad,ord=np.inf)
+            conv = c2
             
             if istep > 0 and plev > 0:
-                print(" {: 5d} {: 16.10f}    {:8.2e}    {:8.2e}    {:10s}".format(
+                print(" {: 5d} {: 16.10f}    {:8.2e}     {:8.2e}    {:10s}".format(
                       istep, ecur, step_length, conv, comment))
             elif plev > 0:
-                print(" {: 5d} {: 16.10f}                {:8.2e}".format(istep, ecur, conv))
+                print(" {: 5d} {: 16.10f}                 {:8.2e}".format(istep, ecur, conv))
             sys.stdout.flush()
 
             # Check if we have convergence
@@ -99,14 +103,22 @@ class LBFGS:
             if(wolfe1):
                 # Accept the step, update origin and compute new L-BFGS step
                 obj.save_last_step()
+
+                # Pseudo-canonicalize orbitals if requested
+                X = None
+                if(self.control["with_canonical"] and np.mod(qn_count,self.control["canonical_interval"])==0):
+                    print("  Pseudo-canonicalising the orbitals")
+                    X = obj.canonicalize()
+                    grad = obj.gradient
+
                 # Save reference energy and gradient
                 eref = ecur
                 gref = grad.copy()
 
                 # Parallel transport previous vectors
                 if(self.control["with_transport"]):
-                    v_grad = [obj.transform_vector(v, 0.5 * step) for v in v_grad] 
-                    v_step = [obj.transform_vector(v, 0.5 * step) for v in v_step] 
+                    v_grad = [obj.transform_vector(v, 0.5 * step, X) for v in v_grad] 
+                    v_step = [obj.transform_vector(v, 0.5 * step, X) for v in v_step] 
 
                 # Save new gradient
                 v_grad.append(grad.copy())
@@ -114,6 +126,7 @@ class LBFGS:
                 # Get L-BFGS quasi-Newton step
                 prec = obj.get_preconditioner()
                 step = self.get_lbfgs_step(v_grad,v_step,prec)
+                qn_count += 1
 
                 # Need to make sure s.g < 0 to maintain positive-definite L-BFGS Hessian 
                 if(np.dot(step,gref) > 0):
@@ -160,6 +173,8 @@ class LBFGS:
             if plev>0: print(f"  L-BFGS failed to converge in {istep: 6d} iterations ({computation_time: 6.2f} seconds)")
         else:
             if plev>0: print(f"  L-BFGS converged in {istep: 6d} iterations ({computation_time: 6.2f} seconds)")
+        sys.stdout.flush()
+
 
         return converged
 
