@@ -30,7 +30,7 @@ def random_search(ints, config):
         print(f"\nRunning initial high-spin ROHF calculation with multiplicity {ms+1: 3d}...")
         mf = CSF(ints, '+'*ms)
         mf.get_orbital_guess()
-        LBFGS(with_canonical=False).run(mf,maxit=500)
+        LBFGS().run(mf,maxit=500)
         ref_mo = mf.mo_coeff.copy()
     ref_ci = None
 

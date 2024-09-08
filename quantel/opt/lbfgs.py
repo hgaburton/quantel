@@ -130,7 +130,7 @@ class LBFGS:
 
                 # Need to make sure s.g < 0 to maintain positive-definite L-BFGS Hessian 
                 if(np.dot(step,gref) > 0):
-                    print("Step has positive overlap with gradient - reversing direction")
+                    print("  Step has positive overlap with gradient - reversing direction")
                     step *= -1
                 
                 # Truncate the max step size
@@ -140,7 +140,7 @@ class LBFGS:
                     comment = "truncated"
 
             else:
-                print(f"Insufficient decrease - reducing step size by {self.control['backtrack_scale']:4.2f}")
+                print(f"  Insufficient decrease - rescaling step size by {self.control['backtrack_scale']:4.2f}")
                 # Insufficient decrease in energy, restore last position
                 obj.restore_last_step()
 
