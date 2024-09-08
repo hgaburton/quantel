@@ -1,9 +1,11 @@
 #include <omp.h>
+#include <fstream>
+#include <libint2/lcao/molden.h>
 #include "libint_interface.h"
 #include "linalg.h"
 
 using namespace libint2;
-
+using namespace Eigen;
 
 void LibintInterface::initialize()
 {
@@ -626,4 +628,17 @@ void LibintInterface::oei_ao_to_mo(
 
     // Perform transformation
     oei_transform(C1,C2,oei,oei_mo,d1,d2,m_nbsf);
+}
+
+void LibintInterface::molden_orbs(
+    std::vector<double> &C, std::vector<double> &occ, std::vector<double> &evals)
+{
+    // Convert arrays to Eigen format
+    Map<Matrix<double,Dynamic,Dynamic,RowMajor> > coeff(C.data(),m_nbsf,m_nmo);
+    Map<VectorXd> mo_occ(occ.data(),m_nmo);
+    Map<VectorXd> mo_energy(evals.data(),m_nmo);
+    // Export orbitals
+    molden::Export xport(m_mol.atoms, m_basis, coeff, mo_occ, mo_energy);
+    std::ofstream molden_file("hf++.molden");
+    xport.write(molden_file);
 }

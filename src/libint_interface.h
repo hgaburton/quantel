@@ -156,6 +156,10 @@ public:
     /// Initialise all relevant variables
     void initialize();
 
+    /// Plot orbitals
+    void molden_orbs(std::vector<double> &C, 
+                     std::vector<double> &occ, 
+                     std::vector<double> &evals);
 
 private:
     /// Compute the nuclear repulsion energy

@@ -343,6 +343,22 @@ PYBIND11_MODULE(_quantel, m) {
                return vec_to_np_array(nbsf, nbsf, nbsf, nbsf, ints.tei_array());
                },
                "Return two-electron integral (pq|rs) array")
+          .def("molden_orbs", [](LibintInterface &ints,
+               py::array_t<double> &mo_coeff, py::array_t<double> &mo_occ, py::array_t<double> &mo_energy)
+               {
+                    // Get the buffer for the numpy arrays
+                    auto C_buf = mo_coeff.request();
+                    auto O_buf = mo_occ.request();
+                    auto E_buf = mo_energy.request();
+                    // Get the data from the numpy arrays
+                    std::vector<double> v_C((double *) C_buf.ptr, (double *) C_buf.ptr + C_buf.size);
+                    std::vector<double> v_O((double *) O_buf.ptr, (double *) O_buf.ptr + O_buf.size);
+                    std::vector<double> v_E((double *) E_buf.ptr, (double *) E_buf.ptr + E_buf.size);
+                    ints.molden_orbs(v_C,v_O,v_E);
+                    return ;
+               },
+               "Construct molden file for given set of orbitals"
+          )
           ;
 
      m.def("det_str", &det_str,"Print the determinant");
