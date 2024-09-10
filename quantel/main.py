@@ -91,4 +91,4 @@ def main():
     print("====================================================")
     print(" Calculation complete. Thank you for using Quantel! ")
     print(" Total time = {:5.3f}s".format(timedelta(seconds=(end_time - start_time)).total_seconds()))
-    print("==-=================================================")
+    print("====================================================")
