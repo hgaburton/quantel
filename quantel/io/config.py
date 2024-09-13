@@ -79,9 +79,11 @@ class Config(dict):
                                                     )
         elif self["optimiser"]["algorithm"] == "gmf":
             self["optimiser"]["gmf"] = dict(minstep = getvalue(self.lines,"minstep",float,False,default=0),
-                                            rtrust  = getvalue(self.lines,"rtrust",float,False,default=0.15),
                                             maxstep = getvalue(self.lines,"maxstep",float,False,default=0.2),
-                                            max_subspace = getvalue(self.lines,"max_subspace",int,False,default=20)
+                                            with_transport = getbool(self.lines,"parallel_transport",False,default=True),
+                                            with_canonical = getbool(self.lines,"pseudo-canonicalise",False,default=True),
+                                            canonical_interval = getvalue(self.lines,"canonical_interval",int,False,default=10),
+                                            max_subspace = getvalue(self.lines,"max_subspace",int,False,default=10)
                                             )
         elif self["optimiser"]["algorithm"] == "lsr1":
             self["optimiser"]["lsr1"] = dict(minstep = getvalue(self.lines,"minstep",float,False,default=0),

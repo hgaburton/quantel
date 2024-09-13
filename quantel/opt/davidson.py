@@ -61,7 +61,8 @@ class Davidson:
 
         # Loop over iterations
         comment = ""
-        for it in range(maxit):
+        converged = False
+        for it in range(maxit+1):
             # Form new HK vectors as required
             for ik in range(HK.shape[1],K.shape[1]):
                 # Get step
@@ -89,6 +90,7 @@ class Davidson:
 
             # Check convergence
             if all(res < tol for res in residuals):
+                converged = True
                 break
 
             # Reset Krylov subpsace if reset iteration
@@ -117,7 +119,10 @@ class Davidson:
         # Save end time and report duration
         kernel_end_time = datetime.datetime.now()
         computation_time = (kernel_end_time - kernel_start_time).total_seconds()
-        if plev>0: print(f"  Davidson diagonalisation converged in {it: 6d} iterations ({computation_time: 6.2f} seconds)")
+        if(not converged):
+            if plev>0: print(f"  Davidson diagonalisation failed to converge in {it: 6d} iterations ({computation_time: 6.2f} seconds)")
+        else:
+            if plev>0: print(f"  Davidson diagonalisation converged in {it: 6d} iterations ({computation_time: 6.2f} seconds)")
             
         if plev>0: 
             print()

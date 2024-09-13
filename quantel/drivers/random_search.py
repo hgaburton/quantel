@@ -24,7 +24,7 @@ def random_search(ints, config):
         print("\nRunning initial closed-shell RHF calculation...")
         mf = RHF(ints)
         mf.get_orbital_guess()
-        DIIS().run(mf)
+        DIIS().run(mf,thresh=1e-7)
         ref_mo = mf.mo_coeff.copy()
     else:
         print(f"\nRunning initial high-spin ROHF calculation with multiplicity {ms+1: 3d}...")

@@ -2,7 +2,7 @@
 
 import datetime, sys
 import numpy as np
-from .trust_radius import TrustRadius
+from quantel.opt.davidson import Davidson
 
 class GMF:
     '''
@@ -19,17 +19,16 @@ class GMF:
         self.control = dict()
         self.control["minstep"] = 0.01
         self.control["maxstep"] = 0.2
-        self.control["rtrust"]  = 0.15
-        self.control["max_subspace"] = 20
+        self.control["max_subspace"] = 10
+        self.control["with_transport"] = True
+        self.control["with_canonical"] = True
+        self.control["canonical_interval"] = 10
 
         for key in kwargs:
             if not key in self.control.keys():
                 print("ERROR: Keyword [{:s}] not recognised".format(key))
             else: 
                 self.control[key] = kwargs[key]
-
-        # Initialise the trust radius controller
-        self.__trust = TrustRadius(self.control["rtrust"], self.control["minstep"], self.control["maxstep"])
 
     def run(self, obj, thresh=1e-8, maxit=100, index=0, plev=1):
         ''' Run the optimisation for a particular objective function obj.
@@ -61,7 +60,9 @@ class GMF:
         eref = obj.energy
         dim = obj.dim
         grad = obj.gradient
-        gmod, evec = self.get_gmf_gradient(obj,grad,index)
+        prec = obj.get_preconditioner()
+        eigval, evec = Davidson(nreset=50).run(obj.approx_hess_on_vec,prec,index,tol=1e-4,plev=0)
+        gmod, evec = self.get_gmf_gradient(obj,grad,index,eigval,evec)
 
         if plev>0:
             print(f"    > Num. MOs     = {obj.nmo: 6d}")
@@ -79,16 +80,18 @@ class GMF:
         if plev>0: print("  ================================================================")
 
         converged = False
+        qn_count = 0
         for istep in range(maxit+1):
             # Get gradient and check convergence
-            conv = np.linalg.norm(grad) * np.sqrt(1.0/grad.size)
-            eref = obj.energy
+            #conv = np.linalg.norm(grad) * np.sqrt(1.0/grad.size)
+            conv = np.linalg.norm(grad,ord=np.inf)
+            ecur = obj.energy
 
             if istep > 0 and plev > 0:
                 print(" {: 5d} {: 16.10f}    {:8.2e}    {:8.2e}    {:10s}".format(
-                      istep, eref, step_length, conv, comment))
+                      istep, ecur, step_length, conv, comment))
             elif plev > 0:
-                print(" {: 5d} {: 16.10f}                {:8.2e}".format(istep, eref, conv))
+                print(" {: 5d} {: 16.10f}                {:8.2e}".format(istep, ecur, conv))
             sys.stdout.flush()
 
             # Check if we have convergence
@@ -98,6 +101,8 @@ class GMF:
 
             # Get L-BFGS quasi-Newton step
             step = self.get_lbfgs_step(v_gmod,v_step)
+            comment = ""
+            qn_count += 1
             if(np.dot(step,grad) > 0):
                 # Need to make sure  s.g < 0 to maintain positive-definite L-BFGS Hessian 
                 print("Step has positive overlap with gradient - reversing direction")
@@ -119,30 +124,35 @@ class GMF:
 
             # Take the step
             obj.take_step(step)
-
             # Save step
             v_step.append(step.copy())
 
+            # Pseudo-canonicalize orbitals if requested
+            X = None
+            if(self.control["with_canonical"] and np.mod(qn_count,self.control["canonical_interval"])==0):
+                print("  Pseudo-canonicalising the orbitals")
+                X = obj.canonicalize()
+
             # Parallel transport previous vectors
-            v_gmod = [obj.transform_vector(v, 0.5 * step) for v in v_gmod] 
-            v_step = [obj.transform_vector(v, 0.5 * step) for v in v_step] 
+            if(self.control["with_transport"]):
+                v_gmod = [obj.transform_vector(v, 0.5 * step, X) for v in v_gmod] 
+                v_step = [obj.transform_vector(v, 0.5 * step, X) for v in v_step] 
+                for i in range(index):
+                    evec[:,i] = obj.transform_vector(evec[:,i], 0.5 * step, X)
+
+            # Compute n lowest eigenvalues
+            prec = obj.get_preconditioner()
+            eigval, evec = Davidson(nreset=50).run(obj.approx_hess_on_vec,prec,index,xguess=evec,tol=1e-4,plev=0)
 
             # Compute new GMF gradient (need to parallel transport Hessian eigenvector)
-            xguess = np.empty((dim,index))
-            for i in range(index):
-                xguess[:,i] = obj.transform_vector(evec[:,i], 0.5 * step)
-            # Save gradient
             grad = obj.gradient
-            gmod, evec = self.get_gmf_gradient(obj,grad,index,xguess=evec)
+            gmod, evec = self.get_gmf_gradient(obj,grad,index,eigval,evec)
             v_gmod.append(gmod.copy())
 
             # Remove oldest vectors if subspace is saturated
             if(len(v_step)>max_subspace):
                 v_gmod.pop(0)
                 v_step.pop(0)
-
-            # Increment the iteration counter
-            istep += 1
 
         if plev>0: print("  ================================================================")
 
@@ -153,8 +163,7 @@ class GMF:
 
         return converged
 
-
-    def get_gmf_gradient(self,obj,grad,n,xguess=None):
+    def get_gmf_gradient(self,obj,grad,n,e,x):
         """ Compute modified gradient for n-index saddle point search using generalised mode following
 
             This gradient corresponds to Eq. (11) in  
@@ -165,7 +174,8 @@ class GMF:
             return grad, None
 
         # Compute n lowest eigenvalues
-        e, x = self.get_Hessian_eigenpairs(obj,grad,n,xguess=xguess)
+        #prec = obj.get_preconditioner()
+        #e, x = Davidson(nreset=50).run(obj.approx_hess_on_vec,prec,n,xguess=xguess,tol=1e-4,plev=0)
 
         # Then project gradient as required
         if(e[n-1] < 0):
@@ -179,7 +189,7 @@ class GMF:
         return gmod, x
     
 
-    def get_lbfgs_step(self,v_grad,v_step): 
+    def get_lbfgs_step(self,v_grad,v_step):
         """ Compute the L-BFGS step from previous gradient and step vectors
 
             This routine follows Algorithm 7.4 on page 178 in 
@@ -210,94 +220,3 @@ class GMF:
             beta = rho[i] * np.dot(yk[i], r)
             r = r + sk[i] * (alpha[i] - beta) 
         return -r
-
-
-    def get_Hessian_eigenpairs(self,obj,g0,n,xguess=None,max_iter=100,eps=1e-5,tol=1e-2,nreset=10):
-        """ Compute the lowest n eigenvectors and eigenvalues of the Hessian using the 
-            Davidson algorithm. 
-
-            The Hessian vector product H @ v is computed approximately using the forward finite 
-            difference approach given by Eq. (12) in
-              Y. L. A. Schmerwitz, G. Levi, H. Jonsson
-              J. Chem. Theory Cmput. 19, 3634 (2023)
-
-            An initial guess for the eigenvectors can be provided by the optional argument xguess.
-        """
-        # Initialise Krylov subspace
-        dim = g0.size
-        K   = np.empty((dim, 0))
-        
-        # Shifted objected
-        shift = obj.copy()
-
-        # Get approximate diagonal of Hessian
-        Qdiag = obj.get_preconditioner()
-
-        # If no guess provided, start with identity
-        if(xguess is None):
-            inds = np.argsort(Qdiag)[:n]
-            K = 0.01 * np.ones((dim,n))
-            for i,j in enumerate(inds):
-                K[j,i] = 1
-        else:
-            assert(xguess.shape[1] == n)
-            K = xguess.copy()
-        K = orthogonalise(K,np.identity(dim),fill=False)
-
-        # Initialise HK vectors
-        HK = np.empty((dim, 0))
-
-        # Loop over iterations
-        for it in range(max_iter):
-            # Form new HK vectors as required
-            for ik in range(HK.shape[1],K.shape[1]):
-                # Get step
-                sk = K[:,ik]
-                # Get forward gradient
-                shift.initialise(obj.mo_coeff,spin_coupling=obj.spin_coupling,integrals=False)
-                shift.take_step(eps * sk)
-                g1 = shift.gradient.copy()
-                # Parallel transport back to current position
-                g1 = obj.transform_vector(g1, -0.5 * eps * sk)
-                # Get approximation to H @ sk
-                H_sk = (g1 - g0) / eps
-                # Add to HK space
-                HK = np.column_stack([HK,H_sk]) 
-
-            # Solve Krylov subproblem
-            A = K.T @ HK
-            e, y = np.linalg.eigh(A)
-            # Extract relevant eigenvalues (e) and eigenvectors (x)
-            e = e[:n]
-            y = y[:,:n]
-            x = K @ y
-            
-            # Compute residuals
-            r = HK @ y - x @ np.diag(e)
-            residuals = np.max(np.abs(r),axis=0)
-            # Check convergence
-            if all(res < tol for res in residuals):
-                break
-
-            # Reset Krylov subpsace if reset iteration
-            if(np.mod(it,nreset) == 0):
-                K = x.copy()
-                HK = np.empty((dim,0))
-                continue
-
-            # Otherwise, add residuals to Krylov space
-            for i in range(n):
-                ri = r[:,i]
-                if(residuals[i] > tol):
-                    prec = e[i] - Qdiag
-                    v_new = ri / prec
-                    # Perform Gram-Schmidt orthogonalisation twice
-                    v_new = v_new - K @ (K.T @ v_new)
-                    v_new = v_new - K @ (K.T @ v_new)
-                    # Add vector to Krylov subspace if norm is non-vanishing
-                    nv = np.linalg.norm(v_new)
-                    if(np.linalg.norm(v_new) > 1e-10):
-                        v_new = v_new / np.linalg.norm(v_new)
-                    K = np.column_stack([K, v_new])
-            
-        return e, x
