@@ -303,7 +303,7 @@ class GenealogicalCSF(Wavefunction):
         """ Compute the Hamiltonian coupling between two CSF objects
         """
         hcore = self.integrals.oei_matrix(True)
-        eri   = self.integrals.tei_array(True,False).transpose(0,2,1,3).reshape(self.nbsf**2,self.nbsf**2)
+        eri   = self.integrals.tei_array()
         ovlp  = self.integrals.overlap_matrix()
         enuc  = self.integrals.scalar_potential()
         return csf_coupling(self, them, ovlp, hcore, eri, enuc)
