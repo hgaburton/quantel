@@ -1,4 +1,3 @@
-#include <iostream>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/complex.h>
@@ -47,6 +46,7 @@ bool libint_initialize()
      }
      // Initialize libint2
      libint2::initialize();
+     libint2::set_solid_harmonics_ordering(libint2::SHGShellOrdering_Gaussian);
 
      initialized = true;
      return true;
