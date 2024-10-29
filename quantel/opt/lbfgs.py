@@ -138,6 +138,11 @@ class LBFGS:
                 if(lscale < 1):
                     step = lscale * step
                     comment = "truncated"
+                if(np.linalg.norm(step,ord=np.inf) < 1e-10):
+                    print("  Step size indicates convergence")
+                    converged = True
+                    break
+
 
             else:
                 print(f"  Insufficient decrease - rescaling step size by {self.control['backtrack_scale']:4.2f}")
