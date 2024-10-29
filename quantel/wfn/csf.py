@@ -282,14 +282,13 @@ class GenealogicalCSF(Wavefunction):
             F.write(f"{self.energy:18.12f} {hindices[0]:5d} {hindices[1]:5d} {self.s2:12.6f} {self.spin_coupling:s}\n")
         return 
 
-    def read_from_orca(self,fname):
+    def read_from_orca(self,json_file):
         """ Read a set of CSF coefficients from ORCA gbw file.
             This requires the orca_2json executable to be available and spin_coupling 
             must be set in the Quantel input file.
         """
         import json
         # Read ORCA Json file
-        json_file = '.'.join(fname.split('.')[:-1]+['json'])
         with open(json_file, 'r') as f:
             data = json.load(f)
         mo_read = np.array([value['MOCoefficients'] for value in data['Molecule']['MolecularOrbitals']['MOs']]).T
