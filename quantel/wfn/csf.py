@@ -287,15 +287,8 @@ class GenealogicalCSF(Wavefunction):
             This requires the orca_2json executable to be available and spin_coupling 
             must be set in the Quantel input file.
         """
-        print("Reading CSF from ORCA file")
-        import subprocess, json
-        try:
-            subprocess.run(['orca_2json', '--version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        except: 
-            raise RuntimeError("orca_2json executable not available")
-
-        # Convert ORCA file to JSON and extract MO coefficients
-        subprocess.run(['orca_2json', fname])
+        import json
+        # Read ORCA Json file
         json_file = '.'.join(fname.split('.')[:-1]+['json'])
         with open(json_file, 'r') as f:
             data = json.load(f)
