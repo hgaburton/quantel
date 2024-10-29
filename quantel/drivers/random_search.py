@@ -106,8 +106,8 @@ def random_search(ints, config):
         # Compare solution against previously found states
         new = True
         for otherwfn in wfn_list:
-            #if 1.0 - abs(myfun.overlap(otherwfn)) < config["jobcontrol"]["dist_thresh"]:
             if abs(myfun.energy - otherwfn.energy) < config["jobcontrol"]["dist_thresh"]:
+              if 1.0 - abs(myfun.overlap(otherwfn)) < config["jobcontrol"]["dist_thresh"]:
                 new = False
                 break
 

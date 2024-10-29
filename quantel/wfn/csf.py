@@ -10,6 +10,18 @@ from quantel.gnme.csf_noci import csf_coupling
 from .wavefunction import Wavefunction
 import time
 
+def flag_transport(A,T,mask,max_order=50,tol=1e-4):
+   tA = A.copy()
+   M  = A.copy()
+   for i in range(max_order):
+       TM = T @ M
+       M = - 0.5 * (TM - TM.T) / (i+1)
+       M[mask] = 0
+       if(np.max(np.abs(M)) < tol):
+           break
+       tA += M
+   return tA
+
 
 class GenealogicalCSF(Wavefunction):
     """ 
@@ -45,7 +57,6 @@ class GenealogicalCSF(Wavefunction):
         self.nbsf       = integrals.nbsf()
         self.nmo        = integrals.nmo()
     
-    
     def sanity_check(self):
         '''Need to be run at the start of the kernel to verify that the number of 
            orbitals and electrons in the CAS are consistent with the system '''
@@ -69,8 +80,9 @@ class GenealogicalCSF(Wavefunction):
             spin_coupling = self.spin_coupling
         if(spin_coupling == 'cs'):
             spin_coupling = ''
-        # Save orbital coefficients
-        mo_guess      = orthogonalise(mo_guess, self.integrals.overlap_matrix())
+
+        # Orthogonalise the MO coefficients
+        mo_guess      = orthogonalise(mo_guess, self.integrals.overlap_matrix())        
         if(mo_guess.shape[1] != self.nmo):
             raise ValueError("Number of orbitals in MO coefficient matrix is incorrect")
         self.mo_coeff = mo_guess
@@ -105,6 +117,7 @@ class GenealogicalCSF(Wavefunction):
         # Save mapping indices for unique orbital rotations
         self.frozen     = None
         self.rot_idx    = self.uniq_var_indices(self.frozen)
+        self.invariant  = self.invariant_indices()
         self.nrot       = np.sum(self.rot_idx)
 
         # Initialise integrals
@@ -195,7 +208,7 @@ class GenealogicalCSF(Wavefunction):
         self.update_integrals()
 
         # Parallel transport back to current position
-        g1 = self.transform_vector(g1, -0.5 * eps * vec)
+        g1 = self.transform_vector(g1, - eps * vec)
 
         # Get approximation to H @ sk
         return (g1 - g0) / eps
@@ -268,16 +281,55 @@ class GenealogicalCSF(Wavefunction):
         with open(tag+".solution", "w") as F:
             F.write(f"{self.energy:18.12f} {hindices[0]:5d} {hindices[1]:5d} {self.s2:12.6f} {self.spin_coupling:s}\n")
         return 
-    
+
+    def read_from_orca(self,fname):
+        """ Read a set of CSF coefficients from ORCA gbw file.
+            This requires the orca_2json executable to be available and spin_coupling 
+            must be set in the Quantel input file.
+        """
+        print("Reading CSF from ORCA file")
+        import subprocess, json
+        try:
+            subprocess.run(['orca_2json', '--version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except: 
+            raise RuntimeError("orca_2json executable not available")
+
+        # Convert ORCA file to JSON and extract MO coefficients
+        subprocess.run(['orca_2json', fname])
+        json_file = '.'.join(fname.split('.')[:-1]+['json'])
+        with open(json_file, 'r') as f:
+            data = json.load(f)
+        mo_read = np.array([value['MOCoefficients'] for value in data['Molecule']['MolecularOrbitals']['MOs']]).T
+        
+        # TODO: For now, we have a temporary fix to change the sign of the f+3 and f-3 orbitals, 
+        #       which appear to be inconsistent between Libint and ORCA
+        orb_labels = data['Molecule']['MolecularOrbitals']['OrbitalLabels']
+        phase_shift = []
+        for i, l in enumerate(orb_labels):
+            if (r'f+3' in l) or (r'f-3' in l):
+                phase_shift.append(i)
+        mo_read[phase_shift,:] *= -1
+         
+        # Initialise the wave function
+        self.initialise(mo_read, spin_coupling=self.spin_coupling)   
+
+        # Check the input
+        if mo_read.shape[0] != self.nbsf:
+            raise ValueError("Inccorect number of AO basis functions in file")
+        if mo_read.shape[1] < self.nocc:
+            raise ValueError("Insufficient orbitals in file to represent occupied orbitals")
+        if mo_read.shape[1] > self.nmo:
+            raise ValueError("Too many orbitals in file")
+
     def read_from_disk(self, tag):
         """Read a CSF wavefunction from disk with prefix 'tag'"""
         with h5py.File(tag+'.hdf5','r') as F:
             mo_read = F['mo_coeff'][:]
             spin_coupling = str(F['spin_coupling'][...])[2:-1]
-
+        
         # Initialise the wave function
         self.initialise(mo_read, spin_coupling=spin_coupling)        
-        
+               
         # Check the input
         if mo_read.shape[0] != self.nbsf:
             raise ValueError("Inccorect number of AO basis functions in file")
@@ -345,7 +397,7 @@ class GenealogicalCSF(Wavefunction):
         # Construct transformation matrix
         orb_step = np.zeros((self.nmo, self.nmo))
         orb_step[self.rot_idx] = step
-        Q = scipy.linalg.expm(orb_step - orb_step.T)
+        orb_step = orb_step - orb_step.T
 
         # Build vector in antisymmetric form
         kappa = np.zeros((self.nmo, self.nmo))
@@ -353,8 +405,12 @@ class GenealogicalCSF(Wavefunction):
         kappa = kappa - kappa.T
 
         # Apply transformation
-        kappa = kappa @ Q
-        kappa = Q.T @ kappa
+        kappa = flag_transport(kappa,orb_step,self.invariant)
+
+        # 05/10/2024 - This is the old formula, only applicable for a small step
+        #Q = scipy.linalg.expm(0.5 * (orb_step - orb_step.T))
+        #kappa = kappa @ Q
+        #kappa = Q.T @ kappa
 
         # Also apply horizontal transform
         if not X is None:
@@ -494,6 +550,17 @@ class GenealogicalCSF(Wavefunction):
                     break
         return mask
 
+    def invariant_indices(self):
+        """ This function creates a matrix of boolean of size (norb,norb).
+            A True element means that this rotation should be taken into
+            account during the optimization. Taken from pySCF.mcscf.casscf
+        """
+        mask = np.zeros((self.nmo, self.nmo), dtype=bool)
+        mask[:self.ncore,:self.ncore] = True
+        for W in self.shell_indices:
+            mask[W,W] = True
+        mask[self.nocc:,self.nocc:] = True
+        return mask
 
     def uniq_var_indices(self, frozen):
         """ This function creates a matrix of boolean of size (norb,norb).
@@ -526,7 +593,8 @@ class GenealogicalCSF(Wavefunction):
 
     def canonicalize(self):
         """
-        Forms the canonicalised MO coefficients by diagonalising invariant subblocks of the Fock matrix
+        Forms the canonicalised MO coefficients by diagonalising invariant 
+        subblocks of the Fock matrix
         """
         # Transform Fock matrix to MO basis
         fock = np.linalg.multi_dot([self.mo_coeff.T, self.fock, self.mo_coeff])

@@ -17,8 +17,7 @@ import argparse, numpy, time
 from datetime import datetime, timedelta
 from quantel import Molecule, LibintInterface
 from quantel.io.config import Config
-from quantel.drivers import random_search, from_file, ci_guess, ev_linesearch, noci, overlap, analyse
-#from quantel.drivers import random_search, ci_guess, from_file, noci, oscillator_strength, overlap, analyse, ev_linesearch
+from quantel.drivers import random_search, from_file, from_orca, ci_guess, ev_linesearch, noci, overlap, analyse
 from cProfile import Profile
 from pstats import SortKey, Stats
 
@@ -58,7 +57,6 @@ def main():
     # Setup  molecule and integrals
     mol = Molecule(config["molecule"]["atom"], config["molecule"]["unit"])
     ints = LibintInterface(config["molecule"]["basis"],mol)
-
     # Generate wavefunctions 
     wfnlist = None
     if config["jobcontrol"]["guess"] == "fromfile":
@@ -67,6 +65,8 @@ def main():
         wfnlist = random_search(ints, config)
     elif config["jobcontrol"]["guess"] == "ciguess":
         wfnlist = ci_guess(ints, config)
+    elif config["jobcontrol"]["guess"] == "fromorca":
+        wfnlist = from_orca(ints, config)
     elif config["jobcontrol"]["guess"] == "evlin":
         wfnlist = ev_linesearch(ints, config)
     else:

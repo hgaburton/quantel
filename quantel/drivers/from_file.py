@@ -73,8 +73,8 @@ def from_file(ints, config):
             # Compare solution against previously found states
             new = True
             for prev, otherwfn in enumerate(wfn_list):
-                #if 1.0 - abs(myfun.overlap(otherwfn)) < config["jobcontrol"]["dist_thresh"]:
                 if abs(myfun.energy - otherwfn.energy) < config["jobcontrol"]["dist_thresh"]:
+                  if 1.0 - abs(myfun.overlap(otherwfn)) < config["jobcontrol"]["dist_thresh"]:
                     new = False
                     break
 

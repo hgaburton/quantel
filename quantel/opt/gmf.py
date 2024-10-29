@@ -135,10 +135,10 @@ class GMF:
 
             # Parallel transport previous vectors
             if(self.control["with_transport"]):
-                v_gmod = [obj.transform_vector(v, 0.5 * step, X) for v in v_gmod] 
-                v_step = [obj.transform_vector(v, 0.5 * step, X) for v in v_step] 
+                v_gmod = [obj.transform_vector(v, step, X) for v in v_gmod] 
+                v_step = [obj.transform_vector(v, step, X) for v in v_step] 
                 for i in range(index):
-                    evec[:,i] = obj.transform_vector(evec[:,i], 0.5 * step, X)
+                    evec[:,i] = obj.transform_vector(evec[:,i], step, X)
 
             # Compute n lowest eigenvalues
             prec = obj.get_preconditioner()

@@ -18,27 +18,22 @@ def csf_coupling(csf1, csf2, metric, hcore=None, eri=None, enuc=0.0, thresh=1e-1
     # Setup biorthogonalised orbital pair
     c1 = csf1.mo_coeff.copy()
     c2 = csf2.mo_coeff.copy()
-    print("Define reference states")
     refxa = wick.reference_state[float](nbsf,nmo,csf1.nalfa,csf1.cas_nmo,csf1.ncore,owndata(c1))
     refxb = wick.reference_state[float](nbsf,nmo,csf1.nbeta,csf1.cas_nmo,csf1.ncore,owndata(c1))
     refwa = wick.reference_state[float](nbsf,nmo,csf2.nalfa,csf2.cas_nmo,csf2.ncore,owndata(c2))
     refwb = wick.reference_state[float](nbsf,nmo,csf2.nbeta,csf2.cas_nmo,csf2.ncore,owndata(c2))
 
     # Setup paired orbitals
-    print("Define paired orbitals")
     orba = wick.wick_orbitals[float, float](refxa, refwa, ovlp)
     orbb = wick.wick_orbitals[float, float](refxb, refwb, ovlp)
 
     # Setup matrix builder object
-    print("Make matrix builder object")
     mb = wick.wick_uscf[float, float, float](orba, orbb, enuc)
 
     # Add one- and two-body contributions
-    print("Add Hcore contribution")
     if(hcore is not None):
         h1e = owndata(hcore)
         mb.add_one_body(h1e)
-    print("Add two-body contribution")
     if(eri is not None):
         h2e = owndata(eri)
         mb.add_two_body(h2e)
@@ -49,7 +44,6 @@ def csf_coupling(csf1, csf2, metric, hcore=None, eri=None, enuc=0.0, thresh=1e-1
         bax, bbx = occstring_to_bitset(detx)
         
         for detw, ciw in get_csf_vector(csf2.spin_coupling):
-            print(detx, detw)
             if(abs(ciw) < thresh):
                 continue
             baw, bbw = occstring_to_bitset(detw)

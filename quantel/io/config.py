@@ -133,6 +133,9 @@ class Config(dict):
 
         elif self["jobcontrol"]["guess"] == "fromfile":
             self["jobcontrol"]["read_dir"] = getlist(self.lines,"read_dir",str,True)
+        
+        elif self["jobcontrol"]["guess"] == "fromorca":
+            self["jobcontrol"]["orca_file"] = getvalue(self.lines,"orca_file",str,True)
 
         elif self["jobcontrol"]["guess"] == "ciguess":
             self["jobcontrol"]["ci_guess"] = getlist(self.lines,"ci_guess",int,True)

@@ -117,8 +117,8 @@ class LBFGS:
 
                 # Parallel transport previous vectors
                 if(self.control["with_transport"]):
-                    v_grad = [obj.transform_vector(v, 0.5 * step, X) for v in v_grad] 
-                    v_step = [obj.transform_vector(v, 0.5 * step, X) for v in v_step] 
+                    v_grad = [obj.transform_vector(v, step, X) for v in v_grad] 
+                    v_step = [obj.transform_vector(v, step, X) for v in v_step] 
 
                 # Save new gradient
                 v_grad.append(grad.copy())
