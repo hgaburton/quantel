@@ -70,19 +70,24 @@ class LBFGS:
         if plev>0: print("       {:^16s}    {:^8s}    {:^8s}".format("   Energy / Eh","Step Len","Max(|G_i|)"))
         if plev>0: print("  ================================================================")
 
+        zero_step = np.zeros(obj.dim)
         converged = False
+        n_rescale = 0
         qn_count = 0
+        reset = False
         for istep in range(maxit+1):
             # Get energy, gradient and check convergence
             ecur = obj.energy
             grad = obj.gradient
             c1 = np.linalg.norm(grad,ord=2) * np.sqrt(1.0/dim)
             c2 = np.linalg.norm(grad,ord=np.inf)
+            MaxGrad = np.linalg.norm(grad,ord=np.inf)
             conv = c2
             
             if istep > 0 and plev > 0:
                 print(" {: 5d} {: 16.10f}    {:8.2e}     {:8.2e}    {:10s}".format(
                       istep, ecur, step_length, conv, comment))
+                #print(f" {istep: 5d} {ecur: 16.10f}   {ecur-eref: 8.2e}   {RMSDP: 8.2e}   {MaxDP: 8.2e}   {MaxGrad: 8.2e}")
             elif plev > 0:
                 print(" {: 5d} {: 16.10f}                 {:8.2e}".format(istep, ecur, conv))
             sys.stdout.flush()
@@ -92,22 +97,25 @@ class LBFGS:
                 converged = True
                 break
 
+
             # Check if we have sufficient decrease
-            if(istep == 0):
+            if(istep == 0 or reset):
                 wolfe1 = True
+                reset = False
             else:
                 wolfe1 = (ecur - eref) <= 1e-4 * np.dot(step,gref)
 
             # Obtain new step
             comment = ""
-            if(wolfe1):
+            if(wolfe1 or n_rescale>=5):
+                # Number of rescaled steps in a row
+                n_rescale = 0
                 # Accept the step, update origin and compute new L-BFGS step
                 obj.save_last_step()
 
                 # Pseudo-canonicalize orbitals if requested
                 X = None
                 if(self.control["with_canonical"] and np.mod(qn_count,self.control["canonical_interval"])==0):
-                    print("  Pseudo-canonicalising the orbitals")
                     X = obj.canonicalize()
                     grad = obj.gradient
 
@@ -119,6 +127,9 @@ class LBFGS:
                 if(self.control["with_transport"]):
                     v_grad = [obj.transform_vector(v, step, X) for v in v_grad] 
                     v_step = [obj.transform_vector(v, step, X) for v in v_step] 
+                elif(self.control["with_canonical"]):
+                    v_grad = [obj.transform_vector(v, zero_step, X) for v in v_grad] 
+                    v_step = [obj.transform_vector(v, zero_step, X) for v in v_step] 
 
                 # Save new gradient
                 v_grad.append(grad.copy())
@@ -132,31 +143,38 @@ class LBFGS:
                 if(np.dot(step,gref) > 0):
                     print("  Step has positive overlap with gradient - reversing direction")
                     step *= -1
+                    reset = True
                 
                 # Truncate the max step size
                 lscale = self.control["maxstep"] / np.linalg.norm(step)
                 if(lscale < 1):
                     step = lscale * step
                     comment = "truncated"
+
                 if(np.linalg.norm(step,ord=np.inf) < 1e-10):
                     print("  Step size indicates convergence")
                     converged = True
                     break
 
-
             else:
                 print(f"  Insufficient decrease - rescaling step size by {self.control['backtrack_scale']:4.2f}")
-                # Insufficient decrease in energy, restore last position
+                # Insufficient decrease in energy, restore last position and reset L-BFGS
                 obj.restore_last_step()
+                reset = True
 
                 # Rescale step and remove last step from memory
                 step = step * self.control["backtrack_scale"]
                 v_step.pop(-1)
                 comment = "backtrack"
+                n_rescale = n_rescale + 1 
             
             # Save step and length
             step_length = np.linalg.norm(step)
             v_step.append(step.copy())
+
+            # Save step statistics
+            RMSDP = np.linalg.norm(step) / np.sqrt(dim)
+            MaxDP = np.linalg.norm(step,ord=np.inf)
 
             # Take the step
             obj.take_step(step)
@@ -165,6 +183,11 @@ class LBFGS:
             if(len(v_step)>max_subspace):
                 v_grad.pop(0)
                 v_step.pop(0)
+
+            if(reset):
+                comment = "reset L-BFGS"
+                v_grad = []
+                v_step = []
 
             # Increment the iteration counter
             istep += 1
@@ -220,6 +243,7 @@ class LBFGS:
             # If out preciditioner is not positive definite, we assume that we are not 
             # in a quadratic region and use Nocedal's formula to approximate the inverse Hessian
             r = gamma_k * q
+            print("gamma_k = ", gamma_k)
         else:
             # Recall preconditioner is Hessian, not inverse
             r = q / prec
