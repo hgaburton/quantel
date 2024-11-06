@@ -261,16 +261,16 @@ PYBIND11_MODULE(_quantel, m) {
                },
                "Build J matrix from density matrix")
           .def("build_multiple_JK", [](LibintInterface &ints, 
-                    py::array_t<double> &DJ, py::array_t<double> &vDK, size_t nk) {
+                    py::array_t<double> &vDJ, py::array_t<double> &vDK, size_t nj, size_t nk) {
                size_t nbsf = ints.nbsf();
-               auto DJ_buf = DJ.request();
+               auto vDJ_buf = vDJ.request();
                auto vDK_buf = vDK.request();
-               std::vector<double> v_DJ((double *) DJ_buf.ptr, (double *) DJ_buf.ptr + DJ_buf.size);
+               std::vector<double> v_vDJ((double *) vDJ_buf.ptr, (double *) vDJ_buf.ptr + vDJ_buf.size);
                std::vector<double> v_vDK((double *) vDK_buf.ptr, (double *) vDK_buf.ptr + vDK_buf.size);
-               std::vector<double> v_J(nbsf*nbsf,0.0);
+               std::vector<double> v_J(nbsf*nbsf*nj,0.0);
                std::vector<double> v_K(nbsf*nbsf*nk,0.0);
-               ints.build_multiple_JK(v_DJ,v_vDK,v_J,v_K,nk);
-               return std::make_tuple(vec_to_np_array(nbsf,nbsf,v_J.data()), vec_to_np_array(nk,nbsf,nbsf,v_K.data()));
+               ints.build_multiple_JK(v_vDJ,v_vDK,v_J,v_K,nj,nk);
+               return std::make_tuple(vec_to_np_array(nj,nbsf,nbsf,v_J.data()), vec_to_np_array(nk,nbsf,nbsf,v_K.data()));
                },
                "Build J and K matrices from a list of density matrices"
           )
@@ -286,6 +286,10 @@ PYBIND11_MODULE(_quantel, m) {
                return vec_to_np_array(ints.nbsf(), ints.nbsf(), ints.oei_matrix(alpha)); 
                }, 
                "Return one-electron Hamiltonian matrix")
+          .def("dipole_matrix", [](LibintInterface &ints) { 
+               return vec_to_np_array(4, ints.nbsf(), ints.nbsf(), ints.dipole_integrals()); 
+               },
+               "Return the dipole matrix integrals")
           .def("tei_ao_to_mo", [](LibintInterface &ints, 
                py::array_t<double> &C1, py::array_t<double> &C2, 
                py::array_t<double> &C3, py::array_t<double> &C4, 

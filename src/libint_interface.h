@@ -5,6 +5,9 @@
 #include "molecule.h"
 
 class LibintInterface {
+    /// \brief LibintInterface class
+    /// \details This class provides an interface to the Libint2 library for computing molecular integrals
+ 
 private:
     const libint2::BasisSet m_basis; //!< The Libint2 basis set
     const Molecule &m_mol;
@@ -24,6 +27,8 @@ private:
     /// One-electron integrals
     std::vector<double> m_oei_a;
     std::vector<double> m_oei_b;
+    /// Dipole integrals
+    std::vector<double> m_dipole;
     /// Store J and K versions of two-electron integrals
     std::vector<double> m_tei; /// [p,q,r,s] = (pq|rs)
     double thresh = 1e-12;
@@ -80,13 +85,15 @@ public:
     void build_JK(std::vector<double> &dens, std::vector<double> &JK);
 
     /// Build J and K matrices from a list of density matrices
-    /// @param DJ density matrix
-    /// @param vDK Vector of density matrices
-    /// @param J output J matrix
-    /// @param vK Vector of output K matrix
-    /// @param nk number of density matrices for exchange build
-    void build_multiple_JK(std::vector<double> &DJ, std::vector<double> &vDK, 
-                           std::vector<double> &J, std::vector<double> &vK, size_t nk);
+    /// @param vDJ Vector of density matrices for J build
+    /// @param vDK Vector of density matrices for K build
+    /// @param vJ Vector of output J matrices
+    /// @param vK Vector of output K matrices
+    /// @param nj number of density matrices for J build
+    /// @param nk number of density matrices for K build
+    void build_multiple_JK(std::vector<double> &vDJ, std::vector<double> &vDK, 
+                           std::vector<double> &vJ, std::vector<double> &vK, 
+                           size_t nj, size_t nk);
 
     /// Build a J matrix
     /// @param D density matrix
@@ -119,7 +126,7 @@ public:
     /// @param C2 transformation matrix
     /// @param C3 transformation matrix
     /// @param C4 transformation matrix
-    /// @param eri outpur array of two-electron integrals
+    /// @param eri outpur array of two-electron integrals in physicist's notation
     /// @param alpha1 spin of electron 1
     /// @param alpha2 spin of electron 2
     void tei_ao_to_mo(std::vector<double> &C1, std::vector<double> &C2, 
@@ -147,6 +154,9 @@ public:
     /// Get a pointer to the two-electron integral array
     double *tei_array() { return m_tei.data(); }
 
+    /// Get a pointer to the dipole integrals
+    double *dipole_integrals() { return m_dipole.data(); }
+
     /// Get the number of basis functions
     size_t nbsf() const { return m_nbsf; }
 
@@ -172,6 +182,8 @@ private:
     void compute_one_electron_matrix();
     /// Compute the two-electron integrals
     void compute_two_electron_integrals();
+    /// Compute the dipole integrals
+    void compute_dipole_integrals();
 
     /// Get index-for one-electron quantity
     size_t oei_index(size_t p, size_t q) 

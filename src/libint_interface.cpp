@@ -22,6 +22,9 @@ void LibintInterface::initialize()
 
     // Compute the orthogonalisation matrix
     compute_orthogonalization_matrix();
+
+    // Compute the dipole integrals
+    compute_dipole_integrals();
 }
 
 double LibintInterface::overlap(size_t p, size_t q) 
@@ -231,6 +234,58 @@ void LibintInterface::compute_one_electron_matrix()
     }
 } 
 
+void LibintInterface::compute_dipole_integrals()
+{
+    // Compute dipole matrix
+    m_dipole.resize(4*m_nbsf*m_nbsf);    
+    std::fill(m_dipole.begin(), m_dipole.end(), 0.0);
+
+    // Setup Libint engine
+    Engine dip_engine(Operator::emultipole1, m_basis.max_nprim(), m_basis.max_l());
+    dip_engine.set_params(std::array<double,3>{0.0,0.0,0.0});
+
+    // Memory buffers
+    const auto &buf_vec = dip_engine.results();
+
+    // Loop over shell pairs
+    for(size_t s1=0; s1 < m_basis.size(); ++s1)
+    for(size_t s2=0; s2 < m_basis.size(); ++s2)
+    {
+        // Compute values for this shell set
+        dip_engine.compute(m_basis[s1], m_basis[s2]);
+        auto *dip_ints = buf_vec[0];
+        if(dip_ints == nullptr) // Skip if all integrals screened out
+            continue; 
+
+        // Save values for this shell set
+        auto shell2bf = m_basis.shell2bf();
+        size_t bf1 = shell2bf[s1];
+        size_t bf2 = shell2bf[s2];
+        size_t n1 = m_basis[s1].size();
+        size_t n2 = m_basis[s2].size();
+
+        auto s_shellset = buf_vec[0]; // Overlap contribution
+        auto mu_x_shellset = buf_vec[1];
+        auto mu_y_shellset = buf_vec[2];
+        auto mu_z_shellset = buf_vec[3];
+
+        for(size_t f1=0; f1 < n1; ++f1)
+        for(size_t f2=0; f2 < n2; ++f2)
+        {
+            // Get compound p,q index
+            size_t pq = (bf1+f1)*m_nbsf+(bf2+f2);
+            // Save overlap term
+            m_dipole[pq] = s_shellset[f1*n2+f2];
+            // Save x terms
+            m_dipole[1*m_nbsf*m_nbsf + pq] = mu_x_shellset[f1*n2+f2];
+            // Save y terms
+            m_dipole[2*m_nbsf*m_nbsf + pq] = mu_y_shellset[f1*n2+f2];
+            // Save z terms
+            m_dipole[3*m_nbsf*m_nbsf + pq] = mu_z_shellset[f1*n2+f2];
+        }
+    }
+}
+
 void LibintInterface::build_fock(std::vector<double> &dens, std::vector<double> &fock)
 {
     size_t n2 = m_nbsf * m_nbsf;
@@ -382,27 +437,28 @@ void LibintInterface::build_J(std::vector<double> &dens, std::vector<double> &J)
 }
 
 void LibintInterface::build_multiple_JK(
-    std::vector<double> &DJ, std::vector<double> &vDK, 
-    std::vector<double> &J, std::vector<double> &vK, size_t nk)
+    std::vector<double> &vDJ, std::vector<double> &vDK,
+    std::vector<double> &vJ, std::vector<double> &vK, 
+    size_t nj, size_t nk)
 {
     // Get size of n2 for indexing later
     size_t n2 = m_nbsf * m_nbsf;
 
     // Check dimensions of density matrix
-    assert(DJ.size() == n2);
+    assert(vDJ.size() == nj * n2);
     // Check dimensions of exchange matrices
     assert(vDK.size() == nk * n2);
 
     // Resize J matrix
-    J.resize(n2);
-    std::fill(J.begin(),J.end(),0.0);
+    vJ.resize(nj * n2);
+    std::fill(vJ.begin(),vJ.end(),0.0);
     // Resize K matrices
     vK.resize(nk * n2);
     std::fill(vK.begin(),vK.end(),0.0);
 
     // Setup thread-safe memory
     int nthread = omp_get_max_threads();
-    std::vector<double> Jsafe(nthread*n2), Ksafe(nthread*n2*nk);
+    std::vector<double> Jsafe(nthread*n2*nj), Ksafe(nthread*n2*nk);
     std::fill(Jsafe.begin(),Jsafe.end(),0.0);
     std::fill(Ksafe.begin(),Ksafe.end(),0.0);
 
@@ -412,7 +468,7 @@ void LibintInterface::build_multiple_JK(
     for(size_t r=0; r<m_nbsf; r++)
     {
         int ithread = omp_get_thread_num();
-        double *Jt = &Jsafe[ithread*n2];
+        double *Jt = &Jsafe[ithread*n2*nj];
         double *Kt = &Ksafe[ithread*n2*nk];
 
         for(size_t q=p; q<m_nbsf; q++)
@@ -426,25 +482,30 @@ void LibintInterface::build_multiple_JK(
             double Vpqrs = m_tei[pq*n2+rs];
             if(std::abs(Vpqrs) < thresh) continue;
 
-            // Compute J matrix elements
-            Jt[p*m_nbsf+q] += DJ[r*m_nbsf+s] * Vpqrs;
-            if(p!=q) Jt[q*m_nbsf+p] += DJ[r*m_nbsf+s] * Vpqrs;
-            if(r!=s) Jt[p*m_nbsf+q] += DJ[s*m_nbsf+r] * Vpqrs;
-            if(r!=s and p!=q) Jt[q*m_nbsf+p] += DJ[s*m_nbsf+r] * Vpqrs;
-
-            if(pq != rs) 
+            // Compute J matrix elements (need to repeat for each density)
+            for(size_t k=0; k < nj; k++)
             {
-                Jt[r*m_nbsf+s] += DJ[p*m_nbsf+q] * Vpqrs;
-                if(r!=s) Jt[s*m_nbsf+r] += DJ[p*m_nbsf+q] * Vpqrs;
-                if(p!=q) Jt[r*m_nbsf+s] += DJ[q*m_nbsf+p] * Vpqrs;
-                if(r!=s and p!=q) Jt[s*m_nbsf+r] += DJ[q*m_nbsf+p] * Vpqrs;
+                double *Jt_k = &Jt[k*n2];
+                double *Dj   = &vDJ[k*n2];
+                Jt_k[p*m_nbsf+q] += Dj[r*m_nbsf+s] * Vpqrs;
+                if(p!=q) Jt_k[q*m_nbsf+p] += Dj[r*m_nbsf+s] * Vpqrs;
+                if(r!=s) Jt_k[p*m_nbsf+q] += Dj[s*m_nbsf+r] * Vpqrs;
+                if(r!=s and p!=q) Jt_k[q*m_nbsf+p] += Dj[s*m_nbsf+r] * Vpqrs;
+
+                if(pq != rs) 
+                {
+                    Jt_k[r*m_nbsf+s] += Dj[p*m_nbsf+q] * Vpqrs;
+                    if(r!=s) Jt_k[s*m_nbsf+r] += Dj[p*m_nbsf+q] * Vpqrs;
+                    if(p!=q) Jt_k[r*m_nbsf+s] += Dj[q*m_nbsf+p] * Vpqrs;
+                    if(r!=s and p!=q) Jt_k[s*m_nbsf+r] += Dj[q*m_nbsf+p] * Vpqrs;
+                }                
             }
 
-            // Compute K matrix elements (need to repeat for each shell)
+            // Compute K matrix elements (need to repeat for each density)
             for(size_t k=0; k < nk; k++)
             {
                 double *Kt_k = &Kt[k*n2];
-                double *Dk = &vDK[k*n2];
+                double *Dk   = &vDK[k*n2];
                 Kt_k[p*m_nbsf+s] += Dk[r*m_nbsf+q] * Vpqrs;
                 if(p!=q) Kt_k[q*m_nbsf+s] += Dk[r*m_nbsf+p] * Vpqrs;
                 if(r!=s) Kt_k[p*m_nbsf+r] += Dk[s*m_nbsf+q] * Vpqrs;
@@ -464,8 +525,8 @@ void LibintInterface::build_multiple_JK(
     // Collect values for each thread
     for(size_t it=0; it < nthread; it++)
     {
-        for(size_t pq=0; pq < n2; pq++)
-            J[pq] += Jsafe[it*n2+pq];
+        for(size_t pqk=0; pqk < n2 * nj; pqk++)
+            vJ[pqk] += Jsafe[it*n2*nj+pqk];
         for(size_t pqk=0; pqk < n2 * nk; pqk++)
             vK[pqk] += Ksafe[it*n2*nk+pqk];
     }
