@@ -195,21 +195,16 @@ class GenealogicalCSF(Wavefunction):
         """ Compute the approximate Hess * vec product using forward finite difference """
         # Get current gradient
         g0 = self.gradient.copy()
-
         # Save current position
         mo_save = self.mo_coeff.copy()
-
         # Get forward gradient
         self.take_step(eps * vec)
         g1 = self.gradient.copy()
-
         # Restore to origin
         self.mo_coeff = mo_save.copy()
         self.update_integrals()
-
         # Parallel transport back to current position
         g1 = self.transform_vector(g1, - eps * vec)
-
         # Get approximation to H @ sk
         return (g1 - g0) / eps
 
@@ -258,9 +253,9 @@ class GenealogicalCSF(Wavefunction):
     def update_integrals(self):
         """ Update the integrals with current set of orbital coefficients"""
         # Update density matrices (AO basis)
-        self.dj, self.dk = self.get_density_matrices()
+        self.dj, self.dk, self.vd = self.get_density_matrices()
         # Update JK matrices (AO basis) 
-        self.J, self.vK = self.get_JK_matrices(self.dj,self.dk)
+        self.J, self.vK, self.Ipqpq, self.Ipqqp = self.get_JK_matrices(self.vd) #self.dj,self.dk)
         # Get Fock matrix (AO basis)
         self.fock = self.integrals.oei_matrix(True) + self.J - 0.5 * np.einsum('mpq->pq',self.vK)
         # Get generalized Fock matrices
@@ -411,27 +406,67 @@ class GenealogicalCSF(Wavefunction):
 
         # Return transformed vector
         return kappa[self.rot_idx]
-
-
+    
     def get_density_matrices(self):
         """ Compute total density matrix and relevant matrices for K build"""
-        # Total density for J matrix. Initialise with core contribution
-        dj = 2 * self.mo_coeff[:,:self.ncore] @ self.mo_coeff[:,:self.ncore].T
-        # Shell densities for K matrix
-        dk = np.zeros((self.nshell+1,self.nbsf,self.nbsf))
-        dk[0] = dj.copy()
-        # Loop over shells
-        for Ishell in range(self.nshell):
-            shell    = self.shell_indices[Ishell]
-            dk[Ishell+1] = self.mo_occ[shell[0]] * self.mo_coeff[:,shell] @ self.mo_coeff[:,shell].T
-            dj += dk[Ishell+1]
-        return dj, dk
+        # Number of densities (core + open-shell)
+        nopen = self.nocc-self.ncore
+        # Initialise densities
+        vd = np.zeros((1+nopen,self.nbsf,self.nbsf))
+        # Core contribution       
+        vd[0] = 2 * self.mo_coeff[:,:self.ncore] @ self.mo_coeff[:,:self.ncore].T
+        # Contribution from each active orbital
+        for id, i in enumerate(range(self.ncore,self.nocc)):
+            vd[id+1] = self.mo_occ[i] * np.outer(self.mo_coeff[:,i],self.mo_coeff[:,i])
 
-    def get_JK_matrices(self,dj,dk):
-        ''' Compute the JK matrices'''
+        # Extract shell densities
+        dj  = np.einsum('kpq->pq',vd)
+        dk = np.zeros((self.nshell+1,self.nbsf,self.nbsf))
+        dk[0] = vd[0].copy()
+        for Ishell in range(self.nshell):
+            shell = [1+i-self.ncore for i in self.shell_indices[Ishell]]
+            dk[Ishell+1] += np.einsum('vpq->pq',vd[shell])
+        return dj, dk, vd
+
+    def get_JK_matrices(self, vd):
+        ''' Compute the JK matrices and diagonal two-electron integrals
+
+            This function also computes the density matrices (maybe redundant)
+
+            Input:
+                vd: Density matrices for core and each open orbital
+
+            Returns:
+                J: Total Coulomb matrix
+                K: Exchange matrices for each shell
+                Ipqpq: Diagonal elements of J matrix
+                Ipqqp: Diagonal elements of K matrix
+        '''
+        # Number of densities (core + open-shell)
+        nopen = vd.shape[0]-1
+
         # Call integrals object to build J and K matrices
-        J, vK = self.integrals.build_multiple_JK(dj,dk,1+self.nshell)        
-        return J, vK
+        vJ, vK = self.integrals.build_multiple_JK(vd,vd,nopen+1,nopen+1)
+
+        # Get the total J matrix
+        J = np.einsum('kpq->pq',vJ)
+        # Get exchange matrices for each shell
+        K = np.zeros((self.nshell+1,self.nbsf,self.nbsf))
+        K[0] = vK[0].copy()
+        for Ishell in range(self.nshell):
+            shell = [1+i-self.ncore for i in self.shell_indices[Ishell]]
+            K[Ishell+1] += np.einsum('vpq->pq',vK[shell])
+
+        # Get diagonal J/K terms
+        Ipqpq = np.zeros((nopen,self.nmo))
+        Ipqqp = np.zeros((nopen,self.nmo))
+        for i in range(nopen):
+            Ji = self.mo_coeff.T @ vJ[1+i] @ self.mo_coeff
+            Ki = self.mo_coeff.T @ vK[1+i] @ self.mo_coeff
+            Ipqpq[i] = np.diag(Ji)
+            Ipqqp[i] = np.diag(Ki)
+        
+        return J, K, Ipqpq, Ipqqp
 
     def get_generalised_fock(self):
         """ Compute the generalised Fock matrix"""
@@ -440,7 +475,6 @@ class GenealogicalCSF(Wavefunction):
 
         # Memory for diagonal elements
         self.gen_fock_diag = np.zeros((self.nmo,self.nmo))
-        
         # Core contribution
         Fcore_ao = 2*(self.integrals.oei_matrix(True) + self.J 
                       - 0.5 * np.sum(self.vK[i] for i in range(self.nshell+1)))
@@ -455,7 +489,6 @@ class GenealogicalCSF(Wavefunction):
         for W in range(self.nshell):
             # Get shell indices and coefficients
             shell = self.shell_indices[W]
-            Cw = self.mo_coeff[:,shell]
             # One-electron matrix, Coulomb and core exchange
             Fw_ao = self.integrals.oei_matrix(True) + self.J - 0.5 * self.vK[0]
             # Different shell exchange
@@ -516,14 +549,39 @@ class GenealogicalCSF(Wavefunction):
 
     def get_preconditioner(self):
         """Compute approximate diagonal of Hessian"""
+        # Initialise approximate preconditioner
         Q = np.zeros((self.nmo,self.nmo))
-        
+
+        # Include dominate generalised Fock matrix terms
         for p in range(self.nmo):
-            for q in range(self.nmo):
+            for q in range(p):
                 Q[p,q] = 2 * ( (self.gen_fock_diag[p,q] - self.gen_fock_diag[q,q]) 
                              + (self.gen_fock_diag[q,p] - self.gen_fock_diag[p,p]) )
+           
+        # Compute two-electron corrections involving active orbitals
+        Acoeff = self.Ipqqp
+        for q in range(self.ncore,self.nocc):
+            for p in range(q):
+                Q[q,p] += 4 * (self.mo_occ[p]-self.mo_occ[q])**2 * Acoeff[q-self.ncore,p]
+            for p in range(q+1,self.nmo):
+                Q[p,q] += 4 * (self.mo_occ[p]-self.mo_occ[q])**2 * Acoeff[q-self.ncore,p]
 
-        return Q[self.rot_idx]
+        Bcoeff = self.Ipqpq + self.Ipqqp
+        for W in range(self.nshell):
+            for q in self.shell_indices[W]:
+                # Core-Active
+                for p in range(self.ncore):
+                    Q[q,p] -= 2 * Bcoeff[q-self.ncore,p]
+                # Active-Active
+                for V in range(W):
+                    for p in self.shell_indices[V]:
+                        Q[q,p] -= 4 * (1 + self.beta[V,W]) * Bcoeff[q-self.ncore,p]
+                # Virtual-Active
+                for p in range(self.nocc,self.nmo):
+                    Q[p,q] -= 2 * (self.mo_occ[p] + self.mo_occ[q]) * Bcoeff[q-self.ncore,p]
+
+        # Return absolute preconditioner
+        return np.abs(Q[self.rot_idx])
 
     def edit_mask_by_gcoupling(self, mask):
         r"""
