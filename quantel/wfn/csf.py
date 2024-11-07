@@ -354,7 +354,6 @@ class GenealogicalCSF(Wavefunction):
             h1e = self.integrals.oei_matrix(True)
             s = self.integrals.overlap_matrix()
             e, Cguess = scipy.linalg.eigh(h1e, s)
-            print(e)
         else:
             raise NotImplementedError(f"Orbital guess method {method} not implemented")
         self.initialise(Cguess, spin_coupling=self.spin_coupling)
