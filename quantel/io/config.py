@@ -68,7 +68,7 @@ class Config(dict):
         if self["optimiser"]["algorithm"] == "eigenvector_following":
             self["optimiser"]["eigenvector_following"] = dict(minstep = getvalue(self.lines,"minstep",float,False,default=0),
                                                               rtrust  = getvalue(self.lines,"rtrust",float,False,default=0.15),
-                                                              maxstep = getvalue(self.lines,"maxstep",float,False,default=numpy.pi),
+                                                              maxstep = getvalue(self.lines,"maxstep",float,False,default=0.2),
                                                               hesstol = getvalue(self.lines,"hesstol",float,False,1e-16)
                                                              )
         elif self["optimiser"]["algorithm"] == "mode_control":
@@ -77,8 +77,31 @@ class Config(dict):
                                                     maxstep = getvalue(self.lines,"maxstep",float,False,default=numpy.pi),
                                                     hesstol = getvalue(self.lines,"hesstol",float,False,1e-16)
                                                     )
-
-
+        elif self["optimiser"]["algorithm"] == "gmf":
+            self["optimiser"]["gmf"] = dict(minstep = getvalue(self.lines,"minstep",float,False,default=0),
+                                            maxstep = getvalue(self.lines,"maxstep",float,False,default=0.2),
+                                            with_transport = getbool(self.lines,"parallel_transport",False,default=True),
+                                            with_canonical = getbool(self.lines,"pseudo-canonicalise",False,default=True),
+                                            canonical_interval = getvalue(self.lines,"canonical_interval",int,False,default=10),
+                                            max_subspace = getvalue(self.lines,"max_subspace",int,False,default=10)
+                                            )
+        elif self["optimiser"]["algorithm"] == "lsr1":
+            self["optimiser"]["lsr1"] = dict(minstep = getvalue(self.lines,"minstep",float,False,default=0),
+                                            rtrust  = getvalue(self.lines,"rtrust",float,False,default=0.15),
+                                            maxstep = getvalue(self.lines,"maxstep",float,False,default=0.2),
+                                            max_subspace = getvalue(self.lines,"max_subspace",int,False,default=10),
+                                            precmin = getvalue(self.lines,"precmin",float,False,default=1)
+                                            )
+        elif self["optimiser"]["algorithm"] == "lbfgs":
+            self["optimiser"]["lbfgs"] = dict(minstep = getvalue(self.lines,"minstep",float,False,default=0),
+                                            maxstep = getvalue(self.lines,"maxstep",float,False,default=0.2),
+                                            max_subspace = getvalue(self.lines,"max_subspace",int,False,default=10),
+                                            backtrack_scale = getvalue(self.lines,"backtrack_scale",float,False,default=0.1),
+                                            with_transport = getbool(self.lines,"parallel_transport",False,default=True),
+                                            with_canonical = getbool(self.lines,"pseudo-canonicalise",False,default=True),
+                                            canonical_interval = getvalue(self.lines,"canonical_interval",int,False,default=10),
+                                            gamma_preconditioner = getbool(self.lines,"gamma_prec",False,default=False)
+                                            )
         else:
             errstr = "Requested optimiser '"+self["optimiser"]["algorithm"]+"' is not available"
             raise ValueError(errstr)
@@ -104,11 +127,15 @@ class Config(dict):
         
         if self["jobcontrol"]["guess"] == "random":
             self["jobcontrol"]["search"] = dict(nsample = getvalue(self.lines,"nsample",int,False,default=10),
-                                                seed = getvalue(self.lines,"seed",int,False,default=7)
+                                                seed = getvalue(self.lines,"seed",int,False,default=7),
+                                                mo_rot_range= getvalue(self.lines,"mo_rot_range",float,False,default=numpy.pi)
                                                )
 
         elif self["jobcontrol"]["guess"] == "fromfile":
             self["jobcontrol"]["read_dir"] = getlist(self.lines,"read_dir",str,True)
+        
+        elif self["jobcontrol"]["guess"] == "fromorca":
+            self["jobcontrol"]["orca_file"] = getvalue(self.lines,"orca_file",str,True)
 
         elif self["jobcontrol"]["guess"] == "ciguess":
             self["jobcontrol"]["ci_guess"] = getlist(self.lines,"ci_guess",int,True)
@@ -118,7 +145,8 @@ class Config(dict):
             self["jobcontrol"]["eigen_index"] = getvalue(self.lines,"eigen_index",int,default=+1)
             self["jobcontrol"]["linesearch_grid"] = getlist(self.lines,"linesearch_grid",int,False,default=[-numpy.pi,numpy.pi,51])
             self["jobcontrol"]["linesearch_nopt"] = getvalue(self.lines,"linesearch_nopt",int,False,default=5)
-
+        elif self["jobcontrol"]["guess"] == "core":
+            pass
         else:
             errstr = "'"+self["jobcontrol"]["guess"]+"' is not a valid option for keyword 'guess'"
             raise ValueError(errstr)

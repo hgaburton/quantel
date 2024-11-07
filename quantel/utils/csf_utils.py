@@ -1,5 +1,6 @@
 import sys, itertools
 import numpy as np
+from quantel.utils.guga import e_ijji
 
 def get_coupling_coefficient(Tn, Pn, tn, pn):
     """ Computes the coupling coefficient C_{tn, pn}^{Tn, Pn}
@@ -68,26 +69,106 @@ def get_determinant_coefficient(det, tn, Tn):
 
     return coeff * phase
 
-
-def get_csf_vector(csf):
-    """ Get the list of determinants and their coefficients for a given CSF
+def get_csf_vector(spin_coupling):
+    """ Iterate over the list of determinants and their coefficients for a given CSF
             :param csf:
             :return:
     """   
     # Check CSF vector is valid
-    if(len(csf)==0):
-        return [''], [1]
-    if(csf[0]!='+'):
+    n  = len(spin_coupling)
+    if(n==0):
+        yield '', 1
+        return
+
+    if(spin_coupling[0]!='+'):
         raise RuntimeError("Invalid spin coupling pattern")
+
     # Get the CSF vectors
-    tn, Tn = get_Tn(csf)
+    tn, Tn = get_Tn(spin_coupling)
 
-    # Get the determinant list and corresponding CI vector
-    detlist = list(set([''.join(p) for p in itertools.permutations(csf)]))
-    detlist.sort()
-    civec = [get_determinant_coefficient(det, tn, Tn) for det in detlist]
-    civec = civec / np.linalg.norm(civec)
+    na = np.sum([s=='+' for s in spin_coupling])
+    for occa in itertools.combinations(range(n),na):
+        # Set occupation vector
+        occ = np.zeros(n)
+        occ[list(occa)] = 1
+        # Get determinant string
+        det = ''.join(['+' if oi==1 else '-' for oi in occ])
+        # Get coefficient
+        coeff = get_determinant_coefficient(det, tn, Tn)
+        yield det.replace('+','a').replace('-','b'), coeff
 
-    # Modify determinant list to occupation strings
-    detlist = [det.replace('+','a').replace('-','b') for det in detlist]
-    return detlist, civec
+def distinct_row_table(spin_coupling):
+    """ Get the distinct row table for a given spin coupling pattern
+            :param spin_coupling:
+            :return:
+    """
+    return np.array([1 if s == '+' else 2 for s in spin_coupling])
+
+def b_vector(spin_coupling):
+    """ Get the b vector for a given spin coupling pattern
+            :param spin_coupling:
+            :return:
+    """
+    delta_b = [1 if s == '+' else -1 for s in spin_coupling]
+    return np.cumsum(delta_b)
+
+def get_vector_coupling(nmo, ncore, nocc, spin_coupling):
+    """ Compute the vector coupling for active orbitals
+            Computes the alpha and beta coefficients for open-shell states
+    """
+    # Get the number of active orbitals
+    nact = nocc - ncore
+
+    # Coulomb coupling matrix
+    aij = np.zeros((nmo,nmo))
+    aij[:ncore,:ncore] = 4
+    aij[:ncore,ncore:nocc] = 2
+    aij[ncore:nocc,:ncore] = 2
+    aij[ncore:nocc,ncore:nocc] = 1
+
+    # Exchange coupling matrix
+    bij = np.zeros((nmo,nmo))
+    bij[:ncore,:ncore] = -2
+    bij[:ncore,ncore:nocc] = -1
+    bij[ncore:nocc,:ncore] = -1
+    # Contributions from GUGA
+    drt = distinct_row_table(spin_coupling)
+    bvec = b_vector(spin_coupling)
+    for i in range(nact):
+        for j in range(nact):
+            bij[i+ncore,j+ncore] = e_ijji(bvec,drt,i,j)
+
+    return aij, bij
+
+def get_shell_exchange(ncore, shell_indices, spin_coupling):
+    """ Compute the exchange contributions for each unique shell pair"""
+    # Get the distinct row table and b vector
+    drt = distinct_row_table(spin_coupling)
+    bvec = b_vector(spin_coupling)
+    
+    # Get the number of shells
+    nshell = len(shell_indices)
+    # Compute beta matrix
+    beta = np.zeros((nshell,nshell))
+    for w in range(nshell):
+        for v in range(w,nshell):
+            beta[w,v] = e_ijji(bvec,drt,shell_indices[w][0]-ncore,shell_indices[v][0]-ncore)
+            beta[v,w] = beta[w,v]
+    return beta
+
+def get_shells(ncore, spin_coupling):
+    """ Get the indices of orbitals within shells
+            :param ncore:
+            :param spin_coupling:
+            :return:
+    """
+    # Initialise with core (doubly occupied) shell
+    core_indices = list(range(ncore))
+    shell_indices = []
+    if(len(spin_coupling)>0):
+        # Get indices for each shell
+        active_shells = np.cumsum([0 if i==0 else spin_coupling[i-1]!=spin_coupling[i] 
+                                for i in range(len(spin_coupling ))])
+        for i in range(active_shells[-1]+1):
+            shell_indices.append((ncore+np.argwhere(active_shells==i).ravel()).tolist())
+    return core_indices, shell_indices

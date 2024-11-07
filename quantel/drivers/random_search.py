@@ -6,6 +6,8 @@ from quantel.utils.linalg import random_rot
 from quantel.wfn.rhf import RHF
 from quantel.opt.diis import DIIS
 from quantel import LibintInterface
+from quantel.opt.lbfgs import LBFGS
+from quantel.wfn.csf import GenealogicalCSF as CSF
 
 def random_search(ints, config):
     """Perform a random search for multiple solutions"""
@@ -17,11 +19,19 @@ def random_search(ints, config):
     print("-----------------------------------------------")
 
     # Get RHF orbitals
-    rhf = RHF(ints)
-    rhf.get_orbital_guess()
-    DIIS().run(rhf)
-
-    ref_mo = rhf.mo_coeff.copy()
+    ms = ints.molecule().nalfa() - ints.molecule().nbeta()
+    if(ms==0):
+        print("\nRunning initial closed-shell RHF calculation...")
+        mf = RHF(ints)
+        mf.get_orbital_guess()
+        DIIS().run(mf,thresh=1e-7)
+        ref_mo = mf.mo_coeff.copy()
+    else:
+        print(f"\nRunning initial high-spin ROHF calculation with multiplicity {ms+1: 3d}...")
+        mf = CSF(ints, '+'*ms)
+        mf.get_orbital_guess()
+        LBFGS().run(mf,maxit=500)
+        ref_mo = mf.mo_coeff.copy()
     ref_ci = None
 
     # Get information about the wavefunction defintion
@@ -38,13 +48,6 @@ def random_search(ints, config):
         from quantel.wfn.csf import GenealogicalCSF as WFN
     elif config["wavefunction"]["method"] == "rhf":
         from quantel.wfn.rhf import RHF as WFN
-    #elif config["wavefunction"]["method"] == "pcid":
-    #    from quantel.wfn.pcid import PCID as WFN
-    #    ref_ci = numpy.identity(WFN(mol, **wfnconfig).nDet)
-    #    ndet = ref_ci.shape[1]
-    #elif config["wavefunction"]["method"] == "pp":
-    #    from quantel.wfn.pp import PP as WFN
-    #    ndet = 0
     else:
         raise ValueError("Wavefunction method not recognised")
         
@@ -55,10 +58,14 @@ def random_search(ints, config):
     optconfig = config["optimiser"][config["optimiser"]["algorithm"]]
     if config["optimiser"]["algorithm"] == "eigenvector_following":
         from quantel.opt.eigenvector_following import EigenFollow as OPT
-    elif config["optimiser"]["algorithm"] == "mode_control":
-        from quantel.opt.mode_controlling import ModeControl as OPT
+    elif config["optimiser"]["algorithm"] == "lsr1":
+        from quantel.opt.lsr1 import SR1 as OPT
+    elif config["optimiser"]["algorithm"] == "gmf":
+        from quantel.opt.gmf import GMF as OPT
     elif config["optimiser"]["algorithm"] == "lbfgs":
         from quantel.opt.lbfgs import LBFGS as OPT
+    elif config["optimiser"]["algorithm"] == "mode_control":
+        from quantel.opt.mode_controlling import ModeControl as OPT
 
     # Set numpy random seed
     numpy.random.seed(config["jobcontrol"]["search"]["seed"])
@@ -71,7 +78,8 @@ def random_search(ints, config):
     count = 0
     for itest in range(config["jobcontrol"]["search"]["nsample"]):
         # Randomly perturb CI and MO coefficients
-        mo_guess = ref_mo.dot(random_rot(nmo,  -numpy.pi, numpy.pi))
+        mo_range = config["jobcontrol"]["search"]["mo_rot_range"]
+        mo_guess = ref_mo.dot(random_rot(nmo,  -mo_range, mo_range))
         if(ref_ci) is None:
             ci_guess = None
         else:
@@ -89,14 +97,17 @@ def random_search(ints, config):
             continue
 
         # Check the Hessian index
-        hindices = myfun.get_hessian_index()
+        myfun.canonicalize()
+        myfun.get_davidson_hessian_index()
+        hindices = myfun.hess_index
         if (hindices[0] != target_index) and (target_index is not None):
             continue
         
         # Compare solution against previously found states
         new = True
         for otherwfn in wfn_list:
-            if 1.0 - abs(myfun.overlap(otherwfn)) < config["jobcontrol"]["dist_thresh"]:
+            if abs(myfun.energy - otherwfn.energy) < config["jobcontrol"]["dist_thresh"]:
+              if 1.0 - abs(myfun.overlap(otherwfn)) < config["jobcontrol"]["dist_thresh"]:
                 new = False
                 break
 

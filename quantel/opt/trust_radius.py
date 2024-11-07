@@ -44,6 +44,9 @@ class TrustRadius:
     def minstep(self, minstep):
         self.__minstep = minstep
 
+    def update_rtrust(self,rtrust):
+        self.__rtrust = rtrust
+
     def dogleg_step(self, pu, pb):
         '''Compute an optimal dogleg step for the trust region
         
@@ -91,6 +94,16 @@ class TrustRadius:
             step = pu + tau * (pb - pu)
             comment = "Dogleg step"
 
+        return step, comment
+
+    def truncated_step_norm(self, pu):
+        lu = np.linalg.norm(pu)
+        if(lu > self.__rtrust):
+            step = (self.__rtrust / lu) * pu
+            comment = "Truncated step"
+        else:
+            step = pu
+            comment = ""
         return step, comment
 
     def truncated_step(self, pu):

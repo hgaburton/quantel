@@ -5,6 +5,9 @@
 #include "molecule.h"
 
 class LibintInterface {
+    /// \brief LibintInterface class
+    /// \details This class provides an interface to the Libint2 library for computing molecular integrals
+ 
 private:
     const libint2::BasisSet m_basis; //!< The Libint2 basis set
     const Molecule &m_mol;
@@ -24,10 +27,11 @@ private:
     /// One-electron integrals
     std::vector<double> m_oei_a;
     std::vector<double> m_oei_b;
-    /// Two-electron integrals
-    std::vector<double> m_tei_aa;
-    std::vector<double> m_tei_bb;
-    std::vector<double> m_tei_ab;
+    /// Dipole integrals
+    std::vector<double> m_dipole;
+    /// Store J and K versions of two-electron integrals
+    std::vector<double> m_tei; /// [p,q,r,s] = (pq|rs)
+    double thresh = 1e-12;
 
 public:
 
@@ -62,13 +66,13 @@ public:
     /// @param alpha spin of the integral
     void set_oei(size_t p, size_t q, double value, bool alpha);
 
-    /// Set the value of two-electron integrals (antisymmetrised physicist notation)
-    /// @param p integral index for bra 
-    /// @param q integral index for ket
+    /// Set an element of the two-electron integrals (pq|rs)
+    /// @param p integral index
+    /// @param q integral index
+    /// @param r integral index 
+    /// @param s integral index
     /// @param value value of the integral
-    /// @param alpha1 spin of electron 1
-    /// @param alpha2 spin of electron 2
-    void set_tei(size_t p, size_t q, size_t r, size_t s, double value, bool alpha1, bool alpha2);
+    void set_tei(size_t p, size_t q, size_t r, size_t s, double value);
 
     /// Build fock matrix from restricted density matrix in AO basis
     /// @param D density matrix
@@ -79,6 +83,17 @@ public:
     /// @param D density matrix
     /// @param JK output JK matrix
     void build_JK(std::vector<double> &dens, std::vector<double> &JK);
+
+    /// Build J and K matrices from a list of density matrices
+    /// @param vDJ Vector of density matrices for J build
+    /// @param vDK Vector of density matrices for K build
+    /// @param vJ Vector of output J matrices
+    /// @param vK Vector of output K matrices
+    /// @param nj number of density matrices for J build
+    /// @param nk number of density matrices for K build
+    void build_multiple_JK(std::vector<double> &vDJ, std::vector<double> &vDK, 
+                           std::vector<double> &vJ, std::vector<double> &vK, 
+                           size_t nj, size_t nk);
 
     /// Build a J matrix
     /// @param D density matrix
@@ -99,21 +114,19 @@ public:
     /// @param alpha spin of the integral
     double oei(size_t p, size_t q, bool alpha);
 
-    /// Get an element of the two-electron integrals <pq||rs>
+    /// Get an element of the two-electron integrals (pq|rs)
     /// @param p integral index
     /// @param q integral index
     /// @param r integral index 
     /// @param s integral index
-    /// @param alpha1 spin of electron 1
-    /// @param alpha2 spin of electron 2
-    double tei(size_t p, size_t q, size_t r, size_t s, bool alpha1, bool alpha2);
+    double tei(size_t p, size_t q, size_t r, size_t s);
 
     /// Perform AO to MO eri transformation
     /// @param C1 transformation matrix
     /// @param C2 transformation matrix
     /// @param C3 transformation matrix
     /// @param C4 transformation matrix
-    /// @param eri outpur array of two-electron integrals
+    /// @param eri outpur array of two-electron integrals in physicist's notation
     /// @param alpha1 spin of electron 1
     /// @param alpha2 spin of electron 2
     void tei_ao_to_mo(std::vector<double> &C1, std::vector<double> &C2, 
@@ -138,18 +151,11 @@ public:
     /// @param alpha spin of the integrals
     double *oei_matrix(bool alpha) { return alpha ? m_oei_a.data() : m_oei_b.data(); }
 
-    /// Get a point to the two-electron integral array
-    /// @param alpha1 spin of electron 1
-    /// @param alpha2 spin of electron 2
-    double *tei_array(bool alpha1, bool alpha2) { 
-        if(alpha1 == true and alpha2 == true)
-            return m_tei_aa.data();
-        if(alpha1 == true and alpha2 == false)
-            return m_tei_ab.data();
-        if(alpha1 == false and alpha2 == false)    
-            return m_tei_bb.data();
-        return nullptr;
-    }
+    /// Get a pointer to the two-electron integral array
+    double *tei_array() { return m_tei.data(); }
+
+    /// Get a pointer to the dipole integrals
+    double *dipole_integrals() { return m_dipole.data(); }
 
     /// Get the number of basis functions
     size_t nbsf() const { return m_nbsf; }
@@ -160,6 +166,10 @@ public:
     /// Initialise all relevant variables
     void initialize();
 
+    /// Plot orbitals
+    void molden_orbs(std::vector<double> &C, 
+                     std::vector<double> &occ, 
+                     std::vector<double> &evals);
 
 private:
     /// Compute the nuclear repulsion energy
@@ -172,6 +182,8 @@ private:
     void compute_one_electron_matrix();
     /// Compute the two-electron integrals
     void compute_two_electron_integrals();
+    /// Compute the dipole integrals
+    void compute_dipole_integrals();
 
     /// Get index-for one-electron quantity
     size_t oei_index(size_t p, size_t q) 

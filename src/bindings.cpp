@@ -1,4 +1,3 @@
-#include <iostream>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/complex.h>
@@ -15,16 +14,22 @@
 namespace py = pybind11;
 using namespace pybind11::literals;
 
-py::array_t<double,py::array::c_style> vec_to_np_array(size_t m, double *data)
+py::array_t<double,py::array::c_style> vec_to_np_array(size_t d1, double *data)
 {
-     py::array_t<double,py::array::c_style> array(m,data);
-     return array.reshape({m});
+     py::array_t<double,py::array::c_style> array(d1,data);
+     return array.reshape({d1});
 }
 
-py::array_t<double,py::array::c_style> vec_to_np_array(size_t m, size_t n, double *data)
+py::array_t<double,py::array::c_style> vec_to_np_array(size_t d1, size_t d2, double *data)
 {
-     py::array_t<double,py::array::c_style> array(m*n,data);
-     return array.reshape({m,n});
+     py::array_t<double,py::array::c_style> array(d1*d2,data);
+     return array.reshape({d1,d2});
+}
+
+py::array_t<double,py::array::c_style> vec_to_np_array(size_t d1, size_t d2, size_t d3, double *data)
+{
+     py::array_t<double,py::array::c_style> array(d1*d2*d3,data);
+     return array.reshape({d1,d2,d3});
 }
 
 py::array_t<double,py::array::c_style> vec_to_np_array(size_t d1, size_t d2, size_t d3, size_t d4, double *data)
@@ -41,6 +46,7 @@ bool libint_initialize()
      }
      // Initialize libint2
      libint2::initialize();
+     libint2::set_solid_harmonics_ordering(libint2::SHGShellOrdering_Gaussian);
 
      initialized = true;
      return true;
@@ -254,6 +260,20 @@ PYBIND11_MODULE(_quantel, m) {
                return vec_to_np_array(nbsf,nbsf,v_j.data()); 
                },
                "Build J matrix from density matrix")
+          .def("build_multiple_JK", [](LibintInterface &ints, 
+                    py::array_t<double> &vDJ, py::array_t<double> &vDK, size_t nj, size_t nk) {
+               size_t nbsf = ints.nbsf();
+               auto vDJ_buf = vDJ.request();
+               auto vDK_buf = vDK.request();
+               std::vector<double> v_vDJ((double *) vDJ_buf.ptr, (double *) vDJ_buf.ptr + vDJ_buf.size);
+               std::vector<double> v_vDK((double *) vDK_buf.ptr, (double *) vDK_buf.ptr + vDK_buf.size);
+               std::vector<double> v_J(nbsf*nbsf*nj,0.0);
+               std::vector<double> v_K(nbsf*nbsf*nk,0.0);
+               ints.build_multiple_JK(v_vDJ,v_vDK,v_J,v_K,nj,nk);
+               return std::make_tuple(vec_to_np_array(nj,nbsf,nbsf,v_J.data()), vec_to_np_array(nk,nbsf,nbsf,v_K.data()));
+               },
+               "Build J and K matrices from a list of density matrices"
+          )
           .def("overlap_matrix", [](LibintInterface &ints) { 
                return vec_to_np_array(ints.nbsf(), ints.nbsf(), ints.overlap_matrix()); 
                },
@@ -266,6 +286,10 @@ PYBIND11_MODULE(_quantel, m) {
                return vec_to_np_array(ints.nbsf(), ints.nbsf(), ints.oei_matrix(alpha)); 
                }, 
                "Return one-electron Hamiltonian matrix")
+          .def("dipole_matrix", [](LibintInterface &ints) { 
+               return vec_to_np_array(4, ints.nbsf(), ints.nbsf(), ints.dipole_integrals()); 
+               },
+               "Return the dipole matrix integrals")
           .def("tei_ao_to_mo", [](LibintInterface &ints, 
                py::array_t<double> &C1, py::array_t<double> &C2, 
                py::array_t<double> &C3, py::array_t<double> &C4, 
@@ -318,11 +342,27 @@ PYBIND11_MODULE(_quantel, m) {
                },
                "Perform AO to MO transformation for one-electron integrals"
           )
-          .def("tei_array", [](LibintInterface &ints, bool alpha1, bool alpha2) { 
+          .def("tei_array", [](LibintInterface &ints) { 
                size_t nbsf = ints.nbsf();
-               return vec_to_np_array(nbsf, nbsf, nbsf, nbsf, ints.tei_array(alpha1, alpha2)); 
+               return vec_to_np_array(nbsf, nbsf, nbsf, nbsf, ints.tei_array());
                },
-               "Return two-electron integral array")
+               "Return two-electron integral (pq|rs) array")
+          .def("molden_orbs", [](LibintInterface &ints,
+               py::array_t<double> &mo_coeff, py::array_t<double> &mo_occ, py::array_t<double> &mo_energy)
+               {
+                    // Get the buffer for the numpy arrays
+                    auto C_buf = mo_coeff.request();
+                    auto O_buf = mo_occ.request();
+                    auto E_buf = mo_energy.request();
+                    // Get the data from the numpy arrays
+                    std::vector<double> v_C((double *) C_buf.ptr, (double *) C_buf.ptr + C_buf.size);
+                    std::vector<double> v_O((double *) O_buf.ptr, (double *) O_buf.ptr + O_buf.size);
+                    std::vector<double> v_E((double *) E_buf.ptr, (double *) E_buf.ptr + E_buf.size);
+                    ints.molden_orbs(v_C,v_O,v_E);
+                    return ;
+               },
+               "Construct molden file for given set of orbitals"
+          )
           ;
 
      m.def("det_str", &det_str,"Print the determinant");

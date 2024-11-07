@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import numpy, glob
+from pyscf import gto
 
 def from_file(ints, config):
     """Read wavefunctions from solutions that are saved to file"""
@@ -27,6 +28,12 @@ def from_file(ints, config):
     optconfig = config["optimiser"][config["optimiser"]["algorithm"]]
     if config["optimiser"]["algorithm"] == "eigenvector_following":
         from quantel.opt.eigenvector_following import EigenFollow as OPT
+    elif config["optimiser"]["algorithm"] == "lsr1":
+        from quantel.opt.lsr1 import SR1 as OPT
+    elif config["optimiser"]["algorithm"] == "gmf":
+        from quantel.opt.gmf import GMF as OPT
+    elif config["optimiser"]["algorithm"] == "lbfgs":
+        from quantel.opt.lbfgs import LBFGS as OPT
     elif config["optimiser"]["algorithm"] == "mode_control":
         from quantel.opt.mode_controlling import ModeControl as OPT
 
@@ -56,15 +63,18 @@ def from_file(ints, config):
             if not myopt.run(myfun, **config["optimiser"]["keywords"]):
                 continue
 
-            # Get the Hessian index
-            hindices = myfun.get_hessian_index()
+            # Check the Hessian index
+            myfun.canonicalize()
+            myfun.get_davidson_hessian_index()
+            hindices = myfun.hess_index
             if (hindices[0] != target_index) and (target_index is not None):
                 continue
 
             # Compare solution against previously found states
             new = True
             for prev, otherwfn in enumerate(wfn_list):
-                if 1.0 - abs(myfun.overlap(otherwfn)) < config["jobcontrol"]["dist_thresh"]:
+                if abs(myfun.energy - otherwfn.energy) < config["jobcontrol"]["dist_thresh"]:
+                  if 1.0 - abs(myfun.overlap(otherwfn)) < config["jobcontrol"]["dist_thresh"]:
                     new = False
                     break
 

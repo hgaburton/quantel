@@ -11,10 +11,6 @@ def analyse(ints, config):
     print(" Analysing optimised solution(s)                               ")
     print("---------------------------------------------------------------")
 
-    # We use PySCF for orbital plots still
-    mol = gto.Mole(**config["molecule"])
-    mol.build()
-
     # Get information about the wavefunction
     wfnconfig = config["wavefunction"][config["wavefunction"]["method"]]
     if config["wavefunction"]["method"] == "esmf":
@@ -51,19 +47,16 @@ def analyse(ints, config):
 
         # Plot orbitals
         myfun.canonicalize()
-        orbrange=config["jobcontrol"]["analyse"]["orbital_plots"]
-        if(len(orbrange)>0):
-            for i in range(orbrange[0]-1, orbrange[1]):
-                cubegen.orbital(mol, fname+'.mo.{:d}.cube'.format(i+1), myfun.mo_coeff[:,i])
-        
-        hess = myfun.hessian
-        eigval, eigvec = numpy.linalg.eigh(hess)
-        nrot = myfun.nrot 
+        ints.molden_orbs(myfun.mo_coeff,myfun.mo_occ,myfun.mo_energy)
+        #orbrange=config["jobcontrol"]["analyse"]["orbital_plots"]
+        #if(len(orbrange)>0):
+        #    for i in range(orbrange[0]-1, orbrange[1]):
+        #        cubegen.orbital(mol, fname+'.mo.{:d}.cube'.format(i+1), myfun.mo_coeff[:,i])
 
         with open(fname+".analyse",'w+') as outF:
             outF.write("  Energy = {: 16.10f}\n".format(myfun.energy))
             outF.write("   <S^2> = {: 16.10f}\n".format(myfun.s2))
-            outF.write("   Index = {: 5d}\n".format(numpy.sum(eigval<0)))
+            #outF.write("   Index = {: 5d}\n".format(myfun.hess_index[0]))
 
             #outF.write("\n  ----------------------------------------\n")
             #outF.write("  Dipole moment:\n")
@@ -101,13 +94,13 @@ def analyse(ints, config):
             #    outF.write(" {:5d}  {: 10.6f}\n".format(i+1, myfun.mat_ci[i,0]))
             #outF.write("  ----------------------------------------\n")
 
-            outF.write("\n  ----------------------------------------\n")
-            outF.write("  Hessian eigenvalue structure:\n")
-            outF.write("     n      Eval       \n") 
-            outF.write("  ----------------------------------------\n")
-            for i, eigval in enumerate(eigval):
-                outF.write(" {:5d}  {: 10.6f}\n".format(i, eigval))
-            outF.write("  ----------------------------------------\n")
+            #outF.write("\n  ----------------------------------------\n")
+            #outF.write("  Hessian eigenvalue structure:\n")
+            #outF.write("     n      Eval       \n") 
+            #outF.write("  ----------------------------------------\n")
+            #for i, eigval in enumerate(eigval):
+            #    outF.write(" {:5d}  {: 10.6f}\n".format(i, eigval))
+            #outF.write("  ----------------------------------------\n")
 
              
             #ci_eig = 0.5 * numpy.linalg.eigvalsh(hess[nrot:,nrot:]) + myfun.energy

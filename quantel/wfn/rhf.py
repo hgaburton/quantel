@@ -26,7 +26,7 @@ class RHF(Wavefunction):
         """
         self.integrals = integrals
         self.nalfa     = integrals.molecule().nalfa()
-        self.nbeta     = integrals.molecule().nbeta()
+        self.nbeta     = self.nalfa #integrals.molecule().nbeta()
 
         # Get number of basis functions and linearly independent orbitals
         self.nbsf      = integrals.nbsf()
