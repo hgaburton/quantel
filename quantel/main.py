@@ -17,7 +17,7 @@ import argparse, numpy, time
 from datetime import datetime, timedelta
 from quantel import Molecule, LibintInterface
 from quantel.io.config import Config
-from quantel.drivers import random_search, from_file, from_orca, ci_guess, ev_linesearch, noci, overlap, analyse
+from quantel.drivers import random_search, from_file, from_orca, ci_guess, from_core, ev_linesearch, noci, overlap, analyse
 from cProfile import Profile
 from pstats import SortKey, Stats
 
@@ -69,6 +69,8 @@ def main():
         wfnlist = from_orca(ints, config)
     elif config["jobcontrol"]["guess"] == "evlin":
         wfnlist = ev_linesearch(ints, config)
+    elif config["jobcontrol"]["guess"] == "core":
+        wfnlist = from_core(ints, config)
     else:
         errstr = "No wavefunctions have been defined"
         raise ValueError(errstr)
