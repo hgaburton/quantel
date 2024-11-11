@@ -7,7 +7,6 @@ def standard_guess(ints, config):
     """Initialising wave functions from standard guess"""
 
     print("-----------------------------------------------")
-    print(config['jobcontrol']['guess_method'])
     print(f" Using {config['jobcontrol']['guess_method']:s} initial guess                      ")
     print("-----------------------------------------------")
 

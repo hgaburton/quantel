@@ -4,6 +4,13 @@ from functools import reduce
 import numpy as np
 from scipy.linalg import expm as scipy_expm
 
+def stable_eigh(M,tol=1e-14):
+    """Only diagonalise matrix M if off-diagonal elements are not small"""
+    if(np.max(np.abs(M - np.diag(np.diag(M)))) > tol):
+        return np.linalg.eigh(M)
+    else:
+        return np.diag(M), np.eye(M.shape[0])
+            
 def random_rot(n, lmin, lmax):
     """
     Generate a random rotation matrix of size n x n.

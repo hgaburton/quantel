@@ -3,9 +3,9 @@
 # This is code for a CSF, which can be formed in a variety of ways.
 
 import numpy as np
-import scipy, quantel, h5py, warnings
-from quantel.utils.csf_utils import get_csf_vector, get_shells, get_shell_exchange
-from quantel.utils.linalg import orthogonalise
+import scipy, quantel, h5py
+from quantel.utils.csf_utils import get_shells, get_shell_exchange
+from quantel.utils.linalg import orthogonalise, stable_eigh
 from quantel.gnme.csf_noci import csf_coupling
 from .wavefunction import Wavefunction
 import time
@@ -21,7 +21,6 @@ def flag_transport(A,T,mask,max_order=50,tol=1e-4):
            break
        tA += M
    return tA
-
 
 class GenealogicalCSF(Wavefunction):
     """ 
@@ -143,9 +142,9 @@ class GenealogicalCSF(Wavefunction):
         # Coulomb energy
         E += 0.5 * np.einsum('pq,qp',self.dj,self.J)
         # Exchange energy
-        E -= 0.25 * np.einsum('pq,qp',self.dj,self.vK[0])
+        E -= 0.25 * np.einsum('pq,qp',self.dj,self.K[0])
         for w in range(self.nshell):
-            E += 0.5 * np.einsum('pq,qp',self.vK[1+w], 
+            E += 0.5 * np.einsum('pq,qp',self.K[1+w], 
                           np.einsum('v,vpq->pq',self.beta[w],self.dk[1:]) - 0.5 * self.dk[0])
         return E
 
@@ -255,11 +254,11 @@ class GenealogicalCSF(Wavefunction):
         # Update density matrices (AO basis)
         self.dj, self.dk, self.vd = self.get_density_matrices()
         # Update JK matrices (AO basis) 
-        self.J, self.vK, self.Ipqpq, self.Ipqqp = self.get_JK_matrices(self.vd) #self.dj,self.dk)
+        self.J, self.K = self.get_JK_matrices(self.vd)
         # Get Fock matrix (AO basis)
-        self.fock = self.integrals.oei_matrix(True) + self.J - 0.5 * np.einsum('mpq->pq',self.vK)
+        self.fock = self.integrals.oei_matrix(True) + self.J - 0.5 * np.einsum('mpq->pq',self.K)
         # Get generalized Fock matrices
-        self.gen_fock = self.get_generalised_fock()
+        self.gen_fock, self.Ipqpq, self.Ipqqp = self.get_generalised_fock()
         return 
 
     def save_to_disk(self, tag):
@@ -347,7 +346,7 @@ class GenealogicalCSF(Wavefunction):
         enuc  = self.integrals.scalar_potential()
         return csf_coupling(self, them, ovlp, hcore, eri, enuc)
     
-    def get_orbital_guess(self, method="core"):
+    def get_orbital_guess(self, method="gwh"):
         """Get a guess for the molecular orbital coefficients"""
         h1e = self.integrals.oei_matrix(True)
         s = self.integrals.overlap_matrix()
@@ -462,30 +461,21 @@ class GenealogicalCSF(Wavefunction):
         nopen = vd.shape[0]-1
 
         # Call integrals object to build J and K matrices
-        vJ, vK = self.integrals.build_multiple_JK(vd,vd,nopen+1,nopen+1)
+        self.vJ, self.vK = self.integrals.build_multiple_JK(vd,vd,nopen+1,nopen+1)
 
         # Get the total J matrix
-        J = np.einsum('kpq->pq',vJ)
+        J = np.einsum('kpq->pq',self.vJ)
         # Get exchange matrices for each shell
         K = np.zeros((self.nshell+1,self.nbsf,self.nbsf))
-        K[0] = vK[0].copy()
+        K[0] = self.vK[0].copy()
         for Ishell in range(self.nshell):
             shell = [1+i-self.ncore for i in self.shell_indices[Ishell]]
-            K[Ishell+1] += np.einsum('vpq->pq',vK[shell])
+            K[Ishell+1] += np.einsum('vpq->pq',self.vK[shell])
 
-        # Get diagonal J/K terms
-        Ipqpq = np.zeros((nopen,self.nmo))
-        Ipqqp = np.zeros((nopen,self.nmo))
-        for i in range(nopen):
-            Ji = self.mo_coeff.T @ vJ[1+i] @ self.mo_coeff
-            Ki = self.mo_coeff.T @ vK[1+i] @ self.mo_coeff
-            Ipqpq[i] = np.diag(Ji)
-            Ipqqp[i] = np.diag(Ki)
-        
-        return J, K, Ipqpq, Ipqqp
+        return J, K
 
     def get_generalised_fock(self):
-        """ Compute the generalised Fock matrix"""
+        """ Compute the generalised Fock matrix in AO basis"""
         # Initialise memory
         F = np.zeros((self.nmo, self.nmo))
 
@@ -493,9 +483,8 @@ class GenealogicalCSF(Wavefunction):
         self.gen_fock_diag = np.zeros((self.nmo,self.nmo))
         # Core contribution
         Fcore_ao = 2*(self.integrals.oei_matrix(True) + self.J 
-                      - 0.5 * np.sum(self.vK[i] for i in range(self.nshell+1)))
+                      - 0.5 * np.sum(self.K[i] for i in range(self.nshell+1)))
         # AO-to-MO transformation
-        Ccore = self.mo_coeff[:,:self.ncore]
         Fcore_mo = np.linalg.multi_dot([self.mo_coeff.T, Fcore_ao, self.mo_coeff])
         for i in range(self.ncore):
             self.gen_fock_diag[i,:] = Fcore_mo.diagonal()
@@ -506,16 +495,26 @@ class GenealogicalCSF(Wavefunction):
             # Get shell indices and coefficients
             shell = self.shell_indices[W]
             # One-electron matrix, Coulomb and core exchange
-            Fw_ao = self.integrals.oei_matrix(True) + self.J - 0.5 * self.vK[0]
+            Fw_ao = self.integrals.oei_matrix(True) + self.J - 0.5 * self.K[0]
             # Different shell exchange
-            Fw_ao += np.einsum('v,vpq->pq',self.beta[W],self.vK[1:])
+            Fw_ao += np.einsum('v,vpq->pq',self.beta[W],self.K[1:])
             # AO-to-MO transformation
             Fw_mo = np.linalg.multi_dot([self.mo_coeff.T, Fw_ao, self.mo_coeff])
             for w in shell:
                 self.gen_fock_diag[w,:] = Fw_mo.diagonal()
             F[shell,:] = Fw_mo[shell,:]
         
-        return F
+        # Get diagonal J/K terms
+        nopen = self.nocc-self.ncore
+        Ipqpq = np.zeros((nopen,self.nmo))
+        Ipqqp = np.zeros((nopen,self.nmo))
+        for i in range(nopen):
+            Ji = self.mo_coeff.T @ self.vJ[1+i] @ self.mo_coeff
+            Ki = self.mo_coeff.T @ self.vK[1+i] @ self.mo_coeff
+            Ipqpq[i] = np.diag(Ji)
+            Ipqqp[i] = np.diag(Ki)
+
+        return F, Ipqpq, Ipqqp
 
     def get_Y_intermediate(self):
         """ Compute the Y intermediate required for Hessian evaluation
@@ -532,7 +531,7 @@ class GenealogicalCSF(Wavefunction):
 
         # K and J in MO basis
         Jmn  = np.einsum('pm,pq,qn->mn',self.mo_coeff, self.J, self.mo_coeff)
-        vKmn = np.einsum('pm,wpq,qn->wmn',self.mo_coeff, self.vK, self.mo_coeff)
+        vKmn = np.einsum('pm,wpq,qn->wmn',self.mo_coeff, self.K, self.mo_coeff)
         Kmn  = np.einsum('wpq->pq', vKmn)
 
         # Build Ypqrs
@@ -670,7 +669,7 @@ class GenealogicalCSF(Wavefunction):
 
         # Get core transformation
         foo = fock[self.core_indices,:][:,self.core_indices]
-        self.mo_energy[:self.ncore], Qoo = np.linalg.eigh(foo)
+        self.mo_energy[:self.ncore], Qoo = stable_eigh(foo)
         for i, ii in enumerate(self.core_indices):
             for j, jj in enumerate(self.core_indices):
                 Q[ii,jj] = Qoo[i,j]
@@ -678,14 +677,14 @@ class GenealogicalCSF(Wavefunction):
         # Loop over shells
         for W in self.shell_indices:
             fww = fock[W,:][:,W]
-            self.mo_energy[W], Qww = np.linalg.eigh(fww)
+            self.mo_energy[W], Qww = stable_eigh(fww)
             for i, ii in enumerate(W):
                 for j, jj in enumerate(W):
                     Q[ii,jj] = Qww[i,j]
 
         # Virtual transformation
         fvv = fock[self.nocc:, self.nocc:]
-        self.mo_energy[self.nocc:], Qvv = np.linalg.eigh(fvv)
+        self.mo_energy[self.nocc:], Qvv = stable_eigh(fvv)
         Q[self.nocc:,self.nocc:] = Qvv
 
         # Apply transformation
@@ -693,6 +692,7 @@ class GenealogicalCSF(Wavefunction):
             Q[:,0] *= -1
         self.mo_coeff = self.mo_coeff @ Q
         
-        # Update integrals
-        self.update_integrals()
+        # Update generalised Fock matrix and diagonal approximations
+        #self.update_integrals()
+        self.gen_fock, self.Ipqpq, self.Ipqqp = self.get_generalised_fock()
         return Q

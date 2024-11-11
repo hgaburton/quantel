@@ -267,17 +267,33 @@ class RHF(Wavefunction):
         mask[self.nocc:,:self.nocc] = True
         return mask
     
-    def get_orbital_guess(self, method="Core"):
+    def get_orbital_guess(self, method="gwh"):
         """Get a guess for the molecular orbital coefficients"""
-        if(method == "Core"):
-            # Build Fock matrix with zero density
-            self.dens = np.zeros((self.nbsf,self.nbsf))
-            self.get_fock()
-            # Get orbital coefficients by diagonalising Fock matrix
-            self.diagonalise_fock()
+        # Get one-electron integrals and overlap matrix 
+        h1e = self.integrals.oei_matrix(True)
+        s = self.integrals.overlap_matrix()
+        
+        # Build guess Fock matrix
+        if(method.lower() == "core"):
+            # Use core Hamiltonian as guess
+            self.fock = h1e.copy()
+        elif(method.lower() == "gwh"):
+            # Build GWH guess Hamiltonian
+            K = 1.75
+            
+            self.fock = np.zeros((self.nbsf,self.nbsf))
+            for i in range(self.nbsf):
+                for j in range(self.nbsf):
+                    self.fock[i,j] = 0.5 * (h1e[i,i] + h1e[j,j]) * s[i,j]
+                    if(i!=j):
+                        self.fock[i,j] *= 1.75
+            
         else:
             raise NotImplementedError(f"Orbital guess method {method} not implemented")
-    
+        
+        # Get orbital coefficients by diagonalising Fock matrix
+        self.diagonalise_fock()
+
     def deallocate(self):
         pass
         
