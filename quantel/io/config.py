@@ -145,8 +145,8 @@ class Config(dict):
             self["jobcontrol"]["eigen_index"] = getvalue(self.lines,"eigen_index",int,default=+1)
             self["jobcontrol"]["linesearch_grid"] = getlist(self.lines,"linesearch_grid",int,False,default=[-numpy.pi,numpy.pi,51])
             self["jobcontrol"]["linesearch_nopt"] = getvalue(self.lines,"linesearch_nopt",int,False,default=5)
-        elif self["jobcontrol"]["guess"] == "core":
-            pass
+        elif self["jobcontrol"]["guess"] == "standard":
+            self["jobcontrol"]["guess_method"] = getvalue(self.lines,"guess_method",str,False,default="core")
         else:
             errstr = "'"+self["jobcontrol"]["guess"]+"' is not a valid option for keyword 'guess'"
             raise ValueError(errstr)

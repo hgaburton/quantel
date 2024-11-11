@@ -3,11 +3,12 @@
 import numpy, glob
 from pyscf import gto
 
-def from_core(ints, config):
-    """Initialising wave functions from core guess"""
+def standard_guess(ints, config):
+    """Initialising wave functions from standard guess"""
 
     print("-----------------------------------------------")
-    print(" Using core initial guess                      ")
+    print(config['jobcontrol']['guess_method'])
+    print(f" Using {config['jobcontrol']['guess_method']:s} initial guess                      ")
     print("-----------------------------------------------")
 
     # Get information about the wavefunction
@@ -47,7 +48,7 @@ def from_core(ints, config):
 
     # Initialise optimisation object
     myfun = WFN(ints, **wfnconfig)
-    myfun.get_orbital_guess()
+    myfun.get_orbital_guess(method=config["jobcontrol"]["guess_method"])
 
     # Run the optimisation
     myopt = OPT(**optconfig)
@@ -83,7 +84,7 @@ def from_core(ints, config):
     numpy.savetxt('ind_list', numpy.array([i_list]),fmt="% 5d")
 
     print()
-    print(" Optimise from core guess complete... Identified {:5d} unique solutions".format(len(wfn_list)))
+    print(" Complete... Identified {:5d} unique solutions".format(len(wfn_list)))
     print("--------------------------------------------------------------")
     print()
 

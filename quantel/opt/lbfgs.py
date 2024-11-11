@@ -86,7 +86,7 @@ class LBFGS:
             
             if istep > 0 and plev > 0:
                 print(" {: 5d} {: 16.10f}    {:8.2e}     {:8.2e}    {:10s}".format(
-                      istep, ecur, step_length, conv, comment))
+                      istep, ecur, np.max(np.abs(step)), conv, comment))
                 #print(f" {istep: 5d} {ecur: 16.10f}   {ecur-eref: 8.2e}   {RMSDP: 8.2e}   {MaxDP: 8.2e}   {MaxGrad: 8.2e}")
             elif plev > 0:
                 print(" {: 5d} {: 16.10f}                 {:8.2e}".format(istep, ecur, conv))
@@ -107,7 +107,7 @@ class LBFGS:
 
             # Obtain new step
             comment = ""
-            if(wolfe1 or n_rescale>=5):
+            if(wolfe1):
                 # Number of rescaled steps in a row
                 n_rescale = 0
                 # Accept the step, update origin and compute new L-BFGS step
@@ -146,7 +146,8 @@ class LBFGS:
                     reset = True
                 
                 # Truncate the max step size
-                lscale = self.control["maxstep"] / np.linalg.norm(step)
+                #lscale = self.control["maxstep"] / np.linalg.norm(step)
+                lscale = self.control["maxstep"] / np.max(np.abs(step))
                 if(lscale < 1):
                     step = lscale * step
                     comment = "truncated"
@@ -160,14 +161,14 @@ class LBFGS:
                 print(f"  Insufficient decrease - rescaling step size by {self.control['backtrack_scale']:4.2f}")
                 # Insufficient decrease in energy, restore last position and reset L-BFGS
                 obj.restore_last_step()
-                reset = True
 
                 # Rescale step and remove last step from memory
                 step = step * self.control["backtrack_scale"]
                 v_step.pop(-1)
                 comment = "backtrack"
                 n_rescale = n_rescale + 1 
-            
+                reset = True
+
             # Save step and length
             step_length = np.linalg.norm(step)
             v_step.append(step.copy())
@@ -243,7 +244,6 @@ class LBFGS:
             # If out preciditioner is not positive definite, we assume that we are not 
             # in a quadratic region and use Nocedal's formula to approximate the inverse Hessian
             r = gamma_k * q
-            print("gamma_k = ", gamma_k)
         else:
             # Recall preconditioner is Hessian, not inverse
             r = q / prec

@@ -347,15 +347,31 @@ class GenealogicalCSF(Wavefunction):
         enuc  = self.integrals.scalar_potential()
         return csf_coupling(self, them, ovlp, hcore, eri, enuc)
     
-    def get_orbital_guess(self, method="Core"):
+    def get_orbital_guess(self, method="core"):
         """Get a guess for the molecular orbital coefficients"""
-        if(method == "Core"):
-            # Get core Hamiltonian
-            h1e = self.integrals.oei_matrix(True)
-            s = self.integrals.overlap_matrix()
-            e, Cguess = scipy.linalg.eigh(h1e, s)
+        h1e = self.integrals.oei_matrix(True)
+        s = self.integrals.overlap_matrix()
+        
+        if(method.lower() == "core"):
+            # Use core Hamiltonian as guess
+            hguess = h1e.copy()
+
+        elif(method.lower() == "gwh"):
+            # Build GWH guess Hamiltonian
+            K = 1.75
+            
+            hguess = np.zeros((self.nbsf,self.nbsf))
+            for i in range(self.nbsf):
+                for j in range(self.nbsf):
+                    hguess[i,j] = 0.5 * (h1e[i,i] + h1e[j,j]) * s[i,j]
+                    if(i!=j):
+                        hguess[i,j] *= 1.75
+            
         else:
             raise NotImplementedError(f"Orbital guess method {method} not implemented")
+        
+        # Solve initial generalised eigenvalue problem
+        e, Cguess = scipy.linalg.eigh(hguess, s)
         self.initialise(Cguess, spin_coupling=self.spin_coupling)
 
     def restore_last_step(self):
