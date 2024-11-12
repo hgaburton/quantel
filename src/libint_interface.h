@@ -141,6 +141,12 @@ public:
     void oei_ao_to_mo(std::vector<double> &C1, std::vector<double> &C2, 
                       std::vector<double> &oei_mo, bool alpha);
 
+    void dipole_ao_to_mo(std::vector<double> &C1, std::vector<double> &C2, 
+                      std::vector<double> &dipole_mo, bool alpha);
+
+    void dipole_transform(std::vector<double> &C1, std::vector<double> &C2,
+                          std::vector<double> &dipole_ao, std::vector<double> &dipole_mo, const size_t d1, const size_t d2, const size_t nbsf);
+
     /// Get a pointer to the overlap matrix
     double *overlap_matrix() { return m_S.data(); }
 

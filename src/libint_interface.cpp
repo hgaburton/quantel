@@ -691,6 +691,36 @@ void LibintInterface::oei_ao_to_mo(
     oei_transform(C1,C2,oei,oei_mo,d1,d2,m_nbsf);
 }
 
+void LibintInterface::dipole_ao_to_mo(
+    std::vector<double> &C1, std::vector<double> &C2, 
+    std::vector<double> &dipole_mo, bool alpha)
+{
+    // Check dimensions
+    assert(C1.size() % m_nbsf == 0);
+    assert(C2.size() % m_nbsf == 0);
+
+    // Get number of columns of transformation matrices
+    size_t d1 = C1.size() / m_nbsf;
+    size_t d2 = C2.size() / m_nbsf;
+
+    // Get alfa or beta one-electron integrals
+    //std::vector<double> &oei = alpha ? m_oei_a : m_oei_b;
+
+    // Perform transformation
+    dipole_transform(C1,C2,m_dipole,dipole_mo,d1,d2,m_nbsf);
+}
+
+void LibintInterface::dipole_transform(
+    const std::vector<double> &Cbra, const std::vector<double> &Cket,
+    const std::vector<double> &dipole_ao, std::vector<double> &dipole_mo, 
+    const size_t d1, const size_t d2, const size_t nbsf);
+{
+    oei_transform(C1,C2,m_dipole[1*m_nbsf*m_nbsf:2*m_nbsf*m_nbsf],dipole_mo[1*m_nbsf*m_nbsf:2*m_nbsf*m_nbsf],d1,d2,m_nbsf)
+    oei_transform(C1,C2,m_dipole[2*m_nbsf*m_nbsf:3*m_nbsf*m_nbsf],dipole_mo[2*m_nbsf*m_nbsf:3*m_nbsf*m_nbsf],d1,d2,m_nbsf)
+    oei_transform(C1,C2,m_dipole[3*m_nbsf*m_nbsf:4*m_nbsf*m_nbsf],dipole_mo[3*m_nbsf*m_nbsf:4*m_nbsf*m_nbsf],d1,d2,m_nbsf)
+}
+    
+    
 void LibintInterface::molden_orbs(
     std::vector<double> &C, std::vector<double> &occ, std::vector<double> &evals)
 {
