@@ -218,6 +218,12 @@ PYBIND11_MODULE(_quantel, m) {
                     return vec_to_np_array(nact,nact,nact,nact,mo_ints.tei_array(alpha1, alpha2)); 
                },
                "Return two-electron integral array")
+          .def("dipole_matrix", [](MOintegrals &mo_ints, bool alpha)
+               { 
+                    size_t nact = mo_ints.nact();
+                    return vec_to_np_array(3,nact,nact,mo_ints.dipole_matrix(alpha)); 
+               },
+               "Return the dipole matrix integrals")
           .def("nbsf", &MOintegrals::nbsf, "Get the number of basis functions")
           .def("nmo", &MOintegrals::nmo, "Get the number of molecular orbitals")
           .def("nact", &MOintegrals::nact, "Get the number of active orbitals")
@@ -287,7 +293,7 @@ PYBIND11_MODULE(_quantel, m) {
                }, 
                "Return one-electron Hamiltonian matrix")
           .def("dipole_matrix", [](LibintInterface &ints) { 
-               return vec_to_np_array(4, ints.nbsf(), ints.nbsf(), ints.dipole_integrals()); 
+               return vec_to_np_array(3, ints.nbsf(), ints.nbsf(), ints.dipole_integrals()); 
                },
                "Return the dipole matrix integrals")
           .def("tei_ao_to_mo", [](LibintInterface &ints, 

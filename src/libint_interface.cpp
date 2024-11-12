@@ -237,7 +237,7 @@ void LibintInterface::compute_one_electron_matrix()
 void LibintInterface::compute_dipole_integrals()
 {
     // Compute dipole matrix
-    m_dipole.resize(4*m_nbsf*m_nbsf);    
+    m_dipole.resize(3*m_nbsf*m_nbsf);    
     std::fill(m_dipole.begin(), m_dipole.end(), 0.0);
 
     // Setup Libint engine
@@ -274,14 +274,12 @@ void LibintInterface::compute_dipole_integrals()
         {
             // Get compound p,q index
             size_t pq = (bf1+f1)*m_nbsf+(bf2+f2);
-            // Save overlap term
-            m_dipole[pq] = s_shellset[f1*n2+f2];
             // Save x terms
-            m_dipole[1*m_nbsf*m_nbsf + pq] = mu_x_shellset[f1*n2+f2];
+            m_dipole[0*m_nbsf*m_nbsf + pq] = mu_x_shellset[f1*n2+f2];
             // Save y terms
-            m_dipole[2*m_nbsf*m_nbsf + pq] = mu_y_shellset[f1*n2+f2];
+            m_dipole[1*m_nbsf*m_nbsf + pq] = mu_y_shellset[f1*n2+f2];
             // Save z terms
-            m_dipole[3*m_nbsf*m_nbsf + pq] = mu_z_shellset[f1*n2+f2];
+            m_dipole[2*m_nbsf*m_nbsf + pq] = mu_z_shellset[f1*n2+f2];
         }
     }
 }
@@ -699,27 +697,29 @@ void LibintInterface::dipole_ao_to_mo(
     assert(C1.size() % m_nbsf == 0);
     assert(C2.size() % m_nbsf == 0);
 
+    // Resize MO dipole matrix
+    dipole_mo.resize(3*m_nbsf*m_nbsf);
+    std::fill(dipole_mo.begin(), dipole_mo.end(), 0.0);
+
     // Get number of columns of transformation matrices
     size_t d1 = C1.size() / m_nbsf;
     size_t d2 = C2.size() / m_nbsf;
+    size_t n2 = m_nbsf * m_nbsf;
 
-    // Get alfa or beta one-electron integrals
-    //std::vector<double> &oei = alpha ? m_oei_a : m_oei_b;
-
-    // Perform transformation
-    dipole_transform(C1,C2,m_dipole,dipole_mo,d1,d2,m_nbsf);
+    // Transform x,y,z components individually using oei_transform
+    for(size_t xyz=0; xyz<3; xyz++)
+    {
+        // Get AO slice for x component of dipole
+        auto slice = m_dipole.begin()+xyz*n2;
+        std::vector<double> dip_ao(slice,slice+n2);
+        // Initialise memory for MO slice
+        std::vector<double> dip_mo(n2,0.0);
+        // Perform transformation
+        oei_transform(C1,C2,dip_ao,dip_mo,d1,d2,m_nbsf);
+        // Copy MO slice to output
+        std::copy(dip_mo.begin(),dip_mo.end(),dipole_mo.begin()+xyz*n2);
+    }
 }
-
-void LibintInterface::dipole_transform(
-    const std::vector<double> &Cbra, const std::vector<double> &Cket,
-    const std::vector<double> &dipole_ao, std::vector<double> &dipole_mo, 
-    const size_t d1, const size_t d2, const size_t nbsf);
-{
-    oei_transform(C1,C2,m_dipole[1*m_nbsf*m_nbsf:2*m_nbsf*m_nbsf],dipole_mo[1*m_nbsf*m_nbsf:2*m_nbsf*m_nbsf],d1,d2,m_nbsf)
-    oei_transform(C1,C2,m_dipole[2*m_nbsf*m_nbsf:3*m_nbsf*m_nbsf],dipole_mo[2*m_nbsf*m_nbsf:3*m_nbsf*m_nbsf],d1,d2,m_nbsf)
-    oei_transform(C1,C2,m_dipole[3*m_nbsf*m_nbsf:4*m_nbsf*m_nbsf],dipole_mo[3*m_nbsf*m_nbsf:4*m_nbsf*m_nbsf],d1,d2,m_nbsf)
-}
-    
     
 void LibintInterface::molden_orbs(
     std::vector<double> &C, std::vector<double> &occ, std::vector<double> &evals)

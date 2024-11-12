@@ -30,6 +30,10 @@ void MOintegrals::update_orbitals(
     /// Compute the inactive Fock matrix
     compute_core_potential();
 
+    /// Compute dipole contribution
+    compute_core_dipole();
+    compute_dipole(true);
+    
     /// Compute scalar potential
     compute_scalar_potential();
     /// Compute one-electron integrals
@@ -39,6 +43,8 @@ void MOintegrals::update_orbitals(
     compute_tei(true,true);
     compute_tei(true,false);
     compute_tei(false,false);
+
+
 }
 
 void MOintegrals::compute_core_density()
@@ -80,6 +86,36 @@ void MOintegrals::compute_core_potential()
         // Transform to active orbital basis to give core one-electron potential
         oei_transform(m_Cact,m_Cact,JK,m_Vc_oei,m_nact,m_nact,m_nbsf);
     }
+}
+
+void MOintegrals::compute_core_dipole()
+{
+    size_t n2 = m_nbsf*m_nbsf;
+
+    // Initialise inactive scalar
+    m_dipC.resize(3);
+    std::fill(m_dipC.begin(),m_dipC.end(),0.0);
+
+    // TODO: Need to add the nuclear dipole
+
+    if(m_ncore > 0)
+    {
+        /// Compute the core density matrix
+        compute_core_density();
+
+        /// Access the dipole integrals
+        double *dip = m_ints.dipole_integrals();
+        for(size_t xyz=0; xyz<3; xyz++)
+        {
+            double dipC_x = 0;
+            double *dip_x  = &m_dip[xyz*n2];
+            #pragma omp parallel for reduction(+:dipC_x)
+            for(size_t pq=0; pq<n2; pq++)
+                dipC_x += 2 * dip_x[pq] * m_Pcore[pq];
+            // Copy back data
+            m_dipC[xyz] = dipC_x;
+        }
+   }
 }
 
 double MOintegrals::oei(size_t p, size_t q, bool alpha) 
@@ -132,4 +168,13 @@ void MOintegrals::compute_tei(bool alpha1, bool alpha2)
     std::vector<double> &v_tei = alpha1 ? (alpha2 ? m_tei_aa : m_tei_ab) : m_tei_bb;
     // Compute transformation
     m_ints.tei_ao_to_mo(v_C1,v_C2,v_C1,v_C2,v_tei,alpha1,alpha2);
+}
+
+void MOintegrals::compute_dipole(bool alpha)
+{
+    /// Get relevant vectors
+    std::vector<double> &v_C = m_Cact;
+    std::vector<double> &v_dip = m_dip;
+    // Compute 1-electron transformation
+    m_ints.dipole_ao_to_mo(v_C,v_C,v_dip,alpha);
 }

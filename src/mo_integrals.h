@@ -46,6 +46,10 @@ public:
     /// @param alpha spin of the integrals
     double *oei_matrix(bool alpha) { return alpha ? m_oei_a.data() : m_oei_b.data(); }
 
+    /// \breif Get a point to the dipole matrix
+    /// @param alpha spin of the integrals
+    double *dipole_matrix(bool alpha) { return m_dip.data(); }
+
     /// Get a point to the two-electron integral array
     /// @param alpha1 spin of electron 1
     /// @param alpha2 spin of electron 2
@@ -96,6 +100,8 @@ private:
     double m_V;
     /// Scalar core potential
     double m_Vc = 0;
+    /// Scalar dipole contribution
+    std::vector<double> m_dipC;
 
     /// One-electron MO integrals
     std::vector<double> m_oei_a;
@@ -104,6 +110,9 @@ private:
     std::vector<double> m_tei_aa;
     std::vector<double> m_tei_bb;
     std::vector<double> m_tei_ab;
+
+    /// Dipole MO integrals
+    std::vector<double> m_dip;
 
     /// \brief Compute core density
     void compute_core_density();
@@ -115,6 +124,10 @@ private:
     void compute_oei(bool alpha);
     /// \brief Compute two-electron integrals
     void compute_tei(bool alpha1, bool alpha2);
+    /// \brief Compute core dipole contribution
+    void compute_core_dipole();
+    /// \brief Compute dipole integrals
+    void compute_dipole(bool alpha); 
 
     /// \brief Get index-for one-electron quantity
     size_t oei_index(size_t p, size_t q) 
