@@ -62,6 +62,10 @@ public:
     /// @param Hmat
     void build_Hmat(std::vector<double> &Hmat);
 
+    /// @brief Compute the dipole matrix
+    /// @param Dmat
+    void build_Dmat(std::vector<double> &Dmat);
+
     /// @brief Compute 1RDM
     /// @param bra CI vector for bra
     /// @param ket CI vector for ket
@@ -146,6 +150,9 @@ private:
     void build_H0(std::vector<double> &Hmat);
     void build_H1(std::vector<double> &Hmat, bool alpha);
     void build_H2(std::vector<double> &Hmat, bool alpha1, bool alpha2);
+
+    // Build the dipole matrix
+    void build_D1(std::vector<double> &Dmat, bool alpha);
 };
 
 #endif // CI_SPACE_H

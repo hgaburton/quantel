@@ -126,6 +126,14 @@ PYBIND11_MODULE(_quantel, m) {
                     return vec_to_np_array(ndet,ndet,Hmat.data());
                },
                "Build the Hamiltonian matrix")
+          .def("build_Dmat", [](CIspace &ci) 
+               {
+                    size_t ndet = ci.ndet();
+                    std::vector<double> Dmat(3*ndet*ndet,0.0);
+                    ci.build_Dmat(Dmat);
+                    return vec_to_np_array(3,ndet,ndet,Dmat.data());
+               },
+               "Build the dipole matrix")
           .def("trdm1", [](
                CIspace &ci, py::array_t<double> &bra, py::array_t<double> &ket, 
                bool alpha)

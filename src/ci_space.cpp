@@ -565,3 +565,49 @@ void CIspace::get_variance(const std::vector<double> civec, double &E, double &v
     // Add scalar potential to full energy
     E += m_ints.scalar_potential();
 }
+
+void CIspace::build_Dmat(std::vector<double> &Dmat)
+{
+    if(!m_initialized)
+        throw std::runtime_error("CI space has not been initialized!");
+
+    // Check size of output and initialise memory
+    Dmat.resize(3*m_ndet*m_ndet);
+    std::fill(Dmat.begin(), Dmat.end(), 0.0);
+
+    build_D1(Dmat, true);
+    build_D1(Dmat, false);
+}
+
+void CIspace::build_D1(std::vector<double> &Dmat, bool spin)
+{       
+    // Check dimensions
+    assert(Dmat.size() == 3*m_ndet*m_ndet);
+
+    // Get relevant memory map
+    auto &m_map = get_map(spin);
+    double tol = m_ints.tol();
+    double *Dpq = m_ints.dipole_matrix(spin);
+
+    // Get one-electron integrals
+    for(size_t p=0; p<m_nmo; p++)
+    for(size_t q=p; q<m_nmo; q++)
+    {
+        double Dpq_x = Dpq[0*m_nmo*m_nmo+p*m_nmo+q];
+        double Dpq_y = Dpq[1*m_nmo*m_nmo+p*m_nmo+q];
+        double Dpq_z = Dpq[2*m_nmo*m_nmo+p*m_nmo+q];
+
+        for(auto &[indJ, indI, phase] : m_map.at({p,q}))
+        {
+            Dmat[0*m_ndet*m_ndet+indI*m_ndet+indJ] += phase * Dpq_x;
+            Dmat[1*m_ndet*m_ndet+indI*m_ndet+indJ] += phase * Dpq_y;
+            Dmat[2*m_ndet*m_ndet+indI*m_ndet+indJ] += phase * Dpq_z;
+            if(p!=q) 
+            {
+                Dmat[0*m_ndet*m_ndet+indJ*m_ndet+indI] += phase * Dpq_x;
+                Dmat[1*m_ndet*m_ndet+indJ*m_ndet+indI] += phase * Dpq_y;
+                Dmat[2*m_ndet*m_ndet+indJ*m_ndet+indI] += phase * Dpq_z;
+            }
+        }
+    }
+}
