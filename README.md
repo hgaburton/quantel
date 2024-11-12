@@ -31,7 +31,6 @@ git clone https://github.com/fmtlib/fmt.git
 #### libint2
 Integral library used by QuantEl. From the directory `external/`, run
 ```
-wget https://github.com/evaleev/libint/releases/download/v2.9.0/libint-2.9.0.tgz
 tar -xvf libint-2.9.0.tgz
 mv libint-2.9.0 libint2
 ```
