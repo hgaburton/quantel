@@ -232,6 +232,9 @@ class LBFGS:
             
         # Initialise step from last gradient
         q = v_grad[-1].copy()
+        # Use a dynamic scaling for maximum preconditioner
+        thresh=np.max(np.abs(q))
+        prec = np.clip(prec,thresh,None)
 
         # Compute alpha and beta terms
         alpha = np.empty(nvec)
