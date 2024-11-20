@@ -149,9 +149,10 @@ class LBFGS:
                 # Truncate the max step size
                 #lscale = self.control["maxstep"] / np.linalg.norm(step)
                 lscale = self.control["maxstep"] / np.max(np.abs(step))
-                if(lscale < 1):
-                    step = lscale * step
-                    comment = "truncated"
+                maxstep = np.max(np.abs(step))
+                if(maxstep > 1):
+                    step = (1.0/maxstep) * step
+                    comment = "rescaled"
 
                 if(np.linalg.norm(step,ord=np.inf) < 1e-10):
                     print("  Step size indicates convergence")
@@ -234,7 +235,8 @@ class LBFGS:
         # Initialise step from last gradient
         q = v_grad[-1].copy()
         # Use a dynamic scaling for maximum preconditioner
-        thresh=1
+        # Thresh defines a lower bound for the preconditioner
+        thresh=0.05
         prec = np.clip(prec,thresh,None)
 
         # Compute alpha and beta terms
@@ -243,14 +245,17 @@ class LBFGS:
             alpha[i] = rho[i] * np.dot(sk[i], q) 
             q = q - alpha[i] * yk[i]
 
+        # Apply preconditioner
+        r = q / prec
+
         # Including preconditioning is vital to control the step length
-        if(self.control["gamma_preconditioner"] or np.any(prec <= 0)):
-            # If out preciditioner is not positive definite, we assume that we are not 
-            # in a quadratic region and use Nocedal's formula to approximate the inverse Hessian
-            r = gamma_k * q
-        else:
-            # Recall preconditioner is Hessian, not inverse
-            r = q / prec
+        #if(self.control["gamma_preconditioner"] or np.any(prec <= 0)):
+        #    # If out preciditioner is not positive definite, we assume that we are not 
+        #    # in a quadratic region and use Nocedal's formula to approximate the inverse Hessian
+        #    r = gamma_k * q
+        #else:
+        #    # Recall preconditioner is Hessian, not inverse
+        #    r = q / prec
 
         # Second loop of L-BFGS
         for i in range(nvec):
