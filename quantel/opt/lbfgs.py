@@ -116,6 +116,7 @@ class LBFGS:
                 # Pseudo-canonicalize orbitals if requested
                 X = None
                 if(self.control["with_canonical"] and np.mod(qn_count,self.control["canonical_interval"])==0):
+                   #conv<1e-2):
                     X = obj.canonicalize()
                     grad = obj.gradient
 
@@ -233,7 +234,7 @@ class LBFGS:
         # Initialise step from last gradient
         q = v_grad[-1].copy()
         # Use a dynamic scaling for maximum preconditioner
-        thresh=np.max(np.abs(q))
+        thresh=1
         prec = np.clip(prec,thresh,None)
 
         # Compute alpha and beta terms
