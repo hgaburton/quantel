@@ -236,7 +236,7 @@ class LBFGS:
         q = v_grad[-1].copy()
         # Use a dynamic scaling for maximum preconditioner
         # Thresh defines a lower bound for the preconditioner
-        thresh=0.05
+        thresh=0.5
         prec = np.clip(prec,thresh,None)
 
         # Compute alpha and beta terms
