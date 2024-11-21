@@ -147,11 +147,11 @@ class LBFGS:
                     reset = True
                 
                 # Truncate the max step size
-                #lscale = self.control["maxstep"] / np.linalg.norm(step)
-                lscale = self.control["maxstep"] / np.max(np.abs(step))
-                maxstep = np.max(np.abs(step))
-                if(maxstep > 1):
-                    step = (1.0/maxstep) * step
+                lscale = self.control["maxstep"] / np.linalg.norm(step)
+                #lscale = self.control["maxstep"] / np.max(np.abs(step))
+                if(lscale < 1):
+                    step = lscale * step
+                    #step = (1.0/maxstep) * step
                     comment = "rescaled"
 
                 if(np.linalg.norm(step,ord=np.inf) < 1e-10):
@@ -224,20 +224,19 @@ class LBFGS:
         nvec = len(v_step)
         assert(len(v_grad)==nvec+1)
 
-        # Get sk, yk, and rho
-        sk = v_step
-        yk = [v_grad[i+1] - v_grad[i] for i in range(nvec)]
-        rho = [1.0 / np.dot(yk[i], sk[i]) for i in range(nvec)]
-
-        # Get gamma_k
-        gamma_k = np.dot(sk[-1], yk[-1]) / np.dot(yk[-1], yk[-1]) if (nvec > 0) else 1 
-            
-        # Initialise step from last gradient
-        q = v_grad[-1].copy()
-        # Use a dynamic scaling for maximum preconditioner
-        # Thresh defines a lower bound for the preconditioner
-        thresh=0.5
+        # Clip the preconditioner to avoid numerical issues
+        thresh=np.max(np.abs(v_grad[-1]))
         prec = np.clip(prec,thresh,None)
+
+        # Get sk, yk, and rho in energy weighted coordinates
+        sk = [v_step[i] for i in range(nvec)]
+        yk = [(v_grad[i+1] - v_grad[i]) for i in range(nvec)]
+        rho = [1.0 / np.dot(yk[i], sk[i]) for i in range(nvec)]
+        # Get gamma_k
+        #gamma_k = np.dot(sk[-1], yk[-1]) / np.dot(yk[-1], yk[-1]) if (nvec > 0) else 1 
+
+        # Initialise step from last gradient
+        q = v_grad[-1].copy() 
 
         # Compute alpha and beta terms
         alpha = np.empty(nvec)
@@ -262,4 +261,5 @@ class LBFGS:
             beta = rho[i] * np.dot(yk[i], r)
             r = r + sk[i] * (alpha[i] - beta) 
 
+        # Convert step back to non-energy weighted coordinates
         return - r
