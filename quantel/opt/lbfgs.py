@@ -103,7 +103,7 @@ class LBFGS:
                 wolfe1 = (ecur - eref) <= 1e-4 * np.dot(step,gref)
                 wolfe2 = - np.dot(step,grad) <= - 0.9 * np.dot(step,gref)
 
-            if(not wolfe2):
+            if(False): #not wolfe2):
                 print("  Curvature condition not met - resetting L-BFGS")
                 comment = "reset L-BFGS"
                 v_grad = []
@@ -112,7 +112,7 @@ class LBFGS:
 
             # Obtain new step
             comment = ""
-            if(wolfe1 or (not wolfe2)):
+            if(wolfe1 and wolfe2):
                 # Number of rescaled steps in a row
                 n_rescale = 0
                 # Accept the step, update origin and compute new L-BFGS step
@@ -163,7 +163,7 @@ class LBFGS:
                     converged = True
                     break
 
-            else:
+            elif(not wolfe1):
                 print(f"  Insufficient decrease - rescaling step size by {self.control['backtrack_scale']:4.2f}")
                 # Insufficient decrease in energy, restore last position and reset L-BFGS
                 obj.restore_last_step()
@@ -173,6 +173,17 @@ class LBFGS:
                 v_step.pop(-1)
                 comment = "backtrack"
                 n_rescale = n_rescale + 1 
+
+            elif(not wolfe2):
+                print(f"  Curvature condition not met - rescaling step size by 2")
+                # Find a step that satisfies the curvature condition
+                obj.restore_last_step()
+
+                # Rescale step and remove last step from memory
+                step = 2 * step
+                v_step.pop(-1)
+                comment = "extrapolate"
+                reset = True
             
             if(n_rescale > 5):
                 print("  Too many rescaled steps in a row - resetting L-BFGS")
