@@ -79,10 +79,7 @@ class LBFGS:
             # Get energy, gradient and check convergence
             ecur = obj.energy
             grad = obj.gradient
-            c1 = np.linalg.norm(grad,ord=2) * np.sqrt(1.0/dim)
-            c2 = np.linalg.norm(grad,ord=np.inf)
-            MaxGrad = np.linalg.norm(grad,ord=np.inf)
-            conv = c2
+            conv = np.linalg.norm(grad,ord=np.inf)
             
             if istep > 0 and plev > 0:
                 print(" {: 5d} {: 16.10f}    {:8.2e}     {:8.2e}    {:10s}".format(
@@ -106,9 +103,15 @@ class LBFGS:
                 wolfe1 = (ecur - eref) <= 1e-4 * np.dot(step,gref)
                 wolfe2 = - np.dot(step,grad) <= - 0.9 * np.dot(step,gref)
 
+            if(not wolfe2):
+                print("  Curvature condition not met - resetting L-BFGS")
+                comment = "reset L-BFGS"
+                v_grad = []
+                v_step = []
+
             # Obtain new step
             comment = ""
-            if(wolfe1 and wolfe2):
+            if(wolfe1 or (not wolfe2)):
                 # Number of rescaled steps in a row
                 n_rescale = 0
                 # Accept the step, update origin and compute new L-BFGS step
@@ -152,7 +155,6 @@ class LBFGS:
                 lscale = self.control["maxstep"] / np.max(np.abs(step))
                 if(lscale < 1):
                     step = lscale * step
-                    #step = (1.0/maxstep) * step
                     comment = "rescaled"
 
                 if(np.linalg.norm(step,ord=np.inf) < 1e-10):
@@ -160,7 +162,7 @@ class LBFGS:
                     converged = True
                     break
 
-            elif(not wolfe1):
+            else:
                 print(f"  Insufficient decrease - rescaling step size by {self.control['backtrack_scale']:4.2f}")
                 # Insufficient decrease in energy, restore last position and reset L-BFGS
                 obj.restore_last_step()
@@ -171,26 +173,12 @@ class LBFGS:
                 comment = "backtrack"
                 n_rescale = n_rescale + 1 
             
-            elif(not wolfe2):
-                print(f"  Curvature condition not met - rescaling step size by 2")
-                # Insufficient decrease in energy, restore last position and reset L-BFGS
-                obj.restore_last_step()
-
-                # Rescale step and remove last step from memory
-                step = step * 2
-                v_step.pop(-1)
-                comment = "extrapolate"
-                n_rescale = n_rescale + 1 
-
-            if(n_rescale >= 5):
+            if(n_rescale > 5):
                 print("  Too many rescaled steps in a row - resetting L-BFGS")
                 reset = True
 
             # Save step and length
-            step_length = np.linalg.norm(step)
             v_step.append(step.copy())
-
-            pdotg = np.dot(step,grad)
 
             # Save step statistics
             RMSDP = np.linalg.norm(step) / np.sqrt(dim)
@@ -223,9 +211,7 @@ class LBFGS:
             if plev>0: print(f"  L-BFGS converged in {istep: 6d} iterations ({computation_time: 6.2f} seconds)")
         sys.stdout.flush()
 
-
         return converged
-
 
     def get_lbfgs_step(self,v_grad,v_step,prec):
         """ Compute the L-BFGS step from previous gradient and step vectors
@@ -242,18 +228,19 @@ class LBFGS:
         assert(len(v_grad)==nvec+1)
 
         # Clip the preconditioner to avoid numerical issues
-        thresh=max(np.max(np.abs(v_grad[-1])),0.05)
-        prec = np.clip(prec,thresh,None)
+        thresh=np.max(np.abs(v_grad[-1]))
+        prec = np.sqrt(np.clip(prec,thresh,None))
 
         # Get sk, yk, and rho in energy weighted coordinates
-        sk = [v_step[i] for i in range(nvec)]
-        yk = [(v_grad[i+1] - v_grad[i]) for i in range(nvec)]
+        sk = [v_step[i] * prec for i in range(nvec)]
+        yk = [(v_grad[i+1] - v_grad[i]) / prec for i in range(nvec)]
         rho = [1.0 / np.dot(yk[i], sk[i]) for i in range(nvec)]
-        # Get gamma_k
-        #gamma_k = np.dot(sk[-1], yk[-1]) / np.dot(yk[-1], yk[-1]) if (nvec > 0) else 1 
 
+        # Get gamma_k
+        gamma_k = np.dot(sk[-1], yk[-1]) / np.dot(yk[-1], yk[-1]) if (nvec > 0) else 1 
+        
         # Initialise step from last gradient
-        q = v_grad[-1].copy() 
+        q = v_grad[-1].copy() / prec
 
         # Compute alpha and beta terms
         alpha = np.empty(nvec)
@@ -262,16 +249,7 @@ class LBFGS:
             q = q - alpha[i] * yk[i]
 
         # Apply preconditioner
-        r = q / prec
-
-        # Including preconditioning is vital to control the step length
-        #if(self.control["gamma_preconditioner"] or np.any(prec <= 0)):
-        #    # If out preciditioner is not positive definite, we assume that we are not 
-        #    # in a quadratic region and use Nocedal's formula to approximate the inverse Hessian
-        #    r = gamma_k * q
-        #else:
-        #    # Recall preconditioner is Hessian, not inverse
-        #    r = q / prec
+        r = q * gamma_k
 
         # Second loop of L-BFGS
         for i in range(nvec):
@@ -279,4 +257,4 @@ class LBFGS:
             r = r + sk[i] * (alpha[i] - beta) 
 
         # Convert step back to non-energy weighted coordinates
-        return - r
+        return - r / prec
