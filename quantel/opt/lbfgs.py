@@ -97,17 +97,18 @@ class LBFGS:
                 converged = True
                 break
 
-
             # Check if we have sufficient decrease
             if(istep == 0 or reset):
                 wolfe1 = True
+                wolfe2 = True
                 reset = False
             else:
                 wolfe1 = (ecur - eref) <= 1e-4 * np.dot(step,gref)
+                wolfe2 = - np.dot(step,grad) <= - 0.9 * np.dot(step,gref)
 
             # Obtain new step
             comment = ""
-            if(wolfe1):
+            if(wolfe1 and wolfe2):
                 # Number of rescaled steps in a row
                 n_rescale = 0
                 # Accept the step, update origin and compute new L-BFGS step
@@ -147,8 +148,8 @@ class LBFGS:
                     reset = True
                 
                 # Truncate the max step size
-                lscale = self.control["maxstep"] / np.linalg.norm(step)
-                #lscale = self.control["maxstep"] / np.max(np.abs(step))
+                #lscale = self.control["maxstep"] / np.linalg.norm(step)
+                lscale = self.control["maxstep"] / np.max(np.abs(step))
                 if(lscale < 1):
                     step = lscale * step
                     #step = (1.0/maxstep) * step
@@ -159,7 +160,7 @@ class LBFGS:
                     converged = True
                     break
 
-            else:
+            elif(not wolfe1):
                 print(f"  Insufficient decrease - rescaling step size by {self.control['backtrack_scale']:4.2f}")
                 # Insufficient decrease in energy, restore last position and reset L-BFGS
                 obj.restore_last_step()
@@ -169,11 +170,27 @@ class LBFGS:
                 v_step.pop(-1)
                 comment = "backtrack"
                 n_rescale = n_rescale + 1 
+            
+            elif(not wolfe2):
+                print(f"  Curvature condition not met - rescaling step size by 2")
+                # Insufficient decrease in energy, restore last position and reset L-BFGS
+                obj.restore_last_step()
+
+                # Rescale step and remove last step from memory
+                step = step * 2
+                v_step.pop(-1)
+                comment = "extrapolate"
+                n_rescale = n_rescale + 1 
+
+            if(n_rescale >= 5):
+                print("  Too many rescaled steps in a row - resetting L-BFGS")
                 reset = True
 
             # Save step and length
             step_length = np.linalg.norm(step)
             v_step.append(step.copy())
+
+            pdotg = np.dot(step,grad)
 
             # Save step statistics
             RMSDP = np.linalg.norm(step) / np.sqrt(dim)
@@ -225,7 +242,7 @@ class LBFGS:
         assert(len(v_grad)==nvec+1)
 
         # Clip the preconditioner to avoid numerical issues
-        thresh=np.max(np.abs(v_grad[-1]))
+        thresh=max(np.max(np.abs(v_grad[-1])),0.05)
         prec = np.clip(prec,thresh,None)
 
         # Get sk, yk, and rho in energy weighted coordinates
