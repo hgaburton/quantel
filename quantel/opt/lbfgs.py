@@ -108,6 +108,7 @@ class LBFGS:
                 comment = "reset L-BFGS"
                 v_grad = []
                 v_step = []
+                reset = True
 
             # Obtain new step
             comment = ""
