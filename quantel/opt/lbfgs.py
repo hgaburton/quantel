@@ -237,7 +237,7 @@ class LBFGS:
         assert(len(v_grad)==nvec+1)
 
         # Clip the preconditioner to avoid numerical issues
-        thresh=0.05
+        thresh=0.1
         prec = np.sqrt(np.clip(prec,thresh,None))
 
         # Get sk, yk, and rho in energy weighted coordinates
