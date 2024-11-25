@@ -2,6 +2,7 @@
 
 import datetime, sys
 import numpy as np
+from .line_search import LineSearch
 
 class LBFGS:
     '''
@@ -28,6 +29,8 @@ class LBFGS:
                 print("ERROR: Keyword [{:s}] not recognised".format(key))
             else: 
                 self.control[key] = kwargs[key]
+        
+        self.ls = LineSearch()
 
     def run(self, obj, thresh=1e-6, maxit=100, plev=1, ethresh=1e-8, index=0):
         ''' Run the optimisation for a particular objective function obj.
@@ -100,21 +103,18 @@ class LBFGS:
                 wolfe2 = True
                 reset = False
             else:
-                wolfe1 = (ecur - eref) <= 1e-4 * np.dot(step,gref)
-                wolfe2 = - np.dot(step,grad) <= - 0.9 * np.dot(step,gref)
-
-            if(False): #not wolfe2):
-                print("  Curvature condition not met - resetting L-BFGS")
-                comment = "reset L-BFGS"
-                v_grad = []
-                v_step = []
-                reset = True
+                wolfe1 = (ecur - eref) <= 1e-4 * np.dot(step,grad_ref)
+                wolfe2 = - np.dot(step,grad) <= - 0.9 * np.dot(step,grad_ref)
+                if(np.max(np.abs(step))>=self.control["maxstep"]):
+                    # We're on maximum step size, so we can't extrapolate
+                    wolfe2 = True
+                # Override if we reach maximum line search iterations
+                if(self.ls.iteration > 10):
+                    wolfe1, wolfe2 = True, True
 
             # Obtain new step
             comment = ""
             if(wolfe1 and wolfe2):
-                # Number of rescaled steps in a row
-                n_rescale = 0
                 # Accept the step, update origin and compute new L-BFGS step
                 obj.save_last_step()
 
@@ -127,7 +127,7 @@ class LBFGS:
 
                 # Save reference energy and gradient
                 eref = ecur
-                gref = grad.copy()
+                grad_ref = grad.copy()
 
                 # Parallel transport previous vectors
                 if(self.control["with_transport"]):
@@ -146,48 +146,45 @@ class LBFGS:
                 qn_count += 1
 
                 # Need to make sure s.g < 0 to maintain positive-definite L-BFGS Hessian 
-                if(np.dot(step,gref) > 0):
+                if(np.dot(step,grad_ref) > 0):
                     print("  Step has positive overlap with gradient - reversing direction")
                     step *= -1
                     reset = True
                 
                 # Truncate the max step size
-                #lscale = self.control["maxstep"] / np.linalg.norm(step)
                 lscale = self.control["maxstep"] / np.max(np.abs(step))
                 if(lscale < 1):
                     step = lscale * step
                     comment = "rescaled"
 
-                if(np.linalg.norm(step,ord=np.inf) < 1e-10):
-                    print("  Step size indicates convergence")
-                    converged = True
-                    break
+                # Reset linesearch
+                xref = 0
+                gref = np.dot(step,grad) / np.linalg.norm(step)
+                eref = ecur
+                self.ls.reset(eref,xref,gref)
 
-            elif(not wolfe1):
-                print(f"  Insufficient decrease - rescaling step size by {self.control['backtrack_scale']:4.2f}")
-                # Insufficient decrease in energy, restore last position and reset L-BFGS
+            else:
+                if(not wolfe1):
+                    comment = "overstep"
+                elif(not wolfe2):
+                    comment = "understep"
+                
+                # Get information for linesearch
+                xcur = np.linalg.norm(step)
+                gcur = np.dot(step,grad) / xcur
+
+                # Restore origin
                 obj.restore_last_step()
-
-                # Rescale step and remove last step from memory
-                step = step * self.control["backtrack_scale"]
                 v_step.pop(-1)
-                comment = "backtrack"
-                n_rescale = n_rescale + 1 
 
-            elif(not wolfe2):
-                print(f"  Curvature condition not met - rescaling step size by 2")
-                # Find a step that satisfies the curvature condition
-                obj.restore_last_step()
+                # Take linesearch step
+                xnext = self.ls.next_iteration(wolfe1,wolfe2,ecur,xcur,gcur)
 
-                # Rescale step and remove last step from memory
-                step = 2 * step
-                v_step.pop(-1)
-                comment = "extrapolate"
-                reset = True
-            
-            if(n_rescale > 5):
-                print("  Too many rescaled steps in a row - resetting L-BFGS")
-                reset = True
+                # Take step
+                step = xnext * step / xcur
+                lscale = self.control["maxstep"] / np.max(np.abs(step))
+                if(lscale < 1):
+                    step = lscale * step
 
             # Save step and length
             v_step.append(step.copy())
@@ -240,7 +237,7 @@ class LBFGS:
         assert(len(v_grad)==nvec+1)
 
         # Clip the preconditioner to avoid numerical issues
-        thresh=np.max(np.abs(v_grad[-1]))
+        thresh=0.05
         prec = np.sqrt(np.clip(prec,thresh,None))
 
         # Get sk, yk, and rho in energy weighted coordinates
