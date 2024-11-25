@@ -25,7 +25,7 @@ class LineSearch:
             xlen = self.xr - self.xl
             # Check new points lies in new bracket
             if(xnew > self.xr):
-                raise RuntimeError("Invalid bracket")
+                xnew = self.xr
             elif(xnew < self.xl + 0.1 * xlen):
                 xnew = self.xl + 0.1 * xlen
             elif(xnew > self.xr - 0.1 * xlen):
