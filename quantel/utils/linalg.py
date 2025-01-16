@@ -6,6 +6,9 @@ from scipy.linalg import expm as scipy_expm
 
 def stable_eigh(M,tol=1e-14):
     """Only diagonalise matrix M if off-diagonal elements are not small"""
+    # Return nothing if matrix has size 0
+    if(M.size == 0):
+        return np.array([]), np.array([])
     if(np.max(np.abs(M - np.diag(np.diag(M)))) > tol):
         return np.linalg.eigh(M)
     else:
