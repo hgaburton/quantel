@@ -51,15 +51,18 @@ set_property(DIRECTORY . APPEND PROPERTY COMPILE_DEFINITIONS
 
 # Find third-party packages
 #list(APPEND CMAKE_PREFIX_PATH "lib/")
-find_package(Eigen3)
+find_package(Eigen3 REQUIRED)
+include_directories(${EIGEN3_INCLUDE_DIR})
 find_package(Boost)
-include_directories(${EIGEN3_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
+include_directories(${Boost_INCLUDE_DIRS})
 
 # Generate Python module
 find_package(pybind11 CONFIG REQUIRED)
 pybind11_add_module(_quantel ${SOURCES} "${SOURCE_DIR}/bindings.cpp"
+    "${SOURCE_DIR}/shell_pair.cpp"
     "${SOURCE_DIR}/molecule.cpp"
     "${SOURCE_DIR}/libint_interface.cpp"
+#    "${SOURCE_DIR}/libint_direct.cpp"
     "${SOURCE_DIR}/linalg.cpp"
     "${SOURCE_DIR}/determinant.cpp"
     "${SOURCE_DIR}/mo_integrals.cpp"
