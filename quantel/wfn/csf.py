@@ -6,7 +6,7 @@ import numpy as np
 import scipy, quantel, h5py
 from quantel.utils.csf_utils import get_shells, get_shell_exchange
 from quantel.utils.linalg import orthogonalise, stable_eigh
-from quantel.gnme.csf_noci import csf_coupling
+#from quantel.gnme.csf_noci import csf_coupling
 from .wavefunction import Wavefunction
 import time
 

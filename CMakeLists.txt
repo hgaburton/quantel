@@ -62,7 +62,8 @@ pybind11_add_module(_quantel ${SOURCES} "${SOURCE_DIR}/bindings.cpp"
     "${SOURCE_DIR}/shell_pair.cpp"
     "${SOURCE_DIR}/molecule.cpp"
     "${SOURCE_DIR}/libint_interface.cpp"
-#    "${SOURCE_DIR}/libint_direct.cpp"
+    "${SOURCE_DIR}/libint_jk_incore.cpp"
+    "${SOURCE_DIR}/libint_jk_direct.cpp"
     "${SOURCE_DIR}/linalg.cpp"
     "${SOURCE_DIR}/determinant.cpp"
     "${SOURCE_DIR}/mo_integrals.cpp"
@@ -71,7 +72,6 @@ pybind11_add_module(_quantel ${SOURCES} "${SOURCE_DIR}/bindings.cpp"
 
 add_subdirectory(external/fmt)
 add_subdirectory(external/libint2)
-
 
 target_link_libraries(_quantel PRIVATE 
             fmt-header-only 
@@ -91,15 +91,3 @@ if(USE_OpenMP)
 endif(USE_OpenMP)
 
 install(TARGETS _quantel DESTINATION ${ROOT_DIR}/quantel/lib)
-
-#ExternalProject_Add(libint2 
-#    PREFIX ${ROOT_DIR}/external/
-#    URL https://github.com/evaleev/libint/releases/download/v2.9.0/libint-2.9.0.tgz
-#    DOWNLOAD_DIR ${ROOT_DIR}/external
-#    DOWNLOAD_NAME libint2
-#    STAMP_DIR ${ROOT_DIR}/external/libint-2.9.0/stamp
-#    BINARY_DIR ${ROOT_DIR}/external/libint-2.9.0/build
-#    SOURCE_DIR ${ROOT_DIR}/external/libint-2.9.0/libint-2.9.0
-#    INSTALL_DIR ${ROOT_DIR}/quantel/lib
-#)
-#add_dependencies(_quantel libint2)

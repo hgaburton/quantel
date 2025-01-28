@@ -1,13 +1,12 @@
 #!/usr/bin/python3
 
 import numpy
-from scipy.linalg import expm 
 from quantel.utils.linalg import random_rot
 from quantel.wfn.rhf import RHF
 from quantel.opt.diis import DIIS
-from quantel import LibintInterface
 from quantel.opt.lbfgs import LBFGS
 from quantel.wfn.csf import GenealogicalCSF as CSF
+from quantel.gnme.utils import gen_eig_sym
 
 def random_search(ints, config):
     """Perform a random search for multiple solutions"""
@@ -102,6 +101,12 @@ def random_search(ints, config):
         hindices = myfun.hess_index
         if (hindices[0] != target_index) and (target_index is not None):
             continue
+        print("self.gen_fock")
+
+        e,s=gen_eig_sym(myfun.gen_fock,numpy.diag(myfun.mo_occ))
+        print(myfun.gen_fock[:myfun.nocc,:myfun.nocc])
+        print(-27.2114*e)
+        print(myfun.mo_coeff[:,:myfun.nocc])
         
         # Compare solution against previously found states
         new = True

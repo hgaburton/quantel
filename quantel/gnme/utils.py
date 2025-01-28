@@ -2,7 +2,7 @@
 
 import unittest
 import numpy as np
-import pygnme
+#import pygnme
 
 def orthogonalisation_matrix(M, thresh=1e-8):
     """Construct an orthogonalisation matrix X such that X^T M X = I for a symmetric matrix M
@@ -68,7 +68,7 @@ def gen_eig_sym(M, S, thresh=1e-8):
     X = orthogonalisation_matrix(S, thresh=thresh)
 
     # Project into non-null subspace
-    Mp = X.H.dot(M.dot(X))
+    Mp = np.conj(X).T.dot(M.dot(X))
 
     # Solve orthogonalised problem
     eigval, eigvec_p = np.linalg.eigh(Mp)

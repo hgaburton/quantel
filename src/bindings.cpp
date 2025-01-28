@@ -88,7 +88,6 @@ PYBIND11_MODULE(_quantel, m) {
           .def(py::init<std::vector<uint8_t>, std::vector<uint8_t> >(), "Constructor with occupation vectors")
           .def(py::init<std::string> (), "Constructor from determinant string")
           .def("__lt__", &Determinant::operator<, "Comparison operator");
-          ; 
 
      py::class_<Eph>(m, "Eph").def(py::init<size_t,size_t>(), "Constructor with indices");
      py::class_<Epphh>(m, "Epphh").def(py::init<size_t,size_t,size_t,size_t>(), "Constructor with indices");
@@ -193,8 +192,7 @@ PYBIND11_MODULE(_quantel, m) {
                     ci.get_variance(v_V, E, var);
                     return std::make_tuple(E,var);
                },
-               "Compute the variance")
-          ;         
+               "Compute the variance");         
 
      py::class_<MOintegrals>(m, "MOintegrals")
           .def(py::init<LibintInterface &>(), "Initialise MO integrals from LibintInterface object")
@@ -224,14 +222,11 @@ PYBIND11_MODULE(_quantel, m) {
           ;
 
      py::class_<LibintInterface>(m, "LibintInterface")
-          .def(py::init<const std::string, Molecule &>())
+          .def(py::init<const std::string, Molecule &, bool>())
           .def("initalize", &LibintInterface::initialize, "Initialize matrix elements")
           .def("nbsf", &LibintInterface::nbsf, "Get number of basis functions")
           .def("nmo", &LibintInterface::nmo, "Get number of molecular orbitals")
           .def("scalar_potential", &LibintInterface::scalar_potential, "Get value of the scalar potential")
-          .def("overlap", &LibintInterface::overlap, "Get element of overlap matrix")
-          .def("oei", &LibintInterface::oei, "Get element of one-electron Hamiltonian matrix")
-          .def("tei", &LibintInterface::tei, "Get element of two-electron integral array")
           .def("molecule", &LibintInterface::molecule, "Get molecule object")
           .def("build_fock", [](LibintInterface &ints, py::array_t<double> &dens) {
                size_t nbsf = ints.nbsf();
@@ -251,15 +246,6 @@ PYBIND11_MODULE(_quantel, m) {
                return vec_to_np_array(nbsf,nbsf,v_jk.data()); 
                },
                "Build JK matrix from density matrix")
-          .def("build_J", [](LibintInterface &ints, py::array_t<double> &dens) {
-               size_t nbsf = ints.nbsf();
-               auto dens_buf = dens.request();
-               std::vector<double> v_dens((double *) dens_buf.ptr, (double *) dens_buf.ptr + dens_buf.size);
-               std::vector<double> v_j(v_dens.size(),0.0);
-               ints.build_J(v_dens, v_j);
-               return vec_to_np_array(nbsf,nbsf,v_j.data()); 
-               },
-               "Build J matrix from density matrix")
           .def("build_multiple_JK", [](LibintInterface &ints, 
                     py::array_t<double> &vDJ, py::array_t<double> &vDK, size_t nj, size_t nk) {
                size_t nbsf = ints.nbsf();
@@ -362,8 +348,8 @@ PYBIND11_MODULE(_quantel, m) {
                     return ;
                },
                "Construct molden file for given set of orbitals"
-          )
-          ;
+          );
+
 
      m.def("det_str", &det_str,"Print the determinant");
 }

@@ -38,12 +38,6 @@ std::tuple<shellpair_list_t, shellpair_data_t> compute_shellpairs(
         engines.push_back(engines[0]);
     }
 
-    std::cout << "Computing non-negligible shell pairs ... ";
-
-    libint2::Timers<1> timer;
-    timer.set_now_overhead(25);
-    timer.start(0);
-
     // Initialise shell pair list
     shellpair_list_t splist;
     // Initialise mutex for thread safety
@@ -163,9 +157,6 @@ std::tuple<shellpair_list_t, shellpair_data_t> compute_shellpairs(
             }
         }
     }
-
-    timer.stop(0);
-    std::cout << "done (" << timer.read(0) << " s)" << std::endl;
 
     return std::make_tuple(splist, spdata);
 }
