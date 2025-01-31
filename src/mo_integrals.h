@@ -19,9 +19,9 @@ public:
     /// \brief Compute integrals from orbital coefficients
     /// \param Ca Coefficients for alpha orbitals
     /// \param Cb Coefficients for beta orbitals
-    /// \param nin Number of inactive orbitals
-    /// \param nvr Number of virtual orbitals
-    void update_orbitals(std::vector<double> C, size_t ninactive, size_t nvirtual);
+    /// \param ninactive Number of inactive orbitals
+    /// \param nactive Number of active orbitals (must be same for both spins)
+    void update_orbitals(std::vector<double> C, size_t ninactive, size_t nactive);
 
 
     /// \brief Get the value of the scalar potential
