@@ -4,6 +4,26 @@ from functools import reduce
 import numpy as np
 from scipy.linalg import expm as scipy_expm
 
+
+def orthogonalisation_matrix(M, thresh=1e-8):
+    """Construct an orthogonalisation matrix X such that X^T M X = I for a symmetric matrix M
+    
+        Inputs:
+        -------
+            M      2d-array containing symmetric matrix to orthogonalise
+            thresh (optional) Threshold for determining if eigenvalue is zero
+        Outputs:
+        --------
+            X      2d-array containing orthogonalisation matrix
+    """
+    # Get eigenvalues and eigenvectors
+    eigval, eigvec = np.linalg.eigh(M)
+    # Identify non-null space
+    inds = np.argwhere(np.abs(eigval) > thresh).flatten()
+    # Construct orthogonalisation matrix
+    X = eigvec[:,inds].dot(np.diag(np.power(eigval[inds],-0.5)))
+    return X
+
 def stable_eigh(M,tol=1e-14):
     """Only diagonalise matrix M if off-diagonal elements are not small"""
     # Return nothing if matrix has size 0
@@ -112,3 +132,24 @@ def orthogonalise(mat, metric, thresh=1e-10, fill=True):
             mat[:,i] /= np.sqrt(reduce(np.dot, (mat[:,i], metric, mat[:,i])))
       
     return mat
+
+def matrix_print(M, title=None, ncols=6, offset=0):
+    '''Print a matrix in a nice format with ncols columns at a time'''
+    # Total number of columns
+    nc = M.shape[1]
+    if title is not None:
+        print("\n -----------------------------------------------------------------------------------------------")
+        print("  "+title)
+        print(" -----------------------------------------------------------------------------------------------")
+    # Loop over output blocks
+    for i in range(np.ceil(nc/ncols).astype(int)):
+        print("     ",end="")
+        for j in range(ncols):
+            if(i*ncols+j < nc):
+                print(f"{i*ncols+j+1+offset:^14d} ",end="")
+        print()
+        for irow, row in enumerate(M[:,i*ncols:min(nc,(i+1)*ncols)]):
+            print(f"{irow+1: 4d} ",end="")
+            for val in row:
+                print(f"{val:^14.8f} ",end="")
+            print()

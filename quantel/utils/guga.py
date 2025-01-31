@@ -34,19 +34,16 @@ def e_ijji(b,d,i,j):
     value = 0
     if(d[i] == 0 or d[j] == 0):
         value = 0
-    
     elif(d[i] == 3):
         if(d[j] == 1 or d[j] == 2):
             value = -1
         elif(d[j] == 3):
-            value = -2
-        
+            value = -2 
     elif(d[j] == 3):
         if(d[i] == 1 or d[i] == 2):
             value = -1
         elif(d[i] == 3):
             value = -2
-    
     else:
         prod  = (A(b[i],2,0) if d[i] == 1 else A(b[i],0,2))
         prod *= (A(b[j],-1,1) if d[j] == 1 else A(b[j],3,1))

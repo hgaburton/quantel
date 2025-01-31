@@ -1,4 +1,4 @@
-import sys, itertools
+import itertools
 import numpy as np
 from quantel.utils.guga import e_ijji
 
