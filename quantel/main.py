@@ -56,8 +56,11 @@ def main():
 
     # Setup  molecule and integrals
     if(config["jobcontrol"]["integrals"]=='pyscf'):
+        from pyscf import lib
         print(" *** Using PySCF for integral evaluation ***")
-        print("     xc_functional = ",config["jobcontrol"]["xc_functional"],"\n")
+        print("       xc_functional = ",config["jobcontrol"]["xc_functional"])
+        print("   Number of threads = ",lib.num_threads())
+        print()
         mol  = PySCFMolecule(config["molecule"]["atom"],config["molecule"]["basis"],config["molecule"]["unit"])
         ints = PySCFIntegrals(mol,xc=config["jobcontrol"]["xc_functional"])
     elif(config["jobcontrol"]["integrals"]=='libint'):
