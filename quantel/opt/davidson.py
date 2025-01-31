@@ -87,7 +87,6 @@ class Davidson:
             nconv  = np.sum(residuals < tol)
 
             if plev>1:  print(f"  {it: 5d}    {maxres:10.2e}    {nconv: 5d}  {comment}")
-
             # Check convergence
             if all(res < tol for res in residuals):
                 converged = True
@@ -111,9 +110,8 @@ class Davidson:
                     v_new = v_new - K @ (K.T @ v_new)
                     # Add vector to Krylov subspace if norm is non-vanishing
                     nv = np.linalg.norm(v_new)
-                    if(np.linalg.norm(v_new) > 1e-10):
-                        v_new = v_new / np.linalg.norm(v_new)
-                    K = np.column_stack([K, v_new])
+                    if(nv > 1e-10):
+                        K = np.column_stack([K, v_new / nv])
         if plev>1: print("  =========================================")
 
         # Save end time and report duration
