@@ -12,7 +12,6 @@ import os
 os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
-#os.environ["OMP_NUM_THREADS"] = "1"
 import argparse, numpy, time
 from datetime import datetime, timedelta
 from quantel import Molecule, LibintInterface
@@ -20,6 +19,7 @@ from quantel.io.config import Config
 from quantel.drivers import random_search, from_file, from_orca, ci_guess, standard_guess, ev_linesearch, analyse #noci, overlap, analyse
 from cProfile import Profile
 from pstats import SortKey, Stats
+from quantel.ints.pyscf_integrals import PySCFMolecule, PySCFIntegrals
 
 def write_splash():
     print("====================================================")
@@ -55,8 +55,18 @@ def main():
     config.print()
 
     # Setup  molecule and integrals
-    mol = Molecule(config["molecule"]["atom"], config["molecule"]["unit"])
-    ints = LibintInterface(config["molecule"]["basis"],mol,True)
+    if(config["jobcontrol"]["integrals"]=='pyscf'):
+        print(" *** Using PySCF for integral evaluation ***")
+        print("     xc_functional = ",config["jobcontrol"]["xc_functional"],"\n")
+        mol  = PySCFMolecule(config["molecule"]["atom"],config["molecule"]["basis"],config["molecule"]["unit"])
+        ints = PySCFIntegrals(mol,xc=config["jobcontrol"]["xc_functional"])
+    elif(config["jobcontrol"]["integrals"]=='libint'):
+        print(" *** Using Libint for integral evaluation ***\n")
+        # Raise error if xc_functional is not None
+        if(config["jobcontrol"]["xc_functional"] is not None):
+            raise ValueError("Libint does not support the use of XC functionals")
+        mol = Molecule(config["molecule"]["atom"], config["molecule"]["unit"])
+        ints = LibintInterface(config["molecule"]["basis"],mol,True)
     # Generate wavefunctions 
     wfnlist = None
     if config["jobcontrol"]["guess"] == "fromfile":

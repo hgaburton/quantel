@@ -122,7 +122,10 @@ class Config(dict):
                                   dist_thresh = getvalue(self.lines,"dist_tresh",float,False,default=1e-8),
                                   ovlp_mat = getbool(self.lines,"overlap_matrix",False,default=False),
                                   analyse = getbool(self.lines,"analyse",False,default=False), 
-                                  nevpt2 = getbool(self.lines,"nevpt2",False,default=False)
+                                  nevpt2 = getbool(self.lines,"nevpt2",False,default=False),
+                                  print_final = getvalue(self.lines,"print_final",int,False,default=1),
+                                  integrals = getvalue(self.lines,"integrals",str,False,default="pyscf").lower(),
+                                  xc_functional = getvalue(self.lines,"xc_functional",str,False,default=None)
                                  ) 
         
         if self["jobcontrol"]["guess"] == "random":

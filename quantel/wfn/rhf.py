@@ -4,7 +4,7 @@
 import numpy as np
 import scipy.linalg
 import h5py
-from quantel.utils.linalg import orthogonalise
+from quantel.utils.linalg import orthogonalise, matrix_print
 from .wavefunction import Wavefunction
 import quantel
 
@@ -31,6 +31,8 @@ class RHF(Wavefunction):
         # Get number of basis functions and linearly independent orbitals
         self.nbsf      = integrals.nbsf()
         self.nmo       = integrals.nmo()
+        self.with_xc    = (type(integrals) is not quantel.lib._quantel.LibintInterface)
+        if(self.with_xc): self.with_xc = (integrals.xc is not None)
 
         # For now, we assume that the number of alpha and beta electrons are the same
         assert(self.nalfa == self.nbeta)
@@ -61,9 +63,16 @@ class RHF(Wavefunction):
     def energy(self):
         """Get the energy of the current RHF state"""
         # Nuclear potential
-        E  = self.integrals.scalar_potential()
-        E += np.einsum('pq,pq', self.integrals.oei_matrix(True) + self.fock, self.dens, optimize="optimal")
-        return E
+        En  = self.integrals.scalar_potential()
+        # One-electron energy
+        E1 = 2 * np.einsum('pq,pq', self.integrals.oei_matrix(True), self.dens, optimize="optimal")
+        # Two-electron energy
+        E2 = np.einsum('pq,pq', self.JK, self.dens, optimize="optimal")
+        # Exchange correlation
+        Exc = self.exc
+        # Save components
+        self.energy_components = dict(Nuclear=En, One_Electron=E1, Two_Electron=E2, Exchange_Correlation=Exc)
+        return En + E1 + E2 + Exc
 
     @property
     def s2(self):
@@ -110,6 +119,33 @@ class RHF(Wavefunction):
 
         # Return suitably shaped array
         return (hessian[:,:,self.rot_idx])[self.rot_idx,:]
+
+    def print(self,verbose=1):
+        """ Print details about the state energy and orbital coefficients
+
+            Inputs:
+                verbose : level of verbosity
+                          0 = No output
+                          1 = Print energy components and spin
+                          2 = Print energy components, spin, and occupied orbital coefficients
+                          3 = Print energy components, spin, and all orbital coefficients
+                          4 = Print energy components, spin, Fock matrix, and all orbital coefficients 
+        """
+        if(verbose > 0):
+            print("\n ---------------------------------------------")
+            print(f"         Total Energy = {self.energy:14.8f} Eh")
+            for key, value in self.energy_components.items():
+                print(f" {key.replace('_',' '):>20s} = {value:14.8f} Eh")
+            print(" ---------------------------------------------")
+            print(f"        <Sz> = {0:5.2f}")
+            print(f"        <S2> = {self.s2:5.2f}")
+        if(verbose > 1):
+            matrix_print(self.mo_coeff[:,:self.nocc], title="Occupied Orbital Coefficients")
+        if(verbose > 2):
+            matrix_print(self.mo_coeff[:,self.nocc:], title="Virtual Orbital Coefficients", offset=self.nocc)
+        if(verbose > 3):
+            matrix_print(self.fock, title="Fock Matrix (AO basis)")
+        print()
 
     def save_to_disk(self,tag):
         """Save object to disk with prefix 'tag'"""
@@ -167,7 +203,12 @@ class RHF(Wavefunction):
 
     def get_fock(self):
         """Compute the Fock matrix for the current state"""
+        # Compute the Coulomb and Exchange matrices
         self.fock = self.integrals.build_fock(self.dens)
+        self.JK   = self.fock - self.integrals.oei_matrix(True)
+        # Compute the exchange-correlation energy
+        self.exc, self.vxc, NULL = self.integrals.build_vxc(self.dens, self.dens) if(self.with_xc) else 0,0,0
+        self.fock += self.vxc
 
     def canonicalize(self):
         """Diagonalise the occupied and virtual blocks of the Fock matrix"""
@@ -188,6 +229,23 @@ class RHF(Wavefunction):
         # Get orbital occupation
         self.mo_occ = np.zeros(self.nmo)
         self.mo_occ[:self.nocc] = 2.0
+        # Combine full transformation matrix
+        Q = np.zeros((self.nmo,self.nmo))
+        Q[:self.nocc,:self.nocc] = Qocc
+        Q[self.nocc:,self.nocc:] = Qvir
+        return Q
+
+    def get_preconditioner(self):
+        """Compute approximate diagonal of Hessian"""
+        # Get Fock matrix in MO basis
+        fock_mo = np.linalg.multi_dot([self.mo_coeff.T, self.fock, self.mo_coeff])
+        # Initialise approximate preconditioner
+        Q = np.zeros((self.nmo,self.nmo))
+        # Include dominate generalised Fock matrix terms
+        for p in range(self.nmo):
+            for q in range(p):
+                Q[p,q] = 2 * (fock_mo[p,p] - fock_mo[q,q])
+        return np.abs(Q[self.rot_idx])
 
     def diagonalise_fock(self):
         """Diagonalise the Fock matrix"""
@@ -201,6 +259,18 @@ class RHF(Wavefunction):
         self.mo_coeff = np.dot(X, Ct)
         # Update density and Fock matrices
         self.update()
+
+    def transform_vector(self,vec,step,X=None):
+        """ Perform orbital rotation for vector in tangent space"""
+        # Build vector in antisymmetric form
+        kappa = np.zeros((self.nmo, self.nmo))
+        kappa[self.rot_idx] = vec
+        kappa = kappa - kappa.T
+        # Only horizontal transformations leave unchanged
+        if not X is None:
+            kappa = kappa @ X
+            kappa = X.T @ kappa
+        return kappa[self.rot_idx]
 
     def get_variance(self):
         """ Compute the variance of the energy with respect to the current wave function
@@ -297,3 +367,19 @@ class RHF(Wavefunction):
     def deallocate(self):
         pass
         
+    def approx_hess_on_vec(self, vec, eps=1e-3):
+        """ Compute the approximate Hess * vec product using forward finite difference """
+        # Get current gradient
+        g0 = self.gradient.copy()
+        # Save current position
+        mo_save = self.mo_coeff.copy()
+        # Get forward gradient
+        self.take_step(eps * vec)
+        g1 = self.gradient.copy()
+        # Restore to origin
+        self.mo_coeff = mo_save.copy()
+        self.update()
+        # Parallel transport back to current position
+        g1 = self.transform_vector(g1, - eps * vec)
+        # Get approximation to H @ sk
+        return (g1 - g0) / eps

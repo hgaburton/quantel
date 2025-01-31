@@ -32,6 +32,7 @@ def random_search(ints, config):
         LBFGS().run(mf,maxit=500)
         ref_mo = mf.mo_coeff.copy()
     ref_ci = None
+    mf.print(config["jobcontrol"]["print_final"])
 
     # Get information about the wavefunction defintion
     wfnconfig = config["wavefunction"][config["wavefunction"]["method"]]
@@ -101,23 +102,19 @@ def random_search(ints, config):
         hindices = myfun.hess_index
         if (hindices[0] != target_index) and (target_index is not None):
             continue
-        print("self.gen_fock")
-
-        e,s=gen_eig_sym(myfun.gen_fock,numpy.diag(myfun.mo_occ))
-        print(myfun.gen_fock[:myfun.nocc,:myfun.nocc])
-        print(-27.2114*e)
-        print(myfun.mo_coeff[:,:myfun.nocc])
         
         # Compare solution against previously found states
         new = True
         for otherwfn in wfn_list:
             if abs(myfun.energy - otherwfn.energy) < config["jobcontrol"]["dist_thresh"]:
-              if 1.0 - abs(myfun.overlap(otherwfn)) < config["jobcontrol"]["dist_thresh"]:
-                new = False
-                break
+              pass
+              #if 1.0 - abs(myfun.overlap(otherwfn)) < config["jobcontrol"]["dist_thresh"]:
+              #  new = False
+              #  break
 
         # Save the solution if it is a new one!
         if new: 
+            myfun.print(config["jobcontrol"]["print_final"])
             if config["wavefunction"]["method"] == "esmf":
                 myfun.canonicalize()
             # Get the prefix for this solution
