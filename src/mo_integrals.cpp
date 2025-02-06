@@ -108,7 +108,7 @@ void MOintegrals::compute_core_dipole()
         for(size_t xyz=0; xyz<3; xyz++)
         {
             double dipC_x = 0;
-            double *dip_x  = &m_dip[xyz*n2];
+            double *dip_x  = &dip[xyz*n2];
             #pragma omp parallel for reduction(+:dipC_x)
             for(size_t pq=0; pq<n2; pq++)
                 dipC_x += 2 * dip_x[pq] * m_Pcore[pq];

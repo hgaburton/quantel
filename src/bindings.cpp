@@ -5,6 +5,7 @@
 #include <libint2/initialize.h>
 
 #include "libint_interface.h"
+#include "hubbard_interface.h"
 #include "molecule.h"    
 #include "determinant.h"
 #include "mo_integrals.h"
@@ -206,6 +207,7 @@ PYBIND11_MODULE(_quantel, m) {
 
      py::class_<MOintegrals>(m, "MOintegrals")
           .def(py::init<LibintInterface &>(), "Initialise MO integrals from LibintInterface object")
+          .def(py::init<HubbardInterface &>(), "Initialise MO integrals from HubbardInterface object")
           .def("update_orbitals",[](MOintegrals &m_ints, py::array_t<double>  C, size_t ninactive, size_t nactive) 
                {
                     auto C_buf = C.request();
@@ -235,6 +237,142 @@ PYBIND11_MODULE(_quantel, m) {
           .def("nbsf", &MOintegrals::nbsf, "Get the number of basis functions")
           .def("nmo", &MOintegrals::nmo, "Get the number of molecular orbitals")
           .def("nact", &MOintegrals::nact, "Get the number of active orbitals")
+          ;
+
+     py::class_<HubbardInterface>(m, "HubbardInterface")
+          .def(py::init<double,double,size_t,size_t,size_t,bool,bool,bool>(),
+               py::arg("U"), py::arg("t"),
+               py::arg("nx")=1, py::arg("ny")=1, py::arg("nz")=1,
+               py::arg("periodicX")=false, py::arg("periodicY")=false, py::arg("periodicZ")=false,
+               "Initialise Hubbard model:\n"
+               "   U: Hubbard repulsion\n"
+               "   t: hopping integral\n"
+               "   nx: number of lattice sites in x [default=1]\n"
+               "   ny: number of lattice sites in y [default=1]\n"
+               "   nz: number of lattice sites in z [default=1]\n"
+               "   periodicX: periodic boundary conditions in x dimension [default=False]\n"
+               "   periodicY: periodic boundary conditions in y dimension [default=False]\n"
+               "   periodicZ: periodic boundary conditions in z dimension [default=False]")
+          .def("nbsf", &HubbardInterface::nbsf, "Get number of basis functions")
+          .def("nmo", &HubbardInterface::nmo, "Get number of molecular orbitals")
+          .def("scalar_potential", &HubbardInterface::scalar_potential, "Get value of the scalar potential")
+          .def("overlap", &HubbardInterface::overlap, "Get element of overlap matrix")
+          .def("oei", &HubbardInterface::oei, "Get element of one-electron Hamiltonian matrix")
+          .def("tei", &HubbardInterface::tei, "Get element of two-electron integral array")
+          .def("build_fock", [](HubbardInterface &ints, py::array_t<double> &dens) {
+               size_t nbsf = ints.nbsf();
+               auto dens_buf = dens.request();
+               std::vector<double> v_dens((double *) dens_buf.ptr, (double *) dens_buf.ptr + dens_buf.size);
+               std::vector<double> v_fock(v_dens.size(), 0.0);
+               ints.build_fock(v_dens, v_fock);
+               return vec_to_np_array(nbsf,nbsf,v_fock.data()); 
+               },
+               "Build Fock matrix from density matrix")
+          .def("build_JK", [](HubbardInterface &ints, py::array_t<double> &dens) {
+               size_t nbsf = ints.nbsf();
+               auto dens_buf = dens.request();
+               std::vector<double> v_dens((double *) dens_buf.ptr, (double *) dens_buf.ptr + dens_buf.size);
+               std::vector<double> v_jk(v_dens.size(),0.0);
+               ints.build_JK(v_dens, v_jk);
+               return vec_to_np_array(nbsf,nbsf,v_jk.data()); 
+               },
+               "Build JK matrix from density matrix")
+          .def("build_J", [](HubbardInterface &ints, py::array_t<double> &dens) {
+               size_t nbsf = ints.nbsf();
+               auto dens_buf = dens.request();
+               std::vector<double> v_dens((double *) dens_buf.ptr, (double *) dens_buf.ptr + dens_buf.size);
+               std::vector<double> v_j(v_dens.size(),0.0);
+               ints.build_J(v_dens, v_j);
+               return vec_to_np_array(nbsf,nbsf,v_j.data()); 
+               },
+               "Build J matrix from density matrix")
+          .def("build_multiple_JK", [](HubbardInterface &ints, 
+                    py::array_t<double> &vDJ, py::array_t<double> &vDK, size_t nj, size_t nk) {
+               size_t nbsf = ints.nbsf();
+               auto vDJ_buf = vDJ.request();
+               auto vDK_buf = vDK.request();
+               std::vector<double> v_vDJ((double *) vDJ_buf.ptr, (double *) vDJ_buf.ptr + vDJ_buf.size);
+               std::vector<double> v_vDK((double *) vDK_buf.ptr, (double *) vDK_buf.ptr + vDK_buf.size);
+               std::vector<double> v_J(nbsf*nbsf*nj,0.0);
+               std::vector<double> v_K(nbsf*nbsf*nk,0.0);
+               ints.build_multiple_JK(v_vDJ,v_vDK,v_J,v_K,nj,nk);
+               return std::make_tuple(vec_to_np_array(nj,nbsf,nbsf,v_J.data()), vec_to_np_array(nk,nbsf,nbsf,v_K.data()));
+               },
+               "Build J and K matrices from a list of density matrices"
+          )
+          .def("overlap_matrix", [](HubbardInterface &ints) { 
+               return vec_to_np_array(ints.nbsf(), ints.nbsf(), ints.overlap_matrix()); 
+               },
+               "Return the overlap matrix")
+          .def("orthogonalization_matrix", [](HubbardInterface &ints) { 
+               return vec_to_np_array(ints.nbsf(), ints.nbsf(), ints.orthogonalization_matrix()); 
+               },
+               "Return the orthogonalization matrix")
+          .def("oei_matrix", [](HubbardInterface &ints, bool alpha) { 
+               return vec_to_np_array(ints.nbsf(), ints.nbsf(), ints.oei_matrix(alpha)); 
+               }, 
+               "Return one-electron Hamiltonian matrix")
+          .def("dipole_matrix", [](HubbardInterface &ints) { 
+               return vec_to_np_array(3, ints.nbsf(), ints.nbsf(), ints.dipole_integrals()); 
+               },
+               "Return the dipole matrix integrals")
+          .def("tei_ao_to_mo", [](HubbardInterface &ints, 
+               py::array_t<double> &C1, py::array_t<double> &C2, 
+               py::array_t<double> &C3, py::array_t<double> &C4, 
+               bool alpha1, bool alpha2) 
+               {
+                    size_t nbsf = ints.nbsf();
+                    // Get the buffer for the numpy arrays
+                    auto C1_buf = C1.request();
+                    auto C2_buf = C2.request();
+                    auto C3_buf = C3.request();
+                    auto C4_buf = C4.request();
+                    // Get the dimensions of the transformation matrices
+                    size_t d1 = C1_buf.shape[1];
+                    size_t d2 = C2_buf.shape[1];
+                    size_t d3 = C3_buf.shape[1];
+                    size_t d4 = C4_buf.shape[1];
+                    // Get the data from the numpy arrays
+                    std::vector<double> v_C1((double *) C1_buf.ptr, (double *) C1_buf.ptr + C1_buf.size);
+                    std::vector<double> v_C2((double *) C2_buf.ptr, (double *) C2_buf.ptr + C2_buf.size);
+                    std::vector<double> v_C3((double *) C3_buf.ptr, (double *) C3_buf.ptr + C3_buf.size);
+                    std::vector<double> v_C4((double *) C4_buf.ptr, (double *) C4_buf.ptr + C4_buf.size);
+                    // Allocate memory for the MO integrals
+                    std::vector<double> v_eri(d1*d2*d3*d4, 0.0);
+                    // Perform the transformation
+                    ints.tei_ao_to_mo(v_C1,v_C2,v_C3,v_C4,v_eri,alpha1,alpha2);
+                    // Return the MO integrals as a numpy array
+                    return vec_to_np_array(d1,d2,d3,d4,v_eri.data()); 
+               },
+               "Perform AO to MO transformation"
+          )
+          .def("oei_ao_to_mo", [](HubbardInterface &ints, 
+               py::array_t<double> &C1, py::array_t<double> &C2, bool alpha) 
+               {
+                    size_t nbsf = ints.nbsf();
+                    // Get the buffer for the numpy arrays
+                    auto C1_buf = C1.request();
+                    auto C2_buf = C2.request();
+                    // Get the dimensions of the transformation matrices
+                    size_t d1 = C1_buf.shape[1];
+                    size_t d2 = C2_buf.shape[1];
+                    // Get the data from the numpy arrays
+                    std::vector<double> v_C1((double *) C1_buf.ptr, (double *) C1_buf.ptr + C1_buf.size);
+                    std::vector<double> v_C2((double *) C2_buf.ptr, (double *) C2_buf.ptr + C2_buf.size);
+                    // Allocate memory for the MO integrals
+                    std::vector<double> v_oei(d1*d2, 0.0);
+                    // Perform the transformation
+                    ints.oei_ao_to_mo(v_C1,v_C2,v_oei,alpha);
+                    // Return the MO integrals as a numpy array
+                    return vec_to_np_array(d1,d2,v_oei.data()); 
+               },
+               "Perform AO to MO transformation for one-electron integrals"
+          )
+          .def("tei_array", [](HubbardInterface &ints) { 
+               size_t nbsf = ints.nbsf();
+               return vec_to_np_array(nbsf, nbsf, nbsf, nbsf, ints.tei_array());
+               },
+               "Return two-electron integral (pq|rs) array")
           ;
 
      py::class_<LibintInterface>(m, "LibintInterface")

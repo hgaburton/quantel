@@ -2,7 +2,7 @@
 #define MO_INTEGRALS_H
 
 #include <vector>
-#include "libint_interface.h"
+#include "integral_interface.h"
 
 /// TODO: Add frozen core option
 
@@ -12,16 +12,16 @@ public:
     virtual ~MOintegrals() { }
 
     /// \brief Constructor from integrals
-    MOintegrals(LibintInterface &ints) :
+    MOintegrals(IntegralInterface &ints) :
        m_ints(ints), m_nbsf(ints.nbsf()), m_nmo(ints.nmo())
     { }
 
     /// \brief Compute integrals from orbital coefficients
     /// \param Ca Coefficients for alpha orbitals
     /// \param Cb Coefficients for beta orbitals
-    /// \param nin Number of inactive orbitals
-    /// \param nvr Number of virtual orbitals
-    void update_orbitals(std::vector<double> C, size_t ninactive, size_t nvirtual);
+    /// \param ncore Number of inactive core (doubly occupied) orbitals
+    /// \param nactive Number of active orbitals
+    void update_orbitals(std::vector<double> C, size_t ncore, size_t nactive);
 
 
     /// \brief Get the value of the scalar potential
@@ -94,7 +94,7 @@ private:
     double m_tol = 1e-14;
 
     /// Libint interface
-    LibintInterface &m_ints;
+    IntegralInterface &m_ints;
 
     /// Scalar potential 
     double m_V;
