@@ -23,8 +23,9 @@ public:
     /** \brief Constructor for the interface
      **/
     LibintInterface(const std::string basis_str, Molecule &mol) :
-        IntegralInterface(m_basis.nbf()), m_mol(mol), m_basis(basis_str, mol.atoms)
+        m_mol(mol), m_basis(basis_str, mol.atoms)
     { 
+        init(m_basis.nbf(),m_mol.nalfa(),m_mol.nbeta()), 
         initialize();
     }
 

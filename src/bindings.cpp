@@ -240,21 +240,21 @@ PYBIND11_MODULE(_quantel, m) {
           ;
 
      py::class_<HubbardInterface>(m, "HubbardInterface")
-          .def(py::init<double,double,size_t,size_t,size_t,bool,bool,bool>(),
-               py::arg("U"), py::arg("t"),
-               py::arg("nx")=1, py::arg("ny")=1, py::arg("nz")=1,
-               py::arg("periodicX")=false, py::arg("periodicY")=false, py::arg("periodicZ")=false,
+          .def(py::init<double,double,size_t,size_t,std::vector<size_t>,std::vector<bool>>(),
+               py::arg("U"), py::arg("t"), py::arg("na"), py::arg("nb"),
+               py::arg("dim")=std::vector<size_t>({1,1,1}), 
+               py::arg("periodic")=std::vector<bool>({false,false,false}),
                "Initialise Hubbard model:\n"
                "   U: Hubbard repulsion\n"
                "   t: hopping integral\n"
-               "   nx: number of lattice sites in x [default=1]\n"
-               "   ny: number of lattice sites in y [default=1]\n"
-               "   nz: number of lattice sites in z [default=1]\n"
-               "   periodicX: periodic boundary conditions in x dimension [default=False]\n"
-               "   periodicY: periodic boundary conditions in y dimension [default=False]\n"
-               "   periodicZ: periodic boundary conditions in z dimension [default=False]")
+               "   na: number of alpha electrons\n"
+               "   nb: number of beta electrons\n"
+               "   dim: number of lattice sites in (dx,dy,dz) format. Default=(1,1,1)\n"
+               "   periodic: periodic boundary conditions in (px,py,pz) format. Default=(False,False,False)")
           .def("nbsf", &HubbardInterface::nbsf, "Get number of basis functions")
           .def("nmo", &HubbardInterface::nmo, "Get number of molecular orbitals")
+          .def("nalfa", &HubbardInterface::nalfa, "Get number of high-spin electrons")
+          .def("nbeta", &HubbardInterface::nbeta, "Get number of low-spin electrons")
           .def("scalar_potential", &HubbardInterface::scalar_potential, "Get value of the scalar potential")
           .def("overlap", &HubbardInterface::overlap, "Get element of overlap matrix")
           .def("oei", &HubbardInterface::oei, "Get element of one-electron Hamiltonian matrix")
@@ -380,6 +380,8 @@ PYBIND11_MODULE(_quantel, m) {
           .def("initalize", &LibintInterface::initialize, "Initialize matrix elements")
           .def("nbsf", &LibintInterface::nbsf, "Get number of basis functions")
           .def("nmo", &LibintInterface::nmo, "Get number of molecular orbitals")
+          .def("nalfa", &LibintInterface::nalfa, "Get number of high-spin electrons")
+          .def("nbeta", &LibintInterface::nbeta, "Get number of low-spin electrons")
           .def("scalar_potential", &LibintInterface::scalar_potential, "Get value of the scalar potential")
           .def("overlap", &LibintInterface::overlap, "Get element of overlap matrix")
           .def("oei", &LibintInterface::oei, "Get element of one-electron Hamiltonian matrix")

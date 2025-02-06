@@ -41,18 +41,33 @@ public:
     virtual ~HubbardInterface() { }
 
     /// @brief Constructor for the Hubbard interface
+    /// @param U Hubbard U parameter
+    /// @param t hopping parameter
+    /// @param na number of alpha electrons
+    /// @param nb number of beta electrons
     /// @param nx number of lattice sites in x
     /// @param ny number of lattice sites in y. Default is 1
     /// @param nz number of lattice sites in z. Default is 1
     /// @param periodicX periodic boundary conditions in x. Default is false
     /// @param periodicY periodic boundary conditions in y. Default is false
     /// @param periodicZ periodic boundary conditions in z. Default is false
-    HubbardInterface(double U, double t, size_t nx, size_t ny, size_t nz,
-                     bool periodicX, bool periodicY,bool periodicZ)    
-        : IntegralInterface(nx*ny*nz), 
-        m_nx(nx), m_ny(ny), m_nz(nz), 
-        m_pX(periodicX), m_pY(periodicY), m_pZ(periodicZ)
+    HubbardInterface(
+        double U, double t, size_t na, size_t nb, 
+        std::vector<size_t> dim={1,1,1}, std::vector<bool> periodic={false,false,false}) : m_U(U), m_t(t)
     {
+        // Check some input
+        if(dim.size() != 3) 
+            throw std::runtime_error("Dimension vector must have 3 elements");
+        if(periodic.size() != 3) 
+            throw std::runtime_error("Periodic vector must have 3 elements");
+        
+        // Call base class init function
+        init(dim[0]*dim[1]*dim[2],na,nb);
+        
+        // Set Hubbard lattice parameters
+        m_nx = dim[0]; m_ny = dim[1]; m_nz = dim[2];
+        m_pX = periodic[0]; m_pY = periodic[1]; m_pZ = periodic[2];
+
         // Check some input
         if(m_nx==0) throw std::runtime_error("Number of sites in X dimension cannot be zero");
         if(m_ny==0) throw std::runtime_error("Number of sites in Y dimension cannot be zero");

@@ -13,6 +13,8 @@ protected:
     // Information about the basis
     size_t m_nbsf; //!< Number of basis functions
     size_t m_nmo; //!< Number of molecular orbitals
+    size_t m_nalfa; //!< Number of alpha electrons
+    size_t m_nbeta; //!< Number of beta electrons
 
     /// Constant scalar potential
     double m_V;
@@ -39,7 +41,14 @@ public:
 
     /** \brief Default constructor 
      **/
-    IntegralInterface(size_t nbsf) : m_nbsf(nbsf) { }
+    IntegralInterface() { }
+
+    virtual void init(size_t nbsf, size_t nalfa, size_t nbeta)
+    {
+        m_nbsf = nbsf;
+        m_nalfa = nalfa;
+        m_nbeta = nbeta;
+    }
 
     /// Set the scalar potential
     virtual void set_scalar_potential(double value);
@@ -161,9 +170,12 @@ public:
 
     /// Get the number of basis functions
     size_t nbsf() const { return m_nbsf; }
-
     /// Get the number of linearly indepdent molecular orbitals
     size_t nmo() const { return m_nmo; }
+    /// Get the number of alfa electrons
+    size_t nalfa() const { return m_nalfa; }
+    /// Get the number of beta electrons
+    size_t nbeta() const { return m_nbeta; }
 
     /// Get index-for one-electron quantity
     size_t oei_index(size_t p, size_t q) 

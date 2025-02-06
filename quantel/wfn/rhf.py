@@ -25,7 +25,7 @@ class RHF(Wavefunction):
                verbose   : verbosity level
         """
         self.integrals = integrals
-        self.nalfa     = integrals.molecule().nalfa()
+        self.nalfa     = integrals.nalfa()
         self.nbeta     = self.nalfa #integrals.molecule().nbeta()
 
         # Get number of basis functions and linearly independent orbitals
