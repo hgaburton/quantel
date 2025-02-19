@@ -130,7 +130,7 @@ class GMF:
             # Pseudo-canonicalize orbitals if requested
             X = None
             if(self.control["with_canonical"] and np.mod(qn_count,self.control["canonical_interval"])==0):
-                print("  Pseudo-canonicalising the orbitals")
+                #print("  Pseudo-canonicalising the orbitals")
                 X = obj.canonicalize()
 
             # Parallel transport previous vectors
