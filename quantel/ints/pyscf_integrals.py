@@ -44,7 +44,7 @@ class PySCFMolecule(pyscf.gto.Mole):
 class PySCFIntegrals:
     """Wrapper class to call integral functions from PySCF"""
     #"MGGA_C_TPSS"
-    def __init__(self,mol,xc=None):
+    def __init__(self,mol,xc=None,kscale=1.0):
         """ Initialise the PySCF interface from PySCF molecule
                 mol : PySCFMolecule
                     The PySCF molecule object
@@ -52,6 +52,7 @@ class PySCFIntegrals:
                     The exchange-correlation functional
         """
         self.mol = mol
+        self.kscale = kscale
         
         # Initialise overlap matrix and orthogonalisation matrix
         self.S = self.mol.intor("int1e_ovlp")

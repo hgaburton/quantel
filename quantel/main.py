@@ -59,10 +59,11 @@ def main():
         from pyscf import lib
         print(" *** Using PySCF for integral evaluation ***")
         print("       xc_functional = ",config["jobcontrol"]["xc_functional"])
+        print("    Exchange scaling = ",config["jobcontrol"]["kscale"])
         print("   Number of threads = ",lib.num_threads())
         print()
         mol  = PySCFMolecule(config["molecule"]["atom"],config["molecule"]["basis"],config["molecule"]["unit"])
-        ints = PySCFIntegrals(mol,xc=config["jobcontrol"]["xc_functional"])
+        ints = PySCFIntegrals(mol,xc=config["jobcontrol"]["xc_functional"],kscale=config["jobcontrol"]["kscale"])
     elif(config["jobcontrol"]["integrals"]=='libint'):
         print(" *** Using Libint for integral evaluation ***\n")
         # Raise error if xc_functional is not None
