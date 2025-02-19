@@ -22,7 +22,7 @@ class PySCFMolecule(pyscf.gto.Mole):
             _charge = int(tmp[0])
             _spin = int(tmp[1])-1
         # Initialise underlying PySCF molecule
-        super().__init__(atom=_atom,basis=_basis,unit=_unit,spin=_spin)
+        super().__init__(atom=_atom,basis=_basis,unit=_unit,spin=_spin,charge=_charge)
         self.atom = _atom
         self.unit = _unit
         self.build()
