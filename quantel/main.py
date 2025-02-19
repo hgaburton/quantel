@@ -16,7 +16,7 @@ import argparse, numpy, time
 from datetime import datetime, timedelta
 from quantel import Molecule, LibintInterface
 from quantel.io.config import Config
-from quantel.drivers import random_search, from_file, from_orca, ci_guess, standard_guess, ev_linesearch, analyse #noci, overlap, analyse
+from quantel.drivers import random_search, from_file, from_orca, ci_guess, standard_guess, ev_linesearch, analyse, noci#, overlap, analyse
 from cProfile import Profile
 from pstats import SortKey, Stats
 from quantel.ints.pyscf_integrals import PySCFMolecule, PySCFIntegrals
