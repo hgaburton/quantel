@@ -2,7 +2,7 @@
 
 import unittest
 import numpy as np
-#import pygnme
+import pygnme
 
 def orthogonalisation_matrix(M, thresh=1e-8):
     """Construct an orthogonalisation matrix X such that X^T M X = I for a symmetric matrix M

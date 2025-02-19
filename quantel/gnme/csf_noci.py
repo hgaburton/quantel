@@ -18,10 +18,10 @@ def csf_coupling(csf1, csf2, metric, hcore=None, eri=None, enuc=0.0, thresh=1e-1
     # Setup biorthogonalised orbital pair
     c1 = csf1.mo_coeff.copy()
     c2 = csf2.mo_coeff.copy()
-    refxa = wick.reference_state[float](nbsf,nmo,csf1.nalfa,csf1.cas_nmo,csf1.ncore,owndata(c1))
-    refxb = wick.reference_state[float](nbsf,nmo,csf1.nbeta,csf1.cas_nmo,csf1.ncore,owndata(c1))
-    refwa = wick.reference_state[float](nbsf,nmo,csf2.nalfa,csf2.cas_nmo,csf2.ncore,owndata(c2))
-    refwb = wick.reference_state[float](nbsf,nmo,csf2.nbeta,csf2.cas_nmo,csf2.ncore,owndata(c2))
+    refxa = wick.reference_state[float](nbsf,nmo,csf1.nalfa,csf1.nopen,csf1.ncore,owndata(c1))
+    refxb = wick.reference_state[float](nbsf,nmo,csf1.nbeta,csf1.nopen,csf1.ncore,owndata(c1))
+    refwa = wick.reference_state[float](nbsf,nmo,csf2.nalfa,csf2.nopen,csf2.ncore,owndata(c2))
+    refwb = wick.reference_state[float](nbsf,nmo,csf2.nbeta,csf2.nopen,csf2.ncore,owndata(c2))
 
     # Setup paired orbitals
     orba = wick.wick_orbitals[float, float](refxa, refwa, ovlp)
