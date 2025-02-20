@@ -220,9 +220,9 @@ void LibintInterface::compute_dipole_integrals()
         size_t n2 = m_basis[s2].size();
 
         auto s_shellset = buf_vec[0]; // Overlap contribution
-        auto mu_x_shellset = buf_vec[1];
-        auto mu_y_shellset = buf_vec[2];
-        auto mu_z_shellset = buf_vec[3];
+        auto mu_x_shellset = buf_vec[2];
+        auto mu_y_shellset = buf_vec[3];
+        auto mu_z_shellset = buf_vec[1];
 
         for(size_t f1=0; f1 < n1; ++f1)
         for(size_t f2=0; f2 < n2; ++f2)
