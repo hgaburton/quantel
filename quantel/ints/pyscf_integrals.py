@@ -18,9 +18,11 @@ class PySCFMolecule(pyscf.gto.Mole):
         # Get spin from 2nd line of atom file
         with open(_atom) as f:
             f.readline()
-            _spin = int(f.readline().split()[1])-1
+            tmp = f.readline().split()
+            _charge = int(tmp[0])
+            _spin = int(tmp[1])-1
         # Initialise underlying PySCF molecule
-        super().__init__(atom=_atom,basis=_basis,unit=_unit,spin=_spin)
+        super().__init__(atom=_atom,basis=_basis,unit=_unit,spin=_spin,charge=_charge)
         self.atom = _atom
         self.unit = _unit
         self.build()
@@ -44,7 +46,7 @@ class PySCFMolecule(pyscf.gto.Mole):
 class PySCFIntegrals:
     """Wrapper class to call integral functions from PySCF"""
     #"MGGA_C_TPSS"
-    def __init__(self,mol,xc=None):
+    def __init__(self,mol,xc=None,kscale=1.0):
         """ Initialise the PySCF interface from PySCF molecule
                 mol : PySCFMolecule
                     The PySCF molecule object
@@ -52,6 +54,7 @@ class PySCFIntegrals:
                     The exchange-correlation functional
         """
         self.mol = mol
+        self.kscale = kscale
         
         # Initialise overlap matrix and orthogonalisation matrix
         self.S = self.mol.intor("int1e_ovlp")
@@ -148,6 +151,11 @@ class PySCFIntegrals:
                 ndarray : The transformed one-electron integrals
         """
         return np.linalg.multi_dot([C1.T, self.oei, C1])
+
+    def tei_array(self):
+        """ Return an array containing the AO eri integrals"""
+        n = self.nbsf()
+        return np.reshape(self.mol.intor("int2e", aosym="s1"),(n,n,n,n))
     
     def tei_ao_to_mo(self, C1, C2, C3, C4, alpha1, alpha2):
         """ Transform the two-electron integrals from AO to MO basis. Order is <12|34> (physicists)

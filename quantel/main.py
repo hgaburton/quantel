@@ -16,7 +16,7 @@ import argparse, numpy, time
 from datetime import datetime, timedelta
 from quantel import Molecule, LibintInterface
 from quantel.io.config import Config
-from quantel.drivers import random_search, from_file, from_orca, ci_guess, standard_guess, ev_linesearch, analyse #noci, overlap, analyse
+from quantel.drivers import random_search, from_file, from_orca, ci_guess, standard_guess, ev_linesearch, analyse, noci#, overlap, analyse
 from cProfile import Profile
 from pstats import SortKey, Stats
 from quantel.ints.pyscf_integrals import PySCFMolecule, PySCFIntegrals
@@ -59,10 +59,11 @@ def main():
         from pyscf import lib
         print(" *** Using PySCF for integral evaluation ***")
         print("       xc_functional = ",config["jobcontrol"]["xc_functional"])
+        print("    Exchange scaling = ",config["jobcontrol"]["kscale"])
         print("   Number of threads = ",lib.num_threads())
         print()
         mol  = PySCFMolecule(config["molecule"]["atom"],config["molecule"]["basis"],config["molecule"]["unit"])
-        ints = PySCFIntegrals(mol,xc=config["jobcontrol"]["xc_functional"])
+        ints = PySCFIntegrals(mol,xc=config["jobcontrol"]["xc_functional"],kscale=config["jobcontrol"]["kscale"])
     elif(config["jobcontrol"]["integrals"]=='libint'):
         print(" *** Using Libint for integral evaluation ***\n")
         # Raise error if xc_functional is not None

@@ -40,11 +40,18 @@ class Davidson:
         # Initialise Krylov subspace
         dim = diag.size
         K   = np.empty((dim,0))
+
+        if(n > dim):
+            # If the number of requested states exceeds the dimension of the matrix, reset the values
+            n = dim
+            if(xguess is not None):
+                print(f"WARNING: Number of requested eigenvectors exceeds matrix dimension, selecting first {n:6d} guess vectors")
+                xguess = xguess[:,:n]
         
         # If no guess provided, start with identity
         if(xguess is None):
             inds = np.argsort(diag)[:n]
-            K = 0.01 * np.ones((dim,n))
+            K = 0.4 * (np.random.rand(dim,n)-1)
             for i,j in enumerate(inds):
                 K[j,i] = 1
         else:

@@ -53,8 +53,13 @@ class GenealogicalCSF(Wavefunction):
         # Get number of basis functions and linearly independent orbitals
         self.nbsf       = integrals.nbsf()
         self.nmo        = integrals.nmo()
-        self.with_xc    = (type(integrals) is not quantel.lib._quantel.LibintInterface)
-        if(self.with_xc): self.with_xc = (integrals.xc is not None)
+        # Read integral dependent factors
+        if(type(integrals) is quantel.ints.pyscf_integrals.PySCFIntegrals):
+            self.with_xc = (integrals.xc is not None)
+            self.Kscale  = integrals.kscale 
+        else:
+            self.with_xc = False
+            self.Kscale  = 1.0
     
     def sanity_check(self):
         '''Need to be run at the start of the kernel to verify that the number of 
@@ -110,7 +115,7 @@ class GenealogicalCSF(Wavefunction):
         self.mo_occ[:self.nocc] = 2
         self.mo_occ[self.ncore:self.nocc] = 1
         # Get information about the electron shells
-        self.beta = get_shell_exchange(self.ncore,self.shell_indices, self.spin_coupling)
+        self.beta   = get_shell_exchange(self.ncore,self.shell_indices, self.spin_coupling)
         self.nshell = len(self.shell_indices)
 
         # Save mapping indices for unique orbital rotations
@@ -531,7 +536,8 @@ class GenealogicalCSF(Wavefunction):
         for Ishell in range(self.nshell):
             shell = [1+i-self.ncore for i in self.shell_indices[Ishell]]
             K[Ishell+1] += np.einsum('vpq->pq',self.vK[shell])
-
+        # Rescale exchange matrices as appropriate
+        K *= self.Kscale
         return J, K
 
     def get_generalised_fock(self):
@@ -600,15 +606,15 @@ class GenealogicalCSF(Wavefunction):
         Y = np.zeros((nmo,nmo,nmo,nmo))
         # Y_imjn
         Y[:ncore,:,:ncore,:] += 8 * np.einsum('mnij->imjn',ppoo[:,:,:ncore,:ncore]) 
-        Y[:ncore,:,:ncore,:] -= 2 * np.einsum('mnji->imjn',ppoo[:,:,:ncore,:ncore])
-        Y[:ncore,:,:ncore,:] -= 2 * np.einsum('mjni->imjn',popo[:,:ncore,:,:ncore])
+        Y[:ncore,:,:ncore,:] -= 2 * self.Kscale * np.einsum('mnji->imjn',ppoo[:,:,:ncore,:ncore])
+        Y[:ncore,:,:ncore,:] -= 2 * self.Kscale * np.einsum('mjni->imjn',popo[:,:ncore,:,:ncore])
         for i in range(ncore):
             Y[i,:,i,:] += 2 * Jmn - Kmn
 
         # Y_imwn
         Y[:ncore,:,ncore:nocc,:] = (4 * ppoo[:,:,:ncore,ncore:nocc].transpose(2,0,3,1)
-                                      - ppoo[:,:,ncore:nocc,:ncore].transpose(3,0,2,1)
-                                      - popo[:,ncore:nocc,:,:ncore].transpose(3,0,1,2))
+                                      - self.Kscale * ppoo[:,:,ncore:nocc,:ncore].transpose(3,0,2,1)
+                                      - self.Kscale * popo[:,ncore:nocc,:,:ncore].transpose(3,0,1,2))
         Y[ncore:nocc,:,:ncore,:] = Y[:ncore,:,ncore:nocc,:].transpose(2,3,0,1)
 
         # Y_wmvn
@@ -617,7 +623,7 @@ class GenealogicalCSF(Wavefunction):
             for V in range(W,self.nshell):
                 for w in self.shell_indices[W]:
                     for v in self.shell_indices[V]:
-                        Y[w,:,v,:] = 2 * ppoo[:,:,w,v] + self.beta[W,V] * (ppoo[:,:,v,w] + popo[:,v,:,w])
+                        Y[w,:,v,:] = 2 * ppoo[:,:,w,v] + self.Kscale * self.beta[W,V] * (ppoo[:,:,v,w] + popo[:,v,:,w])
                         if(w==v):
                             Y[w,:,w,:] = Y[w,:,w,:] + Jmn - 0.5 * vKmn[0] + wKmn
                         else:
@@ -643,7 +649,7 @@ class GenealogicalCSF(Wavefunction):
             for p in range(q+1,self.nmo):
                 Q[p,q] += 4 * (self.mo_occ[p]-self.mo_occ[q])**2 * Acoeff[q-self.ncore,p]
 
-        Bcoeff = self.Ipqpq + self.Ipqqp
+        Bcoeff = self.Kscale * (self.Ipqpq + self.Ipqqp)
         for W in range(self.nshell):
             for q in self.shell_indices[W]:
                 # Core-Active
@@ -657,7 +663,6 @@ class GenealogicalCSF(Wavefunction):
                 for p in range(self.nocc,self.nmo):
                     Q[p,q] -= 2 * (self.mo_occ[p] + self.mo_occ[q]) * Bcoeff[q-self.ncore,p]
 
-        # Return absolute preconditioner
         return np.abs(Q[self.rot_idx])
 
     def edit_mask_by_gcoupling(self, mask):
@@ -730,7 +735,7 @@ class GenealogicalCSF(Wavefunction):
         Q = np.zeros((self.nmo,self.nmo))
 
         # Get core transformation
-        foo = fock[self.core_indices,:][:,self.core_indices]
+        foo = self.gen_fock[self.core_indices,:][:,self.core_indices]
         self.mo_energy[:self.ncore], Qoo = stable_eigh(foo)
         for i, ii in enumerate(self.core_indices):
             for j, jj in enumerate(self.core_indices):
@@ -738,7 +743,7 @@ class GenealogicalCSF(Wavefunction):
 
         # Loop over shells
         for W in self.shell_indices:
-            fww = fock[W,:][:,W]
+            fww = self.gen_fock[W,:][:,W]
             self.mo_energy[W], Qww = stable_eigh(fww)
             for i, ii in enumerate(W):
                 for j, jj in enumerate(W):

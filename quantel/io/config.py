@@ -125,7 +125,8 @@ class Config(dict):
                                   nevpt2 = getbool(self.lines,"nevpt2",False,default=False),
                                   print_final = getvalue(self.lines,"print_final",int,False,default=1),
                                   integrals = getvalue(self.lines,"integrals",str,False,default="pyscf").lower(),
-                                  xc_functional = getvalue(self.lines,"xc_functional",str,False,default=None)
+                                  xc_functional = getvalue(self.lines,"xc_functional",str,False,default=None),
+                                  kscale = getvalue(self.lines,"exchange_factor",float,False,default=1.0)
                                  ) 
         
         if self["jobcontrol"]["guess"] == "random":
