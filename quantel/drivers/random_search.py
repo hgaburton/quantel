@@ -19,17 +19,19 @@ def random_search(ints, config):
 
     # Get RHF orbitals
     ms = ints.molecule().nalfa() - ints.molecule().nbeta()
+    # Initial SCF cycles
+    init_scf_cycles = config["jobcontrol"]["search"]["init_scf_cycles"]
     if(ms==0):
         print("\nRunning initial closed-shell RHF calculation...")
         mf = RHF(ints)
         mf.get_orbital_guess()
-        LBFGS().run(mf,maxit=500)
+        LBFGS().run(mf,maxit=init_scf_cycles)
         ref_mo = mf.mo_coeff.copy()
     else:
         print(f"\nRunning initial high-spin ROHF calculation with multiplicity {ms+1: 3d}...")
         mf = CSF(ints, '+'*ms)
         mf.get_orbital_guess()
-        LBFGS().run(mf,maxit=500)
+        LBFGS().run(mf,maxit=init_scf_cycles)
         ref_mo = mf.mo_coeff.copy()
     ref_ci = None
     mf.print(config["jobcontrol"]["print_final"])
@@ -91,6 +93,7 @@ def random_search(ints, config):
         myfun = WFN(ints, **wfnconfig)
         myfun.initialise(mo_guess, ci_guess)
 
+
         # Run the optimisation
         myopt = OPT(**optconfig)
         if not myopt.run(myfun, **config["optimiser"]["keywords"]):
@@ -98,7 +101,8 @@ def random_search(ints, config):
 
         # Check the Hessian index
         myfun.canonicalize()
-        myfun.get_davidson_hessian_index()
+        #myfun.get_davidson_hessian_index()
+        myfun.hess_index = [0,0,0]
         hindices = myfun.hess_index
         if (hindices[0] != target_index) and (target_index is not None):
             continue

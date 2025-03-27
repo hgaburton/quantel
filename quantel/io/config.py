@@ -132,6 +132,7 @@ class Config(dict):
         if self["jobcontrol"]["guess"] == "random":
             self["jobcontrol"]["search"] = dict(nsample = getvalue(self.lines,"nsample",int,False,default=10),
                                                 seed = getvalue(self.lines,"seed",int,False,default=7),
+                                                init_scf_cycles = getvalue(self.lines,"init_scf_cycles",int,False,default=500),
                                                 mo_rot_range= getvalue(self.lines,"mo_rot_range",float,False,default=numpy.pi)
                                                )
 

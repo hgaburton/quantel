@@ -139,11 +139,11 @@ class RHF(Wavefunction):
             print(" ---------------------------------------------")
             print(f"        <Sz> = {0:5.2f}")
             print(f"        <S2> = {self.s2:5.2f}")
-        if(verbose > 1):
-            matrix_print(self.mo_coeff[:,:self.nocc], title="Occupied Orbital Coefficients")
         if(verbose > 2):
-            matrix_print(self.mo_coeff[:,self.nocc:], title="Virtual Orbital Coefficients", offset=self.nocc)
+            matrix_print(self.mo_coeff[:,:self.nocc], title="Occupied Orbital Coefficients")
         if(verbose > 3):
+            matrix_print(self.mo_coeff[:,self.nocc:], title="Virtual Orbital Coefficients", offset=self.nocc)
+        if(verbose > 4):
             matrix_print(self.fock, title="Fock Matrix (AO basis)")
         print()
 

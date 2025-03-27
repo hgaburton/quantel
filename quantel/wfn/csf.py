@@ -221,6 +221,7 @@ class GenealogicalCSF(Wavefunction):
                           4 = Print energy components, spin, exchange matrices, and all orbital coefficients
                           5 = Print energy components, spin, exchange matrices, generalised Fock matrix, and all orbital coefficients 
         """
+        print("verbose = ", verbose)
         if(verbose > 0):
             print("\n ---------------------------------------------")
             print(f"         Total Energy = {self.energy:14.8f} Eh")
