@@ -4,7 +4,7 @@
 
 import numpy as np
 import scipy, quantel, h5py
-from quantel.utils.csf_utils import get_shells, get_shell_exchange
+from quantel.utils.csf_utils import get_shells, get_shell_exchange, get_csf_vector
 from quantel.utils.linalg import orthogonalise, stable_eigh, matrix_print
 from quantel.gnme.csf_noci import csf_coupling
 from .wavefunction import Wavefunction
@@ -60,6 +60,8 @@ class GenealogicalCSF(Wavefunction):
         else:
             self.with_xc = False
             self.Kscale  = 1.0
+        # Control for cache reset
+        self.jk_cache_reset = 20
     
     def sanity_check(self):
         '''Need to be run at the start of the kernel to verify that the number of 
@@ -123,8 +125,10 @@ class GenealogicalCSF(Wavefunction):
         self.rot_idx    = self.uniq_var_indices(self.frozen)
         self.invariant  = self.invariant_indices()
         self.nrot       = np.sum(self.rot_idx)
+        print(list(get_csf_vector(self.spin_coupling)))
 
         # Initialise integrals
+        self.jk_cache = 0
         if (integrals): self.update_integrals()
 
     def deallocate(self):
@@ -526,8 +530,31 @@ class GenealogicalCSF(Wavefunction):
                 Ipqpq: Diagonal elements of J matrix
                 Ipqqp: Diagonal elements of K matrix
         '''
-        # Call integrals object to build J and K matrices
-        self.vJ, self.vK = self.integrals.build_multiple_JK(vd,vd,self.nopen+1,self.nopen+1)
+        # Implement difference fock build
+        # NOTE PySCF does not include incremental JK build, but this is still useful 
+        # if we work with DFT functionals
+        if(self.jk_cache % self.jk_cache_reset == 0):
+            # Save current density to the cache
+            self.vd_cache = vd.copy()
+            # Build the integrals
+            self.vJ, self.vK = self.integrals.build_multiple_JK(vd,vd,self.nopen+1,self.nopen+1)
+            # Save integrals to cache
+            self.vJ_cache = self.vJ.copy()
+            self.vK_cache = self.vK.copy()
+        else:
+            # Compute differences
+            vd_diff = vd - self.vd_cache
+            vJ_diff, vK_diff = self.integrals.build_multiple_JK(
+                                      vd_diff,vd_diff,self.nopen+1,self.nopen+1)
+            # Compute full values
+            self.vJ = self.vJ_cache + vJ_diff
+            self.vK = self.vK_cache + vK_diff
+            # Update the cache
+            self.vd_cache = vd.copy()
+            self.vJ_cache = self.vJ.copy()
+            self.vK_cache = self.vK.copy()
+        self.jk_cache += 1
+
         # Get the total J matrix
         J = np.einsum('kpq->pq',self.vJ)
         # Get exchange matrices for each shell
@@ -721,6 +748,22 @@ class GenealogicalCSF(Wavefunction):
                 frozen = np.asarray(frozen)
                 mask[frozen] = mask[:, frozen] = False
         return mask
+
+    def koopmans(self):
+        """
+        Solve IP using Koopmans theory
+        """
+        from scipy.linalg import eigh
+        # Transform gen Fock matrix to MO basis
+        gen_fock = self.gen_fock[:self.nocc,:self.nocc]
+        gen_dens = np.diag(self.mo_occ[:self.nocc])
+        np.set_printoptions(linewidth=1000,suppress=True,precision=5)
+        print(gen_fock)
+        print(gen_dens)
+        e, v = eigh(gen_fock, gen_dens)
+        print(e)
+        print(v)
+
 
     def canonicalize(self):
         """

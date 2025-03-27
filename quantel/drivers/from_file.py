@@ -65,10 +65,11 @@ def from_file(ints, config):
 
             # Check the Hessian index
             myfun.canonicalize()
-            myfun.get_davidson_hessian_index()
+            #myfun.get_davidson_hessian_index()
+            myfun.hess_index = (0,0,0)
             hindices = myfun.hess_index
-            if (hindices[0] != target_index) and (target_index is not None):
-                continue
+            #if (hindices[0] != target_index) and (target_index is not None):
+            #    continue
 
             # Compare solution against previously found states
             new = True
@@ -80,6 +81,7 @@ def from_file(ints, config):
 
             # Save the solution if it is a new one!
             if new: 
+                myfun.print(config["jobcontrol"]["print_final"])
                 if config["wavefunction"]["method"] == "esmf":
                     myfun.canonicalize()
                 # Get the prefix for this solution

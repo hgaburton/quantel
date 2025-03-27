@@ -10,7 +10,7 @@ material change opacity Orbital 0.600000
 display projection Orthographic
 display nearclip set 0.000000
 display depthcue off
-axes location off
+#axes location off
 
 color Display {Background} white
 color Element {H} white
@@ -52,8 +52,8 @@ mol addrep top
 
 scale by [lindex \$argv 2]
 #rotate y by 90
-rotate x by -85
-#rotate z by 45
+#rotate x by 90
+#rotate z by 90
 
 #render gs [lindex \$argv 0].ps
 render POV3 [lindex \$argv 0].pov 

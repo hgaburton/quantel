@@ -53,6 +53,8 @@ class LBFGS:
         # Extract key parameters
         max_subspace = self.control["max_subspace"]
         dim = obj.dim
+        if(dim == 0): return True
+
 
         if plev>0:
             print(f"    > Num. MOs       = {obj.nmo: 6d}")

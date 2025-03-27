@@ -40,31 +40,42 @@ def analyse(ints, config):
         except: pass
         myfun = WFN(ints, **wfnconfig)
         myfun.read_from_disk(fname)
-
         # Store dipole and quadrupole
         #dip  = myfun.dipole
+        
+        #quit()
         #quad = myfun.quadrupole
 
         # Plot orbitals
         myfun.canonicalize()
-        ints.molden_orbs(myfun.mo_coeff,myfun.mo_occ,myfun.mo_energy)
-        #orbrange=config["jobcontrol"]["analyse"]["orbital_plots"]
-        #if(len(orbrange)>0):
-        #    for i in range(orbrange[0]-1, orbrange[1]):
-        #        cubegen.orbital(mol, fname+'.mo.{:d}.cube'.format(i+1), myfun.mo_coeff[:,i])
+        
+        if(config["jobcontrol"]["integrals"]=='pyscf'):
+            orbrange=config["jobcontrol"]["analyse"]["orbital_plots"]
+            print(orbrange)
+            print(myfun.nocc)
+            print(myfun.nmo)
+            print()
+            print(myfun.nocc+orbrange[0], myfun.nocc+orbrange[1])
 
+            if(len(orbrange)>0):
+                for i in range(myfun.nocc+orbrange[0], myfun.nocc+orbrange[1]+1):
+                    cubegen.orbital(ints.mol, fname+'.mo.{:d}.cube'.format(i+1), myfun.mo_coeff[:,i])
+        else:
+            ints.molden_orbs(myfun.mo_coeff,myfun.mo_occ,myfun.mo_energy)
+
+        continue
         with open(fname+".analyse",'w+') as outF:
             outF.write("  Energy = {: 16.10f}\n".format(myfun.energy))
             outF.write("   <S^2> = {: 16.10f}\n".format(myfun.s2))
             #outF.write("   Index = {: 5d}\n".format(myfun.hess_index[0]))
 
-            #outF.write("\n  ----------------------------------------\n")
-            #outF.write("  Dipole moment:\n")
-            #outF.write("  ----------------------------------------\n")
-            #for (ix, x) in [(0,'x'),(1,'y'),(2,'z')]:
-            #    outF.write("     {:5s}  {: 10.6f}\n".format(x, dip[ix]))
+            outF.write("\n  ----------------------------------------\n")
+            outF.write("  Dipole moment:\n")
+            outF.write("  ----------------------------------------\n")
+            for (ix, x) in [(0,'x'),(1,'y'),(2,'z')]:
+                outF.write("     {:5s}  {: 10.6f}\n".format(x, dip[ix]))
 
-            #outF.write("\n  ----------------------------------------\n")
+            outF.write("\n  ----------------------------------------\n")
             #outF.write("  Quadrupole moment:\n")
             #outF.write("  ----------------------------------------\n")
             #for (ix, x) in [(0,'x'),(1,'y'),(2,'z')]:
