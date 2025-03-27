@@ -757,9 +757,7 @@ class GenealogicalCSF(Wavefunction):
         # Transform gen Fock matrix to MO basis
         gen_fock = self.gen_fock[:self.nocc,:self.nocc]
         gen_dens = np.diag(self.mo_occ[:self.nocc])
-        np.set_printoptions(linewidth=1000,suppress=True,precision=5)
         print(gen_fock)
-        print(gen_dens)
         e, v = eigh(gen_fock, gen_dens)
         print(e)
         print(v)
