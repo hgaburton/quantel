@@ -19,17 +19,19 @@ def random_search(ints, config):
 
     # Get RHF orbitals
     ms = ints.molecule().nalfa() - ints.molecule().nbeta()
+    # Initial SCF cycles
+    init_scf_cycles = config["jobcontrol"]["search"]["init_scf_cycles"]
     if(ms==0):
         print("\nRunning initial closed-shell RHF calculation...")
         mf = RHF(ints)
         mf.get_orbital_guess()
-        LBFGS().run(mf,maxit=500)
+        LBFGS().run(mf,maxit=init_scf_cycles)
         ref_mo = mf.mo_coeff.copy()
     else:
         print(f"\nRunning initial high-spin ROHF calculation with multiplicity {ms+1: 3d}...")
         mf = CSF(ints, '+'*ms)
         mf.get_orbital_guess()
-        LBFGS().run(mf,maxit=500)
+        LBFGS().run(mf,maxit=init_scf_cycles)
         ref_mo = mf.mo_coeff.copy()
     ref_ci = None
     mf.print(config["jobcontrol"]["print_final"])
@@ -91,6 +93,7 @@ def random_search(ints, config):
         myfun = WFN(ints, **wfnconfig)
         myfun.initialise(mo_guess, ci_guess)
 
+
         # Run the optimisation
         myopt = OPT(**optconfig)
         if not myopt.run(myfun, **config["optimiser"]["keywords"]):
@@ -110,8 +113,8 @@ def random_search(ints, config):
         for otherwfn in wfn_list:
             if abs(myfun.energy - otherwfn.energy) < config["jobcontrol"]["dist_thresh"]:
               if 1.0 - abs(myfun.overlap(otherwfn)) < config["jobcontrol"]["dist_thresh"]:
-                new = False
-                break
+                  new = False
+                  break
 
         # Save the solution if it is a new one!
         if new: 
