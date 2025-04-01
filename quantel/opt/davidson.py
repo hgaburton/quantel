@@ -8,7 +8,7 @@ class Davidson:
     def __init__(self, **kwargs):
         """Initialise the Davidson instance"""
         self.control = dict()
-        self.control["nreset"] = 10
+        self.control["nreset"] = 20
 
         for key in kwargs:
             if not key in self.control.keys():
@@ -62,6 +62,9 @@ class Davidson:
         # Initialise HK vectors
         HK = np.empty((dim, 0))
 
+        # Make K in fortran column-major
+        K = np.asfortranarray(K)
+
         if plev>1: print("  =========================================")
         if plev>1: print("    Step   Max(|res|)    # Conv            ")
         if plev>1: print("  =========================================")
@@ -72,7 +75,8 @@ class Davidson:
         for it in range(maxit+1):
             # Form new HK vectors as required
             for ik in range(HK.shape[1],K.shape[1]):
-                # Get step
+                # Get step 
+                # NOTE this requires column-major ordering for effective slicing
                 sk = K[:,ik]
                 # Get approximate Hessian on vector
                 H_sk = fun_Hv(sk,**Hv_args)
@@ -111,7 +115,7 @@ class Davidson:
             for i in range(n):
                 ri = r[:,i]
                 if(residuals[i] > tol):
-                    v_new = ri / (e[i] - diag)
+                    v_new = ri / (e[i] - diag + 1e-4)
                     # Perform Gram-Schmidt orthogonalisation twice
                     v_new = v_new - K @ (K.T @ v_new)
                     v_new = v_new - K @ (K.T @ v_new)
