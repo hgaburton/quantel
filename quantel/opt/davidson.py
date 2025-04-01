@@ -8,7 +8,7 @@ class Davidson:
     def __init__(self, **kwargs):
         """Initialise the Davidson instance"""
         self.control = dict()
-        self.control["nreset"] = 20
+        self.control["nreset"] = 50
 
         for key in kwargs:
             if not key in self.control.keys():

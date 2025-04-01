@@ -18,7 +18,7 @@ def analyse(ints, config):
     elif config["wavefunction"]["method"] == "casscf":
         from quantel.wfn.ss_casscf import SS_CASSCF as WFN
     elif config["wavefunction"]["method"] == "csf":
-        from quantel.wfn.csf import GenealogicalCSF as WFN
+        from quantel.wfn.csf import CSF as WFN
     elif config["wavefunction"]["method"] == "rhf":
         from quantel.wfn.rhf import RHF as WFN
     else:

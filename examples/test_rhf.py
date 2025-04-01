@@ -2,8 +2,6 @@ import quantel
 import numpy as np
 from quantel.ints.pyscf_integrals import PySCFMolecule, PySCFIntegrals
 from quantel.wfn.rhf import RHF
-from pygnme import utils
-import time
 
 # Test RHF object with a range of optimisers
 print("Test RHF object with a range of optimisers")
@@ -35,3 +33,8 @@ for driver in ("libint", "pyscf"):
         from quantel.opt.diis import DIIS
         wfn.get_orbital_guess(method="gwh")
         DIIS().run(wfn)
+        
+        # Test canonicalisation and Hessian eigenvalue
+        wfn.canonicalize()
+        # Test Hessian index
+        wfn.get_davidson_hessian_index()

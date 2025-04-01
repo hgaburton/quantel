@@ -5,7 +5,7 @@ from quantel.utils.linalg import random_rot
 from quantel.wfn.rhf import RHF
 from quantel.opt.diis import DIIS
 from quantel.opt.lbfgs import LBFGS
-from quantel.wfn.csf import GenealogicalCSF as CSF
+from quantel.wfn.csf import CSF
 from quantel.gnme.utils import gen_eig_sym
 
 def random_search(ints, config):

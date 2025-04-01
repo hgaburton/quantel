@@ -71,6 +71,7 @@ def main():
             raise ValueError("Libint does not support the use of XC functionals")
         mol = Molecule(config["molecule"]["atom"], config["molecule"]["unit"])
         ints = LibintInterface(config["molecule"]["basis"],mol,True)
+        
     # Generate wavefunctions 
     wfnlist = None
     if config["jobcontrol"]["guess"] == "fromfile":

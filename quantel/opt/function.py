@@ -135,7 +135,11 @@ class Function(metaclass=ABCMeta):
         # Start with 5 eigenvalues
         nv = ntarget
         david = Davidson(nreset=50)
-        x = None
+        # Initialise from the lowest diagonal elements
+        x = np.zeros((diag.size, nv),order='F')
+        for i, j in enumerate(np.argsort(diag)[:nv]):
+            x[j,i] = 1.0
+
         while True:
             # Get lowest eigenvalues through Davidson algorithm
             eigs, x = david.run(self.approx_hess_on_vec,diag,nv,xguess=x,tol=1e-4,maxit=1000,Hv_args=dict(eps=1e-5))
