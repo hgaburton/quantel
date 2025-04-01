@@ -87,6 +87,8 @@ PYBIND11_MODULE(_quantel, m) {
           .def(py::init<>(), "Default constructor")
           .def(py::init<std::vector<uint8_t>, std::vector<uint8_t> >(), "Constructor with occupation vectors")
           .def(py::init<std::string> (), "Constructor from determinant string")
+          .def("apply_excitation", py::overload_cast<Eph &, bool>(&Determinant::apply_excitation), "Apply single excitation operator")
+          .def("apply_excitation", py::overload_cast<Epphh &, bool, bool>(&Determinant::apply_excitation), "Apply double excitation operator")
           .def("__lt__", &Determinant::operator<, "Comparison operator");
 
      py::class_<Eph>(m, "Eph").def(py::init<size_t,size_t>(), "Constructor with indices");
@@ -222,7 +224,7 @@ PYBIND11_MODULE(_quantel, m) {
           ;
 
      py::class_<LibintInterface>(m, "LibintInterface")
-          .def(py::init<const std::string, Molecule &, bool>())
+          .def(py::init<const std::string, Molecule &>())
           .def("initalize", &LibintInterface::initialize, "Initialize matrix elements")
           .def("nbsf", &LibintInterface::nbsf, "Get number of basis functions")
           .def("nmo", &LibintInterface::nmo, "Get number of molecular orbitals")

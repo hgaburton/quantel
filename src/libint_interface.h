@@ -28,8 +28,6 @@ protected:
     /// One-electron integrals
     std::vector<double> m_oei_a;
     std::vector<double> m_oei_b;
-    /// Two-electron integrals, if appropriate
-    bool m_incore;
     std::vector<double> m_tei; /// [p,q,r,s] = (pq|rs)
     /// Dipole integrals
     std::vector<double> m_dipole;
@@ -48,8 +46,8 @@ public:
 
     /** \brief Constructor for the interface
      **/
-    LibintInterface(const std::string basis_str, Molecule &mol, bool incore=false) :
-        m_mol(mol), m_basis(basis_str, mol.atoms), m_incore(incore)
+    LibintInterface(const std::string basis_str, Molecule &mol) :
+        m_mol(mol), m_basis(basis_str, mol.atoms)
     { 
         initialize();
     }
@@ -162,23 +160,6 @@ private:
         assert(s<m_nbsf);
         return p * m_nbsf * m_nbsf * m_nbsf +q * m_nbsf * m_nbsf + r * m_nbsf + s;
     }
-
-    void incore_JK(std::vector<double> &dens, std::vector<double> &JK);
-    void incore_multiple_JK(std::vector<double> &vDJ, std::vector<double> &vDK,
-                                            std::vector<double> &vJ, std::vector<double> &vK, 
-                                            size_t nj, size_t nk);
-    void incore_tei_ao_to_mo(std::vector<double> &C1, std::vector<double> &C2,
-                                                std::vector<double> &C3, std::vector<double> &C4,
-                                                std::vector<double> &eri, bool alpha1, bool alpha2);
-
-    void direct_JK(std::vector<double> &dens, std::vector<double> &JK);
-    void direct_multiple_JK(std::vector<double> &vDJ, std::vector<double> &vDK,
-                                            std::vector<double> &vJ, std::vector<double> &vK, 
-                                            size_t nj, size_t nk);
-    void direct_tei_ao_to_mo(std::vector<double> &C1, std::vector<double> &C2,
-                                                std::vector<double> &C3, std::vector<double> &C4,
-                                                std::vector<double> &eri, bool alpha1, bool alpha2);
-
 
 };
 

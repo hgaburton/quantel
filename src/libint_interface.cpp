@@ -23,7 +23,7 @@ void LibintInterface::initialize()
     // Compute the dipole integrals
     compute_dipole_integrals();    
     // Compute eri integrals if in-core
-    if(m_incore) compute_two_electron_integrals();
+    compute_two_electron_integrals();
 
     // Setup shell pair list
     std::tie(m_splist, m_spdata) = compute_shellpairs(m_basis);
