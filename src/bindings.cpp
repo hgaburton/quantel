@@ -127,6 +127,14 @@ PYBIND11_MODULE(_quantel, m) {
                     return vec_to_np_array(ndet,ndet,Hmat.data());
                },
                "Build the Hamiltonian matrix")
+          .def("build_Hd", [](CIspace &ci) 
+               {
+                    size_t ndet = ci.ndet();
+                    std::vector<double> Hdiag(ndet,0.0);
+                    ci.build_Hd(Hdiag);
+                    return vec_to_np_array(ndet,Hdiag.data());
+               },
+               "Build the Hamiltonian matrix")
           .def("trdm1", [](
                CIspace &ci, py::array_t<double> &bra, py::array_t<double> &ket, 
                bool alpha)
@@ -183,18 +191,7 @@ PYBIND11_MODULE(_quantel, m) {
                     ci.build_rdm2(v_ket,v_ket,rdm2,alpha1,alpha2);
                     return vec_to_np_array(nmo,nmo,nmo,nmo,rdm2.data());
                },
-               "Build the two-particle reduced density matrix")
-          .def("get_variance", [](CIspace &ci, py::array_t<double> &V)
-               {
-                    size_t ndet = ci.ndet();
-                    auto Vbuf = V.request();
-                    std::vector<double> v_V((double *) Vbuf.ptr, (double *) Vbuf.ptr + Vbuf.size);
-                    double E = 0;
-                    double var = 0;
-                    ci.get_variance(v_V, E, var);
-                    return std::make_tuple(E,var);
-               },
-               "Compute the variance");         
+               "Build the two-particle reduced density matrix");      
 
      py::class_<MOintegrals>(m, "MOintegrals")
           .def(py::init<LibintInterface &>(), "Initialise MO integrals from LibintInterface object")

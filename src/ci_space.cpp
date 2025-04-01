@@ -1,4 +1,5 @@
 #include "ci_space.h"
+#include "omp_device.h"
 #include <cstdint>
 #include <omp.h>
 
@@ -32,13 +33,9 @@ void CIspace::initialize(std::string citype, std::vector<std::string> detlist)
         throw std::runtime_error("CI space type not implemented");
 
     // Build memory maps
-    build_memory_map1(true);
-    build_memory_map1(false);
-    build_memory_map2(true, true);
-    build_memory_map2(true, false);
-    build_memory_map2(false, false);
-    
-
+    build_memory_map1();
+    build_memory_map2();
+   
     // Record that we successfully initialised
     m_initialized = true;
 }
@@ -104,49 +101,64 @@ void CIspace::build_custom_determinants(std::vector<std::string> detlist)
 }
 
 
-void CIspace::build_memory_map1(bool alpha)
+void CIspace::build_memory_map1()
 {
-    // Get relevant memory map
-    auto &m_map = get_map(alpha);
-
     // Populate m_map with connected determinants
     #pragma omp parallel for collapse(2)
     for(size_t p=0; p<m_nmo; p++)
     for(size_t q=0; q<m_nmo; q++)
     {
+        if(q>p) continue;
         // Make an exitation
         Eph Epq = {p,q};
+        Eph Eqp = {q,p};
+
         // Initialise map vectors
         #pragma omp critical 
         {
-            m_map[Epq] = std::vector<std::tuple<size_t,size_t,int> >();
+            m_map_a[Epq] = std::vector<std::tuple<size_t,size_t,int> >();
+            m_map_b[Epq] = std::vector<std::tuple<size_t,size_t,int> >();
+            if(Epq != Eqp)
+            {
+                m_map_a[Eqp] = std::vector<std::tuple<size_t,size_t,int> >();
+                m_map_b[Eqp] = std::vector<std::tuple<size_t,size_t,int> >();
+            }
         }
 
         // Loop over determinants
         for(auto &[detJ, indJ] : m_dets)
         {
-            // Get copy of determinant
-            Determinant detI = detJ;
-            // Get alfa excitation
-            int phase = detI.apply_excitation(Epq,alpha);
-            if(phase != 0) 
-            {
-                // If the detI is in the CI space, add connection to the map
-                try {
-                    size_t indI = m_dets.at(detI);
-                    m_map[Epq].push_back(std::make_tuple(indJ,indI,phase));
-                } catch(const std::out_of_range& e) { }
+            {   // Alfa
+                Determinant detI = detJ;
+                // Get alfa excitation
+                int phase = detI.apply_excitation(Epq,true);
+                if(phase != 0) 
+                    try {
+                        size_t indI = m_dets.at(detI);
+                        m_map_a[Epq].push_back(std::make_tuple(indJ,indI,phase));
+                        if(Epq != Eqp)
+                            m_map_a[Eqp].push_back(std::make_tuple(indI,indJ,phase));
+                    } catch(const std::out_of_range& e) { }
             }
+            {   // Beta
+                Determinant detI = detJ;
+                // Get alfa excitation
+                int phase = detI.apply_excitation(Epq,false);
+                if(phase != 0) 
+                    try {
+                        size_t indI = m_dets.at(detI);
+                        m_map_b[Epq].push_back(std::make_tuple(indJ,indI,phase));
+                        if(Epq != Eqp)
+                            m_map_b[Eqp].push_back(std::make_tuple(indI,indJ,phase));
+                    } catch(const std::out_of_range& e) { }
+            }
+
         } 
     }
 }
 
-void CIspace::build_memory_map2(bool alpha1, bool alpha2)
+void CIspace::build_memory_map2()
 {
-    // Get relevant memory map
-    assert(alpha1 >= alpha2);
-    auto &m_map = get_map(alpha1,alpha2);
-
     // Populate m_map with connected determinants
     #pragma omp parallel for collapse(4)
     for(size_t p=0; p<m_nmo; p++)
@@ -163,21 +175,40 @@ void CIspace::build_memory_map2(bool alpha1, bool alpha2)
         // Initialise map vectors
         #pragma omp critical 
         {
-            m_map[Epqrs] = std::vector<std::tuple<size_t,size_t,int> >();
+            m_map_aa[Epqrs] = std::vector<std::tuple<size_t,size_t,int> >();
+            m_map_ab[Epqrs] = std::vector<std::tuple<size_t,size_t,int> >();
+            m_map_bb[Epqrs] = std::vector<std::tuple<size_t,size_t,int> >();
         }
 
         // Loop over determinants
         for(auto &[detJ, indJ] : m_dets)
         {
-            Determinant detI = detJ;
-            int phase = detI.apply_excitation(Epqrs,alpha1,alpha2);
-            if(phase != 0) 
-            {
-                // If the detI is in the CI space, add connection to the map
-                try {
-                    size_t indI = m_dets.at(detI);
-                    m_map[Epqrs].push_back(std::make_tuple(indJ,indI,phase));                      
-                } catch(const std::out_of_range& e) { }
+            {   // Alfa-Alfa
+                Determinant detI = detJ;
+                int phase = detI.apply_excitation(Epqrs,true,true);
+                if(phase != 0) 
+                    try {
+                        size_t indI = m_dets.at(detI);
+                        m_map_aa[Epqrs].push_back(std::make_tuple(indJ,indI,phase));                      
+                    } catch(const std::out_of_range& e) { }
+            }
+            {   // Alfa-Beta
+                Determinant detI = detJ;
+                int phase = detI.apply_excitation(Epqrs,true,false);
+                if(phase != 0) 
+                    try {
+                        size_t indI = m_dets.at(detI);
+                        m_map_ab[Epqrs].push_back(std::make_tuple(indJ,indI,phase));                      
+                    } catch(const std::out_of_range& e) { }
+            }
+            {   // Beta-Beta
+                Determinant detI = detJ;
+                int phase = detI.apply_excitation(Epqrs,false,false);
+                if(phase != 0) 
+                    try {
+                        size_t indI = m_dets.at(detI);
+                        m_map_bb[Epqrs].push_back(std::make_tuple(indJ,indI,phase));                      
+                    } catch(const std::out_of_range& e) { }
             }
         }
     }
@@ -219,60 +250,38 @@ void CIspace::H_on_vec(const std::vector<double> &ci_vec, std::vector<double> &s
     if(ci_vec.size() != m_ndet) 
         throw std::runtime_error("CIspace::H_on_vec: CI vector size error");
 
-    // Resize output
-    sigma.resize(m_ndet,0.0);
-
-    // Compute scalar part of sigma vector
-    H0_on_vec(ci_vec, sigma);
-    // Get one-electron part of sigma vector
-    H1_on_vec(ci_vec, sigma, true);
-    H1_on_vec(ci_vec, sigma, false);
-    // Get one-electron part of sigma vector
-    H2_on_vec(ci_vec, sigma, true, false);
-    H2_on_vec(ci_vec, sigma, true, true);
-    H2_on_vec(ci_vec, sigma, false, false);
-}
-
-void CIspace::H0_on_vec(const std::vector<double> &ci_vec, std::vector<double> &sigma)
-{
-    double v_scalar = m_ints.scalar_potential();
-    for(size_t ind=0; ind<m_ndet; ind++)
-        sigma[ind] += ci_vec[ind] * v_scalar;
-}
-
-void CIspace::H1_on_vec(
-    const std::vector<double> &ci_vec, std::vector<double> &sigma, bool alpha)
-{
-    // Get relevant memory map
-    auto &m_map = get_map(alpha);
+    // Get information about the OpenMP device
+    omp_device dev;
+    // Tolerance 
     double tol = m_ints.tol();
-
-    // Get one-electron integrals
+    
+    // Get thread-safe memory for sigma vector
+    std::vector<double> sigma_t(dev.nthreads*m_ndet);
+    std::fill(sigma_t.begin(), sigma_t.end(), 0.0);
+    
+    // One-electron part
+    #pragma omp parallel for collapse(2)
     for(size_t p=0; p<m_nmo; p++)
     for(size_t q=0; q<m_nmo; q++)
     {
-        // Get one-electron integral
-        double hpq = m_ints.oei(p,q,alpha);
-        if(std::abs(hpq) < tol) continue;
-        // Loop over connections
-        for(auto &[indJ, indI, phase] : m_map.at({p,q}))
-            sigma[indI] += phase * hpq * ci_vec[indJ];
+        // Access memory 
+        size_t ithread = dev.thread_id();
+        double *st = &sigma_t[ithread*m_ndet];
+
+        // Alfa contribution
+        double hpq_a = m_ints.oei(p,q,true);
+        if(std::abs(hpq_a) > tol)
+            for(auto &[indJ, indI, phase] : m_map_a.at({p,q}))
+                st[indI] += phase * hpq_a * ci_vec[indJ];
+        // Beta contribution
+        double hpq_b = m_ints.oei(p,q,false);
+        if(std::abs(hpq_a) > tol)
+            for(auto &[indJ, indI, phase] : m_map_b.at({p,q}))
+                st[indI] += phase * hpq_b * ci_vec[indJ];        
     }
-}
 
-void CIspace::H2_on_vec(
-    const std::vector<double> &ci_vec, std::vector<double> &sigma, 
-    bool alpha1, bool alpha2)
-{
-    assert(alpha1 >= alpha2);
-    double tol = m_ints.tol();
-
-    // Get relevant memory map
-    auto &m_map = get_map(alpha1,alpha2);
-
-    // Scaling factor for same spin terms is 1/4 due to antisymmetrisation
-    double scale = (alpha1 == alpha2) ? 0.25 : 1.0;
-
+    // Two-electron part
+    #pragma omp parallel for collapse(4)
     for(size_t p=0; p<m_nmo; p++)
     for(size_t r=0; r<m_nmo; r++)
     for(size_t q=0; q<m_nmo; q++)
@@ -282,21 +291,52 @@ void CIspace::H2_on_vec(
         size_t pq = p*m_nmo + q;
         size_t rs = r*m_nmo + s;
         if(pq > rs) continue;
+
+        // Access memory 
+        size_t ithread = dev.thread_id();
+        double *st = &sigma_t[ithread*m_ndet];
         
-        // Get two-electron integral
-        double vpqrs = scale * m_ints.tei(p,q,r,s,alpha1,alpha2);
-        double vrspq = scale * m_ints.tei(r,s,p,q,alpha1,alpha2);
+        // alfa-alfa
+        double vpqrs_aa = 0.25 * m_ints.tei(p,q,r,s,true,true);
+        double vrspq_aa = 0.25 * m_ints.tei(r,s,p,q,true,true);
+        if((std::abs(vpqrs_aa) > tol) and (std::abs(vrspq_aa) > tol))
+            for(auto &[indJ, indI, phase] : m_map_aa.at({p,q,r,s}))
+            {
+                st[indI] += phase * vpqrs_aa * ci_vec[indJ];
+                if(pq!=rs) st[indJ] += phase * vrspq_aa * ci_vec[indI];
+            }
+        
+        // alfa-beta
+        double vpqrs_ab = 1.0 * m_ints.tei(p,q,r,s,true,false);
+        double vrspq_ab = 1.0 * m_ints.tei(r,s,p,q,true,false);
+        if((std::abs(vpqrs_ab) > tol) and (std::abs(vrspq_ab) > tol))
+            for(auto &[indJ, indI, phase] : m_map_ab.at({p,q,r,s}))
+            {
+                st[indI] += phase * vpqrs_ab * ci_vec[indJ];
+                if(pq!=rs) st[indJ] += phase * vrspq_ab * ci_vec[indI];
+            }
 
-        if((std::abs(vpqrs) < tol) and (std::abs(vrspq) < tol)) 
-            continue;
-
-        // Loop over connections
-        for(auto &[indJ, indI, phase] : m_map.at({p,q,r,s}))
-        {
-            sigma[indI] += phase * vpqrs * ci_vec[indJ];
-            if(pq!=rs) sigma[indJ] += phase * vrspq * ci_vec[indI];
-        }
+        // beta-beta
+        double vpqrs_bb = 0.25 * m_ints.tei(p,q,r,s,false,false);
+        double vrspq_bb = 0.25 * m_ints.tei(r,s,p,q,false,false);
+        if((std::abs(vpqrs_bb) > tol) and (std::abs(vrspq_bb) > tol))
+            for(auto &[indJ, indI, phase] : m_map_bb.at({p,q,r,s}))
+            {
+                st[indI] += phase * vpqrs_bb * ci_vec[indJ];
+                if(pq!=rs) st[indJ] += phase * vrspq_bb * ci_vec[indI];
+            }
     }
+
+    // Initialise resulting sigma vector
+    sigma.resize(m_ndet,0.0);
+    double v_scalar = m_ints.scalar_potential();
+    for(size_t ind=0; ind<m_ndet; ind++)
+        sigma[ind] += ci_vec[ind] * v_scalar;
+
+    // Compile results from all threads
+    for(size_t ind=0; ind<m_ndet; ind++)
+    for(size_t ithread=0; ithread<dev.nthreads; ithread++)
+        sigma[ind] += sigma_t[ithread*m_ndet+ind];
 }
 
 void CIspace::build_Hmat(std::vector<double> &Hmat)
@@ -460,108 +500,64 @@ void CIspace::build_rdm2(
 }
 
 
-void CIspace::get_variance(const std::vector<double> civec, double &E, double &var)
+void CIspace::build_Hd(std::vector<double> &Hdiag)
 {
-    // Sigma vector accumulator
-    std::map<Determinant,double> sigma;
-
-    // Single excitations
-    for(size_t p=0; p<m_nmo; p++)
-    for(size_t q=0; q<m_nmo; q++)
-    {
-        // Make an exitation
-        Eph Epq = {p,q};
-        double hpq_a = m_ints.oei(p,q,true);
-        double hpq_b = m_ints.oei(p,q,false);
-
-        // Loop over determinants
-        for(auto &[detJ, indJ] : m_dets)
-        {
-            // Get contribution of alfa excitation
-            Determinant detIa(detJ);
-            int phase = detIa.apply_excitation(Epq,true);
-            if(phase != 0)
-                try {
-                    size_t dummy = sigma.at(detIa);
-                    sigma[detIa] += phase * civec[indJ] * hpq_a;
-                } catch(const std::out_of_range& e) { 
-                    sigma[detIa] = phase * civec[indJ] * hpq_a;
-                }
-
-            // Get contribution of beta excitation
-            Determinant detIb(detJ);
-            phase = detIb.apply_excitation(Epq,false);
-            if(phase != 0) 
-                try {
-                    size_t dummy = sigma.at(detIb);
-                    sigma[detIb] += phase * civec[indJ] * hpq_b;
-                } catch(const std::out_of_range& e) { 
-                    sigma[detIb] = phase * civec[indJ] * hpq_b;
-                }
-        } 
-    }
-
-    for(size_t p=0; p<m_nmo; p++)
-    for(size_t q=0; q<m_nmo; q++)
-    for(size_t r=0; r<m_nmo; r++)
-    for(size_t s=0; s<m_nmo; s++)
-    {
-        // Consider only unique pairs
-        size_t pq = p*m_nmo + q;
-        size_t rs = r*m_nmo + s;
-        Epphh Epqrs = {p,q,r,s};
-        double vpqrs_aa = 0.25 * m_ints.tei(p,q,r,s,true,true);
-        double vpqrs_ab = 1.00 * m_ints.tei(p,q,r,s,true,false);
-        double vpqrs_bb = 0.25 * m_ints.tei(p,q,r,s,false,false);
-
-        // Loop over determinants
-        for(auto &[detJ, indJ] : m_dets)
-        {
-            // Get contribution of alfa excitation
-            Determinant detIaa(detJ);
-            int phase = detIaa.apply_excitation(Epqrs,true,true);
-            if(phase != 0)
-                try {
-                    size_t dummy = sigma.at(detIaa);
-                    sigma[detIaa] += phase * civec[indJ] * vpqrs_aa;
-                } catch(const std::out_of_range& e) { 
-                    sigma[detIaa] = phase * civec[indJ] * vpqrs_aa;
-                }
-
-            Determinant detIab(detJ);
-            phase = detIab.apply_excitation(Epqrs,true,false);
-            if(phase != 0)
-                try {
-                    size_t dummy = sigma.at(detIab);
-                    sigma[detIab] += phase * civec[indJ] * vpqrs_ab;
-                } catch(const std::out_of_range& e) { 
-                    sigma[detIab] = phase * civec[indJ] * vpqrs_ab;
-                }
-
-            // Get contribution of beta excitation
-            Determinant detIbb(detJ);
-            phase = detIbb.apply_excitation(Epqrs,false,false);
-            if(phase != 0) 
-                try {
-                    size_t dummy = sigma.at(detIbb);
-                    sigma[detIbb] += phase * civec[indJ] * vpqrs_bb;
-                } catch(const std::out_of_range& e) { 
-                    sigma[detIbb] = phase * civec[indJ] * vpqrs_bb;
-                }
-        } 
-    }
-
-    // Compute energy
-    E = 0.0;
-    for(auto &[detI, indI] : m_dets)
-        E += civec[indI] * sigma[detI];
+    // Get information about the OpenMP device
+    omp_device dev;
     
-    // Compute variance
-    var = 0.0;
-    for(auto &[detI, sigI] : sigma)
-        var += sigI * sigI;
-    var = 4 * (var - E*E);
+    // Get thread-safe memory
+    std::vector<double> Hdiag_t(dev.nthreads*m_ndet);
+    std::fill(Hdiag_t.begin(), Hdiag_t.end(), 0.0);
 
-    // Add scalar potential to full energy
-    E += m_ints.scalar_potential();
+    // Add one-electron part (only diagonals contribute)
+    double tol = m_ints.tol();
+    #pragma omp parallel for
+    for(size_t p=0; p<m_nmo; p++)
+    {
+        // Get thread memory buffer
+        int ithread = dev.thread_id();
+        double *Ht = &Hdiag_t[ithread*m_ndet];
+
+        // Get one-electron alfa integral
+        double hpa = m_ints.oei(p,p,true);
+        for(auto &[indJ, indI, phase] : m_map_a.at({p,p}))
+            Ht[indI] += phase * hpa;
+
+        // Get one-electron integral
+        double hpb = m_ints.oei(p,p,false);
+        for(auto &[indJ, indI, phase] : m_map_b.at({p,p}))
+            Ht[indI] += phase * hpb;
+    }
+
+    #pragma omp parallel for collapse(2)
+    for(size_t p=0; p<m_nmo; p++)
+    for(size_t q=0; q<m_nmo; q++)
+    {
+       // Get thread memory buffer
+       int ithread = dev.thread_id();
+       double *Ht = &Hdiag_t[ithread*m_ndet];
+
+        // only include number-preserving terms
+        double vpqrs_aa = 0.5 * m_ints.tei(p,q,p,q,true,true);
+        if(std::abs(vpqrs_aa) > tol) 
+            for(auto &[indJ, indI, phase] : m_map_aa.at({p,q,p,q}))
+                Ht[indI] += phase * vpqrs_aa;
+
+        double vpqrs_ab = m_ints.tei(p,q,p,q,true,false);
+        if(std::abs(vpqrs_ab) > tol) 
+            for(auto &[indJ, indI, phase] : m_map_ab.at({p,q,p,q}))
+                Ht[indI] += phase * vpqrs_ab;
+
+        double vpqrs_bb = 0.5 * m_ints.tei(p,q,p,q,false,false);
+        if(std::abs(vpqrs_bb) > tol) 
+            for(auto &[indJ, indI, phase] : m_map_bb.at({p,q,p,q}))
+                Ht[indI] += phase * vpqrs_bb;
+    }
+
+    // Collect final results
+    Hdiag.resize(m_ndet);
+    std::fill(Hdiag.begin(), Hdiag.end(), m_ints.scalar_potential());
+    for(size_t it=0; it < dev.nthreads; it++)
+    for(size_t ind=0; ind < m_ndet; ind++)
+        Hdiag[ind] += Hdiag_t[it*m_ndet+ind];
 }
