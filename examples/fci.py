@@ -9,7 +9,7 @@ np.set_printoptions(linewidth=10000,precision=6,suppress=True)
 np.random.seed(7)
 
 # Initialise molecular structure (square H4)
-R = 8
+R = 3
 mol = quantel.Molecule([["Li",0.0,0.0,0.0*R],
                         ["H",0.0,0.0,1.0*R]
                        ],"bohr")
@@ -17,7 +17,7 @@ print("Molecule:")
 mol.print()
 
 # Initialise interface to Libint2
-ints = quantel.LibintInterface("sto-3g", mol)
+ints = quantel.LibintInterface("6-31g", mol)
 
 # Initialise RHF object from integrals
 wfn = RHF(ints)
