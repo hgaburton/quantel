@@ -426,6 +426,7 @@ class GenealogicalCSF(Wavefunction):
         if(method.lower() == "core"):
             # Use core Hamiltonian as guess
             hguess = h1e.copy()
+            e, Cguess = scipy.linalg.eigh(hguess, s)
 
         elif(method.lower() == "gwh"):
             # Build GWH guess Hamiltonian
@@ -437,12 +438,17 @@ class GenealogicalCSF(Wavefunction):
                     hguess[i,j] = 0.5 * (h1e[i,i] + h1e[j,j]) * s[i,j]
                     if(i!=j):
                         hguess[i,j] *= 1.75
-            
+            e, Cguess = scipy.linalg.eigh(hguess, s)
+
+        elif(method.lower() == "read"):
+            # Read guess from file
+            with h5py.File('guess.hdf5','r') as F:
+                Cguess = F['mo_coeff'][:]
+
         else:
             raise NotImplementedError(f"Orbital guess method {method} not implemented")
         
         # Solve initial generalised eigenvalue problem
-        e, Cguess = scipy.linalg.eigh(hguess, s)
         self.initialise(Cguess, spin_coupling=self.spin_coupling)
 
     def restore_last_step(self):

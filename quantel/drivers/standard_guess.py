@@ -56,7 +56,8 @@ def standard_guess(ints, config):
 
     # Check the Hessian index
     myfun.canonicalize()
-    myfun.get_davidson_hessian_index()
+    myfun.hess_index = (0,0,0)
+    #myfun.get_davidson_hessian_index()
     hindices = myfun.hess_index
     if (hindices[0] != target_index) and (target_index is not None):
         return

@@ -65,7 +65,8 @@ def from_file(ints, config):
 
             # Check the Hessian index
             myfun.canonicalize()
-            myfun.get_davidson_hessian_index()
+            #myfun.get_davidson_hessian_index()
+            myfun.hess_index = (0,0,0)
             hindices = myfun.hess_index
             if (hindices[0] != target_index) and (target_index is not None):
                 continue
