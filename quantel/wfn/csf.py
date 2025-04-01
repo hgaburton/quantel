@@ -8,7 +8,6 @@ from quantel.utils.csf_utils import get_shells, get_shell_exchange
 from quantel.utils.linalg import orthogonalise, stable_eigh, matrix_print
 from quantel.gnme.csf_noci import csf_coupling
 from .wavefunction import Wavefunction
-import time
 
 def flag_transport(A,T,mask,max_order=50,tol=1e-4):
    tA = A.copy()

@@ -1,5 +1,6 @@
 import quantel
 import numpy as np
+from quantel.ints.pyscf_integrals import PySCFMolecule, PySCFIntegrals
 from quantel.wfn.rhf import RHF
 from pygnme import utils
 import time
@@ -7,30 +8,30 @@ import time
 # Test RHF object with a range of optimisers
 print("Test RHF object with a range of optimisers")
 
-# Setup molecule
-mol = quantel.Molecule([["C", -0.0024458196,   0.000000000,    0.000000000],
-                        ["O",  1.1818599990,   0.000000000,    0.000000000],
-                        ["H", -0.5834770897,   0.000000000,   -0.924107645],
-                        ["H", -0.5834770897,   0.000000000,    0.924107645]], 
-                        "angstrom")
-print("Molecule:")
-mol.print()
+for driver in ("libint", "pyscf"):
+    print("\n===============================================")
+    print(f" Testing '{driver}' integral method")
+    print("===============================================")
+    # Setup molecule and integrals
+    if(driver == "libint"):
+        mol  = quantel.Molecule("formaldehyde.xyz", "angstrom")
+        ints = quantel.LibintInterface("6-31g", mol) 
+    elif(driver == "pyscf"):
+        mol  = PySCFMolecule("formaldehyde.xyz", "6-31g", "angstrom")
+        ints = PySCFIntegrals(mol)
 
-# Setup integral interface
-ints = quantel.LibintInterface("6-31g", mol)
+    # Initialise RHF object
+    wfn = RHF(ints)
 
-# Initialise RHF object
-wfn = RHF(ints)
+    # Setup optimiser
+    for guess in ("gwh", "core"):
+        print("\n************************************************")
+        print(f" Testing '{guess}' initial guess method")
+        print("************************************************")
+        from quantel.opt.lbfgs import LBFGS
+        wfn.get_orbital_guess(method="gwh")
+        LBFGS().run(wfn)
 
-# Setup optimiser
-for guess in ("gwh", "core"):
-    print("\n************************************************")
-    print(f" Testing '{guess}' initial guess method")
-    print("************************************************")
-    from quantel.opt.lbfgs import LBFGS
-    wfn.get_orbital_guess(method="gwh")
-    LBFGS().run(wfn)
-
-    from quantel.opt.diis import DIIS
-    wfn.get_orbital_guess(method="gwh")
-    DIIS().run(wfn)
+        from quantel.opt.diis import DIIS
+        wfn.get_orbital_guess(method="gwh")
+        DIIS().run(wfn)
