@@ -42,6 +42,12 @@ class PySCFMolecule(pyscf.gto.Mole):
     def multiplicity(self):
         """Return the multiplicity of the molecule"""
         return self.spin + 1
+    
+    def print(self):
+        """Print the molecular coordinates in the same way as quantel.LibintInterface"""
+        for ID, coords in self._atom:
+            print("  {:>4s}: {: 10.6f}  {: 10.6f}  {: 10.6f}".format(ID,coords[0],coords[1],coords[2]))
+
 
 class PySCFIntegrals:
     """Wrapper class to call integral functions from PySCF"""

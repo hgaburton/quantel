@@ -65,7 +65,6 @@ class LBFGS:
             print(f"    > Pseudo-canon.  = {self.control['with_canonical']}")
             print(f"    > Canon interval = {self.control['canonical_interval']}")
             print(f"    > Hybrid prec.   = {not self.control['gamma_preconditioner']}")
-            print()
 
         # Initialise lists for subspace vectors
         v_step = []

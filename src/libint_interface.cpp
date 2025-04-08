@@ -4,6 +4,7 @@
 #include <Eigen/Dense>
 #include "libint_interface.h"
 #include "linalg.h"
+#include "omp_device.h"
 
 using namespace libint2;
 using namespace Eigen;
@@ -23,7 +24,7 @@ void LibintInterface::initialize()
     // Compute the dipole integrals
     compute_dipole_integrals();    
     // Compute eri integrals if in-core
-    if(m_incore) compute_two_electron_integrals();
+    compute_two_electron_integrals();
 
     // Setup shell pair list
     std::tie(m_splist, m_spdata) = compute_shellpairs(m_basis);
@@ -307,8 +308,8 @@ void LibintInterface::build_JK(std::vector<double> &dens, std::vector<double> &J
     std::fill(JK.begin(),JK.end(),0.0);
 
     // Setup thread-safe memory
-    int nthread = omp_get_max_threads();
-    std::vector<double> Jt(nthread*n2), Kt(nthread*n2);
+    omp_device dev;
+    std::vector<double> Jt(dev.nthreads*n2), Kt(dev.nthreads*n2);
     std::fill(Jt.begin(),Jt.end(),0.0);
     std::fill(Kt.begin(),Kt.end(),0.0);
 
@@ -317,7 +318,7 @@ void LibintInterface::build_JK(std::vector<double> &dens, std::vector<double> &J
     for(size_t p=0; p<m_nbsf; p++)
     for(size_t r=0; r<m_nbsf; r++)
     {
-        int ithread = omp_get_thread_num();
+        int ithread = dev.thread_id();
         double *J = &Jt[ithread*n2];
         double *K = &Kt[ithread*n2];
 
@@ -368,7 +369,7 @@ void LibintInterface::build_JK(std::vector<double> &dens, std::vector<double> &J
     }
 
     // Collect values for each thread
-    for(size_t it=0; it < nthread; it++)
+    for(size_t it=0; it < dev.nthreads; it++)
     for(size_t pq=0; pq < n2; pq++)
         JK[pq] += 2.0 * Jt[it*n2+pq] - Kt[it*n2+pq];
 }
@@ -394,8 +395,8 @@ void LibintInterface::build_multiple_JK(
     std::fill(vK.begin(),vK.end(),0.0);
 
     // Setup thread-safe memory
-    int nthread = omp_get_max_threads();
-    std::vector<double> Jsafe(nthread*n2*nj), Ksafe(nthread*n2*nk);
+    omp_device dev;
+    std::vector<double> Jsafe(dev.nthreads*n2*nj), Ksafe(dev.nthreads*n2*nk);
     std::fill(Jsafe.begin(),Jsafe.end(),0.0);
     std::fill(Ksafe.begin(),Ksafe.end(),0.0);
 
@@ -404,7 +405,7 @@ void LibintInterface::build_multiple_JK(
     for(size_t p=0; p<m_nbsf; p++)
     for(size_t r=0; r<m_nbsf; r++)
     {
-        int ithread = omp_get_thread_num();
+        int ithread = dev.thread_id();
         double *Jt = &Jsafe[ithread*n2*nj];
         double *Kt = &Ksafe[ithread*n2*nk];
 
@@ -460,7 +461,7 @@ void LibintInterface::build_multiple_JK(
     }
 
     // Collect values for each thread
-    for(size_t it=0; it < nthread; it++)
+    for(size_t it=0; it < dev.nthreads; it++)
     {
         for(size_t pqk=0; pqk < n2 * nj; pqk++)
             vJ[pqk] += Jsafe[it*n2*nj+pqk];

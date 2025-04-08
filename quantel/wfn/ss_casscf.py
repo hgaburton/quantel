@@ -221,7 +221,7 @@ class SS_CASSCF(Wavefunction):
         return cas_coupling(self, them, ovlp)[0]
 
     def hamiltonian(self, them):
-        """Compute the many-body Hamiltonian coupling with another CAS wavefunction (them)"""
+        """Compute the many-body Hamiltonian coupling with another CSF wavefunction (them)"""
         hcore = self.integrals.oei_matrix(True)
         eri   = self.integrals.tei_array(True,False).transpose(0,2,1,3).reshape(self.nbsf**2,self.nbsf**2)
         ovlp  = self.integrals.overlap_matrix()
@@ -229,12 +229,9 @@ class SS_CASSCF(Wavefunction):
         return cas_coupling(self, them, ovlp, hcore, eri, enuc)
 
     def tdm(self, them):
-        """Compute the transition dipole moment with other CAS wave function (them)"""
+        """Compute the transition dipole moment with other CSF wave function (them)"""
         raise NotImplementedError("Transition dipole moment computation not implemented")
-        #tdm = np.zeros(3)
-        #for i in range(3):
-        #    s, tdm[i] = cas_coupling(self, them, self.ovlp, self.dip_mat[i], None, self.dip_nuc[i])
-        #return s, tdm
+
 
 
     def initialise(self, mo_guess, ci_guess, integrals=True):

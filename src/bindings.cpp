@@ -87,6 +87,8 @@ PYBIND11_MODULE(_quantel, m) {
           .def(py::init<>(), "Default constructor")
           .def(py::init<std::vector<uint8_t>, std::vector<uint8_t> >(), "Constructor with occupation vectors")
           .def(py::init<std::string> (), "Constructor from determinant string")
+          .def("apply_excitation", py::overload_cast<Eph &, bool>(&Determinant::apply_excitation), "Apply single excitation operator")
+          .def("apply_excitation", py::overload_cast<Epphh &, bool, bool>(&Determinant::apply_excitation), "Apply double excitation operator")
           .def("__lt__", &Determinant::operator<, "Comparison operator");
 
      py::class_<Eph>(m, "Eph").def(py::init<size_t,size_t>(), "Constructor with indices");
@@ -123,6 +125,14 @@ PYBIND11_MODULE(_quantel, m) {
                     std::vector<double> Hmat(ndet*ndet,0.0);
                     ci.build_Hmat(Hmat);
                     return vec_to_np_array(ndet,ndet,Hmat.data());
+               },
+               "Build the Hamiltonian matrix")
+          .def("build_Hd", [](CIspace &ci) 
+               {
+                    size_t ndet = ci.ndet();
+                    std::vector<double> Hdiag(ndet,0.0);
+                    ci.build_Hd(Hdiag);
+                    return vec_to_np_array(ndet,Hdiag.data());
                },
                "Build the Hamiltonian matrix")
           .def("trdm1", [](
@@ -181,18 +191,7 @@ PYBIND11_MODULE(_quantel, m) {
                     ci.build_rdm2(v_ket,v_ket,rdm2,alpha1,alpha2);
                     return vec_to_np_array(nmo,nmo,nmo,nmo,rdm2.data());
                },
-               "Build the two-particle reduced density matrix")
-          .def("get_variance", [](CIspace &ci, py::array_t<double> &V)
-               {
-                    size_t ndet = ci.ndet();
-                    auto Vbuf = V.request();
-                    std::vector<double> v_V((double *) Vbuf.ptr, (double *) Vbuf.ptr + Vbuf.size);
-                    double E = 0;
-                    double var = 0;
-                    ci.get_variance(v_V, E, var);
-                    return std::make_tuple(E,var);
-               },
-               "Compute the variance");         
+               "Build the two-particle reduced density matrix");      
 
      py::class_<MOintegrals>(m, "MOintegrals")
           .def(py::init<LibintInterface &>(), "Initialise MO integrals from LibintInterface object")
@@ -222,7 +221,7 @@ PYBIND11_MODULE(_quantel, m) {
           ;
 
      py::class_<LibintInterface>(m, "LibintInterface")
-          .def(py::init<const std::string, Molecule &, bool>())
+          .def(py::init<const std::string, Molecule &>())
           .def("initalize", &LibintInterface::initialize, "Initialize matrix elements")
           .def("nbsf", &LibintInterface::nbsf, "Get number of basis functions")
           .def("nmo", &LibintInterface::nmo, "Get number of molecular orbitals")

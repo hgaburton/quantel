@@ -7,7 +7,7 @@ class DIIS:
         self.err_vecs = []
         self.fock_list = []
     
-    def run(self, obj, thresh=1e-8, maxit=100, index=0, plev=1, max_vec=6):
+    def run(self, obj, thresh=1e-6, maxit=100, index=0, plev=1, max_vec=6):
         """Run the DIIS optimisation"""
         self.nbsf = obj.nbsf
         self.max_vec = max_vec
@@ -15,6 +15,9 @@ class DIIS:
         kernel_start_time = datetime.datetime.now()
         if plev>0: print()
         if plev>0: print("  Running DIIS optimisation...")
+        if plev>0:
+            print(f"    > Num. MOs          = {obj.nmo: 6d}")
+            print(f"    > Max DIIS subspace = {max_vec: 6d}")
         if plev>0: print("  ==========================================")
         if plev>0: print("       {:^16s}    {:^8s}".format("   Energy / Eh","Error"))
         if plev>0: print("  ==========================================")
@@ -49,8 +52,13 @@ class DIIS:
         
         if plev>0: print("  ==========================================")
         kernel_end_time = datetime.datetime.now() # Save end time
-        computation_time = kernel_end_time - kernel_start_time
-        if plev>0: print("  DIIS walltime: ", computation_time.total_seconds(), " seconds")
+        computation_time = (kernel_end_time - kernel_start_time).total_seconds()
+        if(not converged):
+            if plev>0: print(f"  DIIS failed to converge in {istep: 6d} iterations ({computation_time: 6.2f} seconds)")
+        else:
+            if plev>0: print(f"  DIIS converged in {istep: 6d} iterations ({computation_time: 6.2f} seconds)")
+        sys.stdout.flush()
+        return converged
 
 
     def diis_extrapolate(self):

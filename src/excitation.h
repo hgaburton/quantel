@@ -14,6 +14,14 @@ struct Eph {
         if(hole < rhs.hole) return true;
         return false;
     }
+
+    inline bool operator!= (const Eph &rhs) const {
+        return (particle != rhs.particle) || (hole != rhs.hole);
+    }
+    
+    inline bool operator== (const Eph &rhs) const {
+        return (particle == rhs.particle) && (hole == rhs.hole);
+    }
 };
 
 /// Double particle-hole excitation
@@ -37,6 +45,11 @@ struct Epphh {
     inline bool operator!= (const Epphh &rhs) const {
         return (particle1 != rhs.particle1) || (particle2 != rhs.particle2) ||
                (hole1 != rhs.hole1) || (hole2 != rhs.hole2);
+    }
+
+    inline bool operator== (const Epphh &rhs) const {
+        return (particle1 == rhs.particle1) && (particle2 == rhs.particle2) &&
+               (hole1 == rhs.hole1) && (hole2 == rhs.hole2);
     }
 };
 
