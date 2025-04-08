@@ -54,10 +54,6 @@ def csf_coupling(csf1, csf2, metric, hcore=None, eri=None, enuc=0.0, thresh=1e-1
 
             Hxw += htmp * cix * ciw
             Sxw += stmp * cix * ciw
-
-
-    print("Hxw = ", Hxw)
-    print("Sxw = ", Sxw)
     return Sxw, Hxw
 
 def csf_coupling_slater_condon(csf1, csf2, ints, thresh=1e-10):
@@ -70,6 +66,7 @@ def csf_coupling_slater_condon(csf1, csf2, ints, thresh=1e-10):
     Hxw, Sxw = 0, 0
 
     for (detx, cix) in get_csf_vector(csf1.spin_coupling):
+        print(detx, cix)
         if(abs(cix) < thresh):
             continue
         # Get occupied orbitals for csf1 determinants
@@ -79,6 +76,7 @@ def csf_coupling_slater_condon(csf1, csf2, ints, thresh=1e-10):
         Cbx = np.hstack([csf1.mo_coeff[:,:csf1.ncore], csf1.mo_coeff[:,bbx]]).copy()
 
         for (detw, ciw) in get_csf_vector(csf2.spin_coupling):
+            print(" ", detw, ciw)
             if(abs(ciw) < thresh):
                 continue
             # Get occupied orbitals for csf2 determinants

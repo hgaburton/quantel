@@ -48,6 +48,7 @@ def analyse(ints, config):
 
         # Plot orbitals
         myfun.canonicalize()
+        eip, cip = myfun.koopmans()
         
         if(config["jobcontrol"]["integrals"]=='pyscf'):
             orbrange=config["jobcontrol"]["analyse"]["orbital_plots"]
@@ -58,8 +59,14 @@ def analyse(ints, config):
             print(myfun.nocc+orbrange[0], myfun.nocc+orbrange[1])
 
             if(len(orbrange)>0):
-                for i in range(myfun.nocc+orbrange[0], myfun.nocc+orbrange[1]+1):
+                for i in range(myfun.nocc+orbrange[0], myfun.nocc+orbrange[1]):
                     cubegen.orbital(ints.mol, fname+'.mo.{:d}.cube'.format(i+1), myfun.mo_coeff[:,i])
+            
+            for i in range(myfun.nshell+1):
+                cubegen.density(ints.mol, fname+'.shell.{:d}.cube'.format(i), myfun.dk[i])
+
+            for i, ei in enumerate(eip):
+                cubegen.orbital(ints.mol, fname+'.dyson.{:d}.cube'.format(i+1), cip[:,i])
         else:
             ints.molden_orbs(myfun.mo_coeff,myfun.mo_occ,myfun.mo_energy)
 

@@ -172,3 +172,25 @@ def get_shells(ncore, spin_coupling):
         for i in range(active_shells[-1]+1):
             shell_indices.append((ncore+np.argwhere(active_shells==i).ravel()).tolist())
     return core_indices, shell_indices
+
+def optimise_order(K, X):
+    norb = K.shape[0]
+    order = np.arange(norb)
+    for it in range(10):
+        sweep_swap = False
+        for i in range(norb):
+            for j in range(i):
+                Knew = K.copy()
+                Knew[[i,j],:] = Knew[[j,i],:]
+                Knew[:,[i,j]] = Knew[:,[j,i]]
+                if(0.5 * np.vdot(Knew-K, X) < -1e-10):
+                    # Swap the orbitals
+                    order[[j,i]] = order[[i,j]]
+                    K[[i,j],:] = K[[j,i],:]
+                    K[:,[i,j]] = K[:,[j,i]]
+                    sweep_swap = True
+
+        if(not sweep_swap):
+            break
+
+    return order

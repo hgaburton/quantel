@@ -122,7 +122,7 @@ class PySCFIntegrals:
                 ndarray : The Coulomb matrix
                 ndarray : The Exchange matrix
         """
-        vJ, vK = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK))
+        vJ, vK = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=0)
         return vJ[0], vK[1]
     
     def build_vxc(self,dma,dmb):

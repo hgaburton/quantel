@@ -6,7 +6,7 @@ import numpy as np
 import scipy, quantel, h5py
 from quantel.utils.csf_utils import get_shells, get_shell_exchange, get_csf_vector
 from quantel.utils.linalg import orthogonalise, stable_eigh, matrix_print
-from quantel.gnme.csf_noci import csf_coupling
+from quantel.gnme.csf_noci import csf_coupling, csf_coupling_slater_condon
 from .wavefunction import Wavefunction
 import time
 
@@ -40,10 +40,6 @@ class GenealogicalCSF(Wavefunction):
                 spin_coupling : genealogical coupling pattern
                 verbose       : verbosity level
         """
-        if(spin_coupling == 'cs'):
-            self.spin_coupling = ''
-        else:
-            self.spin_coupling = spin_coupling
 
         self.verbose       = verbose
         # Initialise integrals object
@@ -62,6 +58,8 @@ class GenealogicalCSF(Wavefunction):
             self.Kscale  = 1.0
         # Control for cache reset
         self.jk_cache_reset = 20
+
+        self.setup_spin_coupling(spin_coupling)
     
     def sanity_check(self):
         '''Need to be run at the start of the kernel to verify that the number of 
@@ -78,20 +76,11 @@ class GenealogicalCSF(Wavefunction):
         # Check number of occupied orbitals doesn't exceed total number of orbitals
         if(self.nocc > self.nmo):
             raise ValueError("Number of inactive and active orbitals must be <= total number of orbitals")
-                             
 
-    def initialise(self, mo_guess, spin_coupling=None, mat_ci=None, integrals=True):
-        """ Initialise the CSF object with a set of MO coefficients"""
-        if(spin_coupling is None):
-            spin_coupling = self.spin_coupling
+    def setup_spin_coupling(self, spin_coupling): 
+
         if(spin_coupling == 'cs'):
             spin_coupling = ''
-
-        # Orthogonalise the MO coefficients
-        mo_guess      = orthogonalise(mo_guess, self.integrals.overlap_matrix())        
-        if(mo_guess.shape[1] != self.nmo):
-            raise ValueError("Number of orbitals in MO coefficient matrix is incorrect")
-        self.mo_coeff = mo_guess
 
         # Get active space definition
         self.nopen   = len(spin_coupling)
@@ -120,12 +109,23 @@ class GenealogicalCSF(Wavefunction):
         self.beta   = get_shell_exchange(self.ncore,self.shell_indices, self.spin_coupling)
         self.nshell = len(self.shell_indices)
 
+    def initialise(self, mo_guess, spin_coupling=None, mat_ci=None, integrals=True):
+        """ Initialise the CSF object with a set of MO coefficients"""
+        if(spin_coupling is None):
+            spin_coupling = self.spin_coupling
+        self.setup_spin_coupling(spin_coupling)
+
+        # Orthogonalise the MO coefficients
+        mo_guess      = orthogonalise(mo_guess, self.integrals.overlap_matrix())        
+        if(mo_guess.shape[1] != self.nmo):
+            raise ValueError("Number of orbitals in MO coefficient matrix is incorrect")
+        self.mo_coeff = mo_guess
+
         # Save mapping indices for unique orbital rotations
         self.frozen     = None
         self.rot_idx    = self.uniq_var_indices(self.frozen)
         self.invariant  = self.invariant_indices()
         self.nrot       = np.sum(self.rot_idx)
-        print(list(get_csf_vector(self.spin_coupling)))
 
         # Initialise integrals
         self.jk_cache = 0
@@ -415,6 +415,7 @@ class GenealogicalCSF(Wavefunction):
     def hamiltonian(self, them):
         """ Compute the Hamiltonian coupling between two CSF objects
         """
+        return csf_coupling_slater_condon(self, them, self.integrals)
         n2 = self.nbsf * self.nbsf
         hcore = self.integrals.oei_matrix(True)
         eri   = self.integrals.tei_array().reshape((n2,n2))
@@ -426,27 +427,22 @@ class GenealogicalCSF(Wavefunction):
         """Get a guess for the molecular orbital coefficients"""
         h1e = self.integrals.oei_matrix(True)
         s = self.integrals.overlap_matrix()
-        
-        if(method.lower() == "core"):
-            # Use core Hamiltonian as guess
-            hguess = h1e.copy()
 
+        if(method.lower() == "core"):
+            from quantel.utils.orbital_guess import core_guess
+            Cguess = core_guess(self.integrals)
         elif(method.lower() == "gwh"):
-            # Build GWH guess Hamiltonian
-            K = 1.75
-            
-            hguess = np.zeros((self.nbsf,self.nbsf))
-            for i in range(self.nbsf):
-                for j in range(self.nbsf):
-                    hguess[i,j] = 0.5 * (h1e[i,i] + h1e[j,j]) * s[i,j]
-                    if(i!=j):
-                        hguess[i,j] *= 1.75
-            
+            from quantel.utils.orbital_guess import gwh_guess
+            Cguess = gwh_guess(self.integrals, K=1.75)
+        elif(method.lower() == "avas"):
+            from quantel.utils.orbital_guess import get_avas
+            Cguess = get_avas(self.integrals, self.exchange_matrix)
+        elif(method.lower() == "rohf"):
+            from quantel.utils.orbital_guess import rohf_local_guess
+            Cguess = rohf_local_guess(self.integrals, self.exchange_matrix)
         else:
             raise NotImplementedError(f"Orbital guess method {method} not implemented")
         
-        # Solve initial generalised eigenvalue problem
-        e, Cguess = scipy.linalg.eigh(hguess, s)
         self.initialise(Cguess, spin_coupling=self.spin_coupling)
 
     def restore_last_step(self):
@@ -463,6 +459,7 @@ class GenealogicalCSF(Wavefunction):
         self.save_last_step()
         self.rotate_orb(step[:self.nrot])
         self.update_integrals()
+        np.set_printoptions(precision=6,suppress=True,linewidth=2000,edgeitems=1000)
 
     def rotate_orb(self, step):
         """ Rotate molecular orbital coefficients with a step"""
@@ -750,7 +747,8 @@ class GenealogicalCSF(Wavefunction):
                 mask[frozen] = mask[:, frozen] = False
         return mask
 
-    def koopmans(self):
+
+    def koopmans(self,ntarget=20):
         """
         Solve IP using Koopmans theory
         """
@@ -758,10 +756,11 @@ class GenealogicalCSF(Wavefunction):
         # Transform gen Fock matrix to MO basis
         gen_fock = self.gen_fock[:self.nocc,:self.nocc]
         gen_dens = np.diag(self.mo_occ[:self.nocc])
-        print(gen_fock)
-        e, v = eigh(gen_fock, gen_dens)
-        print(e)
-        print(v)
+        e, v = eigh(-gen_fock, gen_dens)
+        print(e[:10])
+        print(v[:,:10])
+        Cdyson = self.mo_coeff[:,:self.nocc].dot(v)
+        return e[:ntarget], Cdyson[:,:ntarget]
 
 
     def canonicalize(self):
@@ -802,6 +801,5 @@ class GenealogicalCSF(Wavefunction):
         self.mo_coeff = self.mo_coeff @ Q
         
         # Update generalised Fock matrix and diagonal approximations
-        #self.update_integrals()
         self.gen_fock, self.Ipqpq, self.Ipqqp = self.get_generalised_fock()
         return Q

@@ -84,6 +84,7 @@ class LBFGS:
             # Get energy, gradient and check convergence
             ecur = obj.energy
             grad = obj.gradient
+            rms = np.linalg.norm(grad)/np.sqrt(grad.size)
             conv = np.linalg.norm(grad,ord=np.inf)
             
             if istep > 0 and plev > 0:
