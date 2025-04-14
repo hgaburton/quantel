@@ -128,7 +128,7 @@ class Config(dict):
                                   xc_functional = getvalue(self.lines,"xc_functional",str,False,default=None),
                                   kscale = getvalue(self.lines,"exchange_factor",float,False,default=1.0),
                                   fcidump = getbool(self.lines,"fcidump",False,default=False),
-                                  nohess = getbool(self.lines,"nohess",False,default=False),
+                                  nohess = getbool(self.lines,"nohess",False,default=True),
                                  ) 
         
         if self["jobcontrol"]["guess"] == "random":

@@ -86,7 +86,7 @@ def sym_orthogonalise(mat, metric, thresh=1e-10):
     X = eigvec.dot(np.diag(np.power(eigval,-0.5)))
     return mat.dot(X)
 
-def orthogonalise(mat, metric, thresh=1e-10, fill=True):
+def orthogonalise(mat, metric=None, thresh=1e-10, fill=True):
     '''
     Orthogonalise the columns of mat with respect to the metric tensor.
 
@@ -100,36 +100,43 @@ def orthogonalise(mat, metric, thresh=1e-10, fill=True):
         ndarray: The orthogonalised matrix.
     '''
     nc = mat.shape[1]
+    nr = mat.shape[0]
 
-    if nc < metric.shape[1] and fill:
-        new_mat = 0.0 * metric
+    def inner_prod(a,b):
+        """Inner product function that handles the metric tensor."""
+        if(metric is None):
+            return np.dot(a.conj().T,b)
+        else:
+            return np.dot(a.conj().T,metric.dot(b))
+
+    # Pad the output matrix if requested
+    if(nc < nr and fill):
+        new_mat = np.zeros((nr,nr)) if(metric is None) else np.zeros(metric.shape)
         new_mat[:,:nc] = mat.copy()
         new_mat[:,nc:] = np.random.rand(mat.shape[0],new_mat.shape[1]-nc)
         mat = new_mat
 
-    ortho = reduce(np.dot, (mat.conj().T, metric, mat))
-    ortho_test = np.linalg.norm(ortho - np.identity(ortho.shape[0])) / np.sqrt(ortho.size)
+    # Check the orthogonality
+    ortho = inner_prod(mat,mat)
+    for i in range(nc):
+        ortho[i,i] -= 1.0
+    ortho_test = np.max(np.abs(ortho))
+
+    # If the orthogonality test fails, we need to orthogonalise
     if ortho_test > thresh:
         # First Gram-Schmidt
-        proj = np.zeros(metric.shape)
         for i in range(0,mat.shape[1]):
-            mat[:,i] -= proj.dot(metric.dot(mat[:,i]))
-            norm = reduce(np.dot, (mat[:,i].T, metric, mat[:,i]))
-            mat[:,i] /= np.sqrt(norm)
-            proj     += np.outer(mat[:,i], mat[:,i])
-
+            for j in range(i):
+                mat[:,i] -= mat[:,j] * inner_prod(mat[:,j],mat[:,i])
+            mat[:,i] /= np.sqrt(inner_prod(mat[:,i],mat[:,i]))
         # Second Gram-Schmidt
-        proj = np.zeros(metric.shape)
         for i in range(0,mat.shape[1]):
-            mat[:,i] -= proj.dot(metric.dot(mat[:,i]))
-            norm = reduce(np.dot, (mat[:,i].T, metric, mat[:,i]))
-            mat[:,i] /= np.sqrt(norm)
-            proj     += np.outer(mat[:,i], mat[:,i])
-
+            for j in range(i):
+                mat[:,i] -= mat[:,j] * inner_prod(mat[:,j],mat[:,i])
+            mat[:,i] /= np.sqrt(inner_prod(mat[:,i],mat[:,i]))
         # Double-check the normalisation
         for i in range(mat.shape[1]):
-            norm = reduce(np.dot, (mat[:,i].T, metric, mat[:,i]))
-            mat[:,i] /= np.sqrt(reduce(np.dot, (mat[:,i], metric, mat[:,i])))
+            mat[:,i] /= np.sqrt(inner_prod(mat[:,i],mat[:,i]))
       
     return mat
 

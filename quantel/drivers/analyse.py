@@ -48,7 +48,7 @@ def analyse(ints, config):
 
         # Plot orbitals
         myfun.canonicalize()
-        eip, cip = myfun.koopmans()
+        eip, cip, occip  = myfun.koopmans()
         
         if(config["jobcontrol"]["integrals"]=='pyscf'):
             orbrange=config["jobcontrol"]["analyse"]["orbital_plots"]
@@ -103,7 +103,7 @@ def analyse(ints, config):
             outF.write("  Extended Koopman's theorem IP (eV):\n")
             outF.write("  ----------------------------------------\n")
             for i in range(myfun.nocc):
-                outF.write(" {:5d}  {: 10.4f}\n".format(i+1, 27.2114*eip[i]))
+                outF.write(" {:5d}  {: 10.4f}  {: 10.6f}\n".format(i+1, 27.2114*eip[i], occip[i]))
             #outF.write("\n  ----------------------------------------\n")
             #outF.write("  CI vector:\n")
             #outF.write("  ----------------------------------------\n")

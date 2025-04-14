@@ -793,9 +793,12 @@ class CSF(Wavefunction):
         gen_fock = self.gen_fock[:self.nocc,:self.nocc]
         gen_dens = np.diag(self.mo_occ[:self.nocc])
         e, v = eigh(-gen_fock, gen_dens)
-        Cdyson = self.mo_coeff[:,:self.nocc].dot(v)
-
-        return e, Cdyson
+        # Convert ionization orbitals to AO basis
+        cip = self.mo_coeff[:,:self.nocc].dot(v)
+        # Occupation of ionization orbitals
+        occ = reduce(np.dot, (v.T, np.diag(self.mo_occ[:self.nocc]), v))
+        
+        return e, cip, occ
 
 
     def canonicalize(self):
