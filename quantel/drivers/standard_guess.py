@@ -56,12 +56,13 @@ def standard_guess(ints, config):
 
     # Check the Hessian index
     myfun.canonicalize()
-    myfun.koopmans()
-    myfun.hess_index = (0,0,0)
-    #myfun.get_davidson_hessian_index()
-    hindices = myfun.hess_index
-    if (hindices[0] != target_index) and (target_index is not None):
-        return
+    if config["jobcontrol"]["nohess"]:
+        myfun.hess_index = (0,0,0)        
+    else:
+        myfun.get_davidson_hessian_index()
+        hindices = myfun.hess_index
+        if (hindices[0] != target_index) and (target_index is not None):
+            return 
 
     # Save the solution if it is a new one!
     if config["wavefunction"]["method"] == "esmf":

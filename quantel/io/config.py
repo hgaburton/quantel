@@ -126,7 +126,9 @@ class Config(dict):
                                   print_final = getvalue(self.lines,"print_final",int,False,default=1),
                                   integrals = getvalue(self.lines,"integrals",str,False,default="pyscf").lower(),
                                   xc_functional = getvalue(self.lines,"xc_functional",str,False,default=None),
-                                  kscale = getvalue(self.lines,"exchange_factor",float,False,default=1.0)
+                                  kscale = getvalue(self.lines,"exchange_factor",float,False,default=1.0),
+                                  fcidump = getbool(self.lines,"fcidump",False,default=False),
+                                  nohess = getbool(self.lines,"nohess",False,default=False),
                                  ) 
         
         if self["jobcontrol"]["guess"] == "random":
@@ -162,7 +164,8 @@ class Config(dict):
                                                  )
         if self["jobcontrol"]["analyse"]:
             self["jobcontrol"]["analyse"] = dict(states = getlist(self.lines,"states",str,False,default=["all"]),
-                                                 orbital_plots = getlist(self.lines, "orbital_plots",int,True)
+                                                 orbital_plots = getlist(self.lines, "orbital_plots",int,True),
+                                                 dyson_plots = getvalue(self.lines,"dyson_plots",str,False,default=10),
                                                 )
         
         # Job control for computing oscillator strengths

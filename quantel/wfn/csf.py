@@ -211,6 +211,15 @@ class CSF(Wavefunction):
         np.fill_diagonal(Xb,0)
         return Xb[self.ncore:,self.ncore:]
 
+    @property 
+    def dipole(self):
+        """ Compute the dipole moment of the current wave function"""
+        # Get the dipole integrals
+        nucl_dip, ao_dip = self.integrals.dipole_matrix()
+        # Return the combination
+        return nucl_dip - np.einsum('xij,ji->x',ao_dip,self.dj)
+
+
     def print(self,verbose=1):
         """ Print details about the state energy and orbital coefficients
 
@@ -774,7 +783,7 @@ class CSF(Wavefunction):
         return mask
 
 
-    def koopmans(self,ntarget=20):
+    def koopmans(self):
         """
         Solve IP using Koopmans theory
         """
@@ -786,7 +795,7 @@ class CSF(Wavefunction):
         e, v = eigh(-gen_fock, gen_dens)
         Cdyson = self.mo_coeff[:,:self.nocc].dot(v)
 
-        return e[:ntarget], Cdyson[:,:ntarget]
+        return e, Cdyson
 
 
     def canonicalize(self):
