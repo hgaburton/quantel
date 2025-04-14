@@ -100,6 +100,11 @@ def main():
     elif config["jobcontrol"]["ovlp_mat"]:
         overlap(wfnlist)
 
+    if config["jobcontrol"]["fcidump"]:
+        for i, wfn in enumerate(wfnlist):
+            tag = "{:04d}".format(i+1)
+            wfn.write_fcidump(tag)
+
 
     # Clean up
     end_time = time.monotonic()
