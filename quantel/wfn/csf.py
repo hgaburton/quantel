@@ -796,7 +796,7 @@ class CSF(Wavefunction):
         # Convert ionization orbitals to AO basis
         cip = self.mo_coeff[:,:self.nocc].dot(v)
         # Occupation of ionization orbitals
-        occ = reduce(np.dot, (v.T, np.diag(self.mo_occ[:self.nocc]), v))
+        occ = v.T @ (np.diag(self.mo_occ[:self.nocc]) @ v)
         
         return e, cip, occ
 
