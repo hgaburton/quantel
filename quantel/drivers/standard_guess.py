@@ -66,6 +66,8 @@ def standard_guess(ints, config):
     # Save the solution if it is a new one!
     if config["wavefunction"]["method"] == "esmf":
         myfun.canonicalize()
+    myfun.print(config["jobcontrol"]["print_final"])
+
     # Get the prefix for this solution
     count += 1
     tag = "0001"
