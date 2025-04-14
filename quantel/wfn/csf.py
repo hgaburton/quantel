@@ -349,6 +349,21 @@ class CSF(Wavefunction):
             F.write(f"{self.energy:18.12f} {hindices[0]:5d} {hindices[1]:5d} {self.s2:12.6f} {self.spin_coupling:s}\n")
         return 
 
+    def write_fcidump(self, tag):
+        """ Write an FCIDUMP file for the current CSF object """
+        if(not (type(self.integrals) is quantel.ints.pyscf_integrals.PySCFIntegrals)):
+            raise ValueError("FCIDUMP file can only be written for PySCF integrals")
+        
+        # Write the FCIDUMP using PySCF
+        from pyscf.tools import fcidump
+        mol = self.integrals.molecule().copy()
+        mol.spin = int(2 * self.sz)
+        fcidump.from_mo(mol, tag+'.fcid', self.mo_coeff, ms=self.sz)
+
+        # Write the CI vector dump
+        from quantel.utils.ci_utils import write_cidump
+        write_cidump(get_csf_vector(self.spin_coupling),self.ncore,self.nbsf,tag+'_civec.txt')
+
     def read_from_orca(self,json_file):
         """ Read a set of CSF coefficients from ORCA gbw file.
             This requires the orca_2json executable to be available and spin_coupling 
@@ -764,13 +779,13 @@ class CSF(Wavefunction):
         Solve IP using Koopmans theory
         """
         from scipy.linalg import eigh
+
         # Transform gen Fock matrix to MO basis
         gen_fock = self.gen_fock[:self.nocc,:self.nocc]
         gen_dens = np.diag(self.mo_occ[:self.nocc])
         e, v = eigh(-gen_fock, gen_dens)
-        print(e[:10])
-        print(v[:,:10])
         Cdyson = self.mo_coeff[:,:self.nocc].dot(v)
+
         return e[:ntarget], Cdyson[:,:ntarget]
 
 
