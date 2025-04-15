@@ -466,6 +466,9 @@ class CSF(Wavefunction):
         elif(method.lower() == "rohf"):
             from quantel.utils.orbital_guess import rohf_local_guess
             Cguess = rohf_local_guess(self.integrals, self.exchange_matrix)
+        elif(method.lower() == "fromfile"):
+            from quantel.utils.orbital_guess import coeff_from_file
+            Cguess = coeff_from_file(self.integrals, self.exchange_matrix)
         else:
             raise NotImplementedError(f"Orbital guess method {method} not implemented")
         
@@ -545,6 +548,15 @@ class CSF(Wavefunction):
             shell = [1+i-self.ncore for i in self.shell_indices[Ishell]]
             dk[Ishell+1] += np.einsum('vpq->pq',vd[shell])
         return dj, dk, vd
+
+    def get_spin_density(self):
+        """ Compute the alfa and beta density matrices"""
+        dm_tmp = np.einsum('kpq->pq',self.dk[1:])
+        rho_a, rho_b = 0.5 * self.dk[0], 0.5 * self.dk[0]
+        if(self.nopen > 0):
+            rho_a += (0.5 + self.sz / self.nopen) * dm_tmp
+            rho_b += (0.5 - self.sz / self.nopen) * dm_tmp
+        return rho_a, rho_b
 
 
     def get_JK_matrices(self, vd):
@@ -788,17 +800,18 @@ class CSF(Wavefunction):
         Solve IP using Koopmans theory
         """
         from scipy.linalg import eigh
-
         # Transform gen Fock matrix to MO basis
         gen_fock = self.gen_fock[:self.nocc,:self.nocc]
         gen_dens = np.diag(self.mo_occ[:self.nocc])
         e, v = eigh(-gen_fock, gen_dens)
-        # Convert ionization orbitals to AO basis
+        # Normalize ionization orbitals wrt standard metric
+        for i in range(self.nocc):
+            v[:,i] /= np.linalg.norm(v[:,i])
+        # Convert ionization orbitals to MO basis
         cip = self.mo_coeff[:,:self.nocc].dot(v)
-        # Occupation of ionization orbitals
-        occ = v.T @ (np.diag(self.mo_occ[:self.nocc]) @ v)
-        
-        return e, cip, occ
+        # Compute occupation of ionization orbitals
+        occip = np.diag(np.einsum('ip,i,iq->pq',v,self.mo_occ[:self.nocc],v))   
+        return e, cip, occip
 
 
     def canonicalize(self):

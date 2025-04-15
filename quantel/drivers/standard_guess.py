@@ -57,7 +57,8 @@ def standard_guess(ints, config):
     # Check the Hessian index
     myfun.canonicalize()
     if config["jobcontrol"]["nohess"]:
-        myfun.hess_index = (0,0,0)        
+        myfun.hess_index = (0,0,0) 
+        hindices = myfun.hess_index       
     else:
         myfun.get_davidson_hessian_index()
         hindices = myfun.hess_index
