@@ -47,7 +47,7 @@ def random_search(ints, config):
         ref_ci = numpy.identity(WFN(ints, **wfnconfig).ndet)
         ndet = ref_ci.shape[1]
     elif config["wavefunction"]["method"] == "csf":
-        from quantel.wfn.csf import GenealogicalCSF as WFN
+        from quantel.wfn.csf import CSF as WFN
     elif config["wavefunction"]["method"] == "rhf":
         from quantel.wfn.rhf import RHF as WFN
     else:
@@ -101,11 +101,13 @@ def random_search(ints, config):
 
         # Check the Hessian index
         myfun.canonicalize()
-        #myfun.get_davidson_hessian_index()
-        myfun.hess_index = [0,0,0]
-        hindices = myfun.hess_index
-        if (hindices[0] != target_index) and (target_index is not None):
-            continue
+        if config["jobcontrol"]["nohess"]:
+            myfun.hess_index = (0,0,0)        
+        else:
+            myfun.get_davidson_hessian_index()
+            hindices = myfun.hess_index
+            if (hindices[0] != target_index) and (target_index is not None):
+                continue
         
         # Compare solution against previously found states
         new = True

@@ -53,6 +53,8 @@ class LBFGS:
         # Extract key parameters
         max_subspace = self.control["max_subspace"]
         dim = obj.dim
+        if(dim == 0): return True
+
 
         if plev>0:
             print(f"    > Num. MOs       = {obj.nmo: 6d}")
@@ -81,6 +83,7 @@ class LBFGS:
             # Get energy, gradient and check convergence
             ecur = obj.energy
             grad = obj.gradient
+            rms = np.linalg.norm(grad)/np.sqrt(grad.size)
             conv = np.linalg.norm(grad,ord=np.inf)
             
             if istep > 0 and plev > 0:

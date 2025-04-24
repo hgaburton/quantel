@@ -20,7 +20,7 @@ def from_file(ints, config):
         from quantel.wfn.ss_casscf import SS_CASSCF as WFN
         ref_ci = numpy.identity(WFN(ints, **wfnconfig).ndet)
     elif config["wavefunction"]["method"] == "csf":
-        from quantel.wfn.csf import GenealogicalCSF as WFN
+        from quantel.wfn.csf import CSF as WFN
     elif config["wavefunction"]["method"] == "rhf":
         from quantel.wfn.rhf import RHF as WFN
 
@@ -65,11 +65,14 @@ def from_file(ints, config):
 
             # Check the Hessian index
             myfun.canonicalize()
-            #myfun.get_davidson_hessian_index()
-            myfun.hess_index = (0,0,0)
-            hindices = myfun.hess_index
-            if (hindices[0] != target_index) and (target_index is not None):
-                continue
+            if config["jobcontrol"]["nohess"]:
+                myfun.hess_index = (0,0,0)     
+                hindices = myfun.hess_index   
+            else:
+                myfun.get_davidson_hessian_index()
+                hindices = myfun.hess_index
+                if (hindices[0] != target_index) and (target_index is not None):
+                    continue
 
             # Compare solution against previously found states
             new = True
@@ -81,6 +84,7 @@ def from_file(ints, config):
 
             # Save the solution if it is a new one!
             if new: 
+                
                 if config["wavefunction"]["method"] == "esmf":
                     myfun.canonicalize()
                 # Get the prefix for this solution

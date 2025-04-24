@@ -3,10 +3,12 @@
 # This is code for a CSF, which can be formed in a variety of ways.
 import numpy as np
 import scipy, quantel, h5py
-from quantel.utils.csf_utils import get_shells, get_shell_exchange
+from quantel.utils.csf_utils import get_shells, get_shell_exchange, get_csf_vector
 from quantel.utils.linalg import orthogonalise, stable_eigh, matrix_print
-from quantel.gnme.csf_noci import csf_coupling
+from quantel.gnme.csf_noci import csf_coupling, csf_coupling_slater_condon
 from .wavefunction import Wavefunction
+from quantel.utils.csf_utils import csf_reorder_orbitals
+from quantel.utils.orbital_guess import orbital_guess
 
 def flag_transport(A,T,mask,max_order=50,tol=1e-4):
    tA = A.copy()
@@ -38,11 +40,7 @@ class CSF(Wavefunction):
                 spin_coupling : genealogical coupling pattern
                 verbose       : verbosity level
         """
-        if(spin_coupling == 'cs'):
-            self.spin_coupling = ''
-        else:
-            self.spin_coupling = spin_coupling
-
+        # How noisy am I?
         self.verbose       = verbose
         # Initialise integrals object
         self.integrals  = integrals
@@ -58,6 +56,10 @@ class CSF(Wavefunction):
         else:
             self.with_xc = False
             self.Kscale  = 1.0
+        # Control for cache reset
+        self.jk_cache_reset = 20
+
+        self.setup_spin_coupling(spin_coupling)
     
     def sanity_check(self):
         '''Need to be run at the start of the kernel to verify that the number of 
@@ -74,20 +76,11 @@ class CSF(Wavefunction):
         # Check number of occupied orbitals doesn't exceed total number of orbitals
         if(self.nocc > self.nmo):
             raise ValueError("Number of inactive and active orbitals must be <= total number of orbitals")
-                             
 
-    def initialise(self, mo_guess, spin_coupling=None, mat_ci=None, integrals=True):
-        """ Initialise the CSF object with a set of MO coefficients"""
-        if(spin_coupling is None):
-            spin_coupling = self.spin_coupling
+    def setup_spin_coupling(self, spin_coupling): 
+
         if(spin_coupling == 'cs'):
             spin_coupling = ''
-
-        # Orthogonalise the MO coefficients
-        mo_guess      = orthogonalise(mo_guess, self.integrals.overlap_matrix())        
-        if(mo_guess.shape[1] != self.nmo):
-            raise ValueError("Number of orbitals in MO coefficient matrix is incorrect")
-        self.mo_coeff = mo_guess
 
         # Get active space definition
         self.nopen   = len(spin_coupling)
@@ -116,6 +109,18 @@ class CSF(Wavefunction):
         self.beta   = get_shell_exchange(self.ncore,self.shell_indices, self.spin_coupling)
         self.nshell = len(self.shell_indices)
 
+    def initialise(self, mo_guess, spin_coupling=None, mat_ci=None, integrals=True):
+        """ Initialise the CSF object with a set of MO coefficients"""
+        if(spin_coupling is None):
+            spin_coupling = self.spin_coupling
+        self.setup_spin_coupling(spin_coupling)
+
+        # Orthogonalise the MO coefficients
+        mo_guess      = orthogonalise(mo_guess, self.integrals.overlap_matrix())        
+        if(mo_guess.shape[1] != self.nmo):
+            raise ValueError("Number of orbitals in MO coefficient matrix is incorrect")
+        self.mo_coeff = mo_guess
+
         # Save mapping indices for unique orbital rotations
         self.frozen     = None
         self.rot_idx    = self.uniq_var_indices(self.frozen)
@@ -123,6 +128,7 @@ class CSF(Wavefunction):
         self.nrot       = np.sum(self.rot_idx)
 
         # Initialise integrals
+        self.jk_cache = 0
         if (integrals): self.update_integrals()
 
     def deallocate(self):
@@ -207,13 +213,22 @@ class CSF(Wavefunction):
         np.fill_diagonal(Xb,0)
         return Xb[self.ncore:,self.ncore:]
 
+    @property 
+    def dipole(self):
+        """ Compute the dipole moment of the current wave function"""
+        # Get the dipole integrals
+        nucl_dip, ao_dip = self.integrals.dipole_matrix()
+        # Return the combination
+        return nucl_dip - np.einsum('xij,ji->x',ao_dip,self.dj)
+
+
     def print(self,verbose=1):
         """ Print details about the state energy and orbital coefficients
 
             Inputs:
                 verbose : level of verbosity
                           0 = No output
-                          1 = Print energy components and spin
+                          1 = Print energy components and spinao2mo
                           2 = Print energy components, spin, and exchange matrices
                           3 = Print energy components, spin, exchange matrices, and occupied orbital coefficients
                           4 = Print energy components, spin, exchange matrices, and all orbital coefficients
@@ -243,17 +258,17 @@ class CSF(Wavefunction):
         """ Compute the approximate Hess * vec product using forward finite difference """
         # Get current gradient
         g0 = self.gradient.copy()
-        # Save current position
-        mo_save = self.mo_coeff.copy()
+
         # Get forward gradient
-        self.take_step(eps * vec)
-        g1 = self.gradient.copy()
-        # Restore to origin
-        self.mo_coeff = mo_save.copy()
-        self.update_integrals()
+        # First copy CSF but don't initialise integrals
+        them = self.copy(integrals=False)
+        # Take step (this will evaluate necessary integrals)
+        them.take_step(eps * vec)
+        g1 = them.gradient.copy()
         # Parallel transport back to current position
         g1 = self.transform_vector(g1, - eps * vec)
-        # Get approximation to H @ sk
+        
+        # Return approximation to H @ sk
         return (g1 - g0) / eps
 
     def hess_on_vec(self, vec):
@@ -345,6 +360,21 @@ class CSF(Wavefunction):
             F.write(f"{self.energy:18.12f} {hindices[0]:5d} {hindices[1]:5d} {self.s2:12.6f} {self.spin_coupling:s}\n")
         return 
 
+    def write_fcidump(self, tag):
+        """ Write an FCIDUMP file for the current CSF object """
+        if(not (type(self.integrals) is quantel.ints.pyscf_integrals.PySCFIntegrals)):
+            raise ValueError("FCIDUMP file can only be written for PySCF integrals")
+        
+        # Write the FCIDUMP using PySCF
+        from pyscf.tools import fcidump
+        mol = self.integrals.molecule().copy()
+        mol.spin = int(2 * self.sz)
+        fcidump.from_mo(mol, tag+'.fcid', self.mo_coeff, ms=self.sz)
+
+        # Write the CI vector dump
+        from quantel.utils.ci_utils import write_cidump
+        write_cidump(get_csf_vector(self.spin_coupling),self.ncore,self.nbsf,tag+'_civec.txt')
+
     def read_from_orca(self,json_file):
         """ Read a set of CSF coefficients from ORCA gbw file.
             This requires the orca_2json executable to be available and spin_coupling 
@@ -395,10 +425,10 @@ class CSF(Wavefunction):
         return
 
 
-    def copy(self):
+    def copy(self,integrals=True):
         """Return a copy of the current object"""
         newcsf = CSF(self.integrals, self.spin_coupling, verbose=self.verbose)
-        newcsf.initialise(self.mo_coeff,spin_coupling=self.spin_coupling)
+        newcsf.initialise(self.mo_coeff,spin_coupling=self.spin_coupling,integrals=integrals)
         return newcsf
 
 
@@ -412,6 +442,7 @@ class CSF(Wavefunction):
     def hamiltonian(self, them):
         """ Compute the Hamiltonian coupling between two CSF objects
         """
+        return csf_coupling_slater_condon(self, them, self.integrals)
         n2 = self.nbsf * self.nbsf
         hcore = self.integrals.oei_matrix(True)
         eri   = self.integrals.tei_array().reshape((n2,n2))
@@ -420,37 +451,17 @@ class CSF(Wavefunction):
         return csf_coupling(self, them, ovlp, hcore, eri, enuc)
     
 
-    def get_orbital_guess(self, method="gwh"):
+    def get_orbital_guess(self, method="gwh",avas_ao_labels=None,reorder=True):
         """Get a guess for the molecular orbital coefficients"""
-        h1e = self.integrals.oei_matrix(True)
-        s = self.integrals.overlap_matrix()
-        
-        if(method.lower() == "core"):
-            # Use core Hamiltonian as guess
-            hguess = h1e.copy()
-            e, Cguess = scipy.linalg.eigh(hguess, s)
+        # Get the guess for the molecular orbital coefficients
+        Cguess = orbital_guess(self.integrals,method,avas_ao_labels=avas_ao_labels,rohf_ms=0.5*self.nopen)
 
-        elif(method.lower() == "gwh"):
-            # Build GWH guess Hamiltonian
-            K = 1.75
-            
-            hguess = np.zeros((self.nbsf,self.nbsf))
-            for i in range(self.nbsf):
-                for j in range(self.nbsf):
-                    hguess[i,j] = 0.5 * (h1e[i,i] + h1e[j,j]) * s[i,j]
-                    if(i!=j):
-                        hguess[i,j] *= 1.75
-            e, Cguess = scipy.linalg.eigh(hguess, s)
+        # Optimise the order of the CSF orbitals and return
+        if(reorder):
+            Cguess[:,self.ncore:self.nocc] = csf_reorder_orbitals(self.integrals,self.exchange_matrix,
+                                                                  np.copy(Cguess[:,self.ncore:self.nocc]))
 
-        elif(method.lower() == "read"):
-            # Read guess from file
-            with h5py.File('guess.hdf5','r') as F:
-                Cguess = F['mo_coeff'][:]
-
-        else:
-            raise NotImplementedError(f"Orbital guess method {method} not implemented")
-        
-        # Solve initial generalised eigenvalue problem
+        # Initialise the CSF object with the guess coefficients.
         self.initialise(Cguess, spin_coupling=self.spin_coupling)
 
 
@@ -527,6 +538,15 @@ class CSF(Wavefunction):
             dk[Ishell+1] += np.einsum('vpq->pq',vd[shell])
         return dj, dk, vd
 
+    def get_spin_density(self):
+        """ Compute the alfa and beta density matrices"""
+        dm_tmp = np.einsum('kpq->pq',self.dk[1:])
+        rho_a, rho_b = 0.5 * self.dk[0], 0.5 * self.dk[0]
+        if(self.nopen > 0):
+            rho_a += (0.5 + self.sz / self.nopen) * dm_tmp
+            rho_b += (0.5 - self.sz / self.nopen) * dm_tmp
+        return rho_a, rho_b
+
 
     def get_JK_matrices(self, vd):
         ''' Compute the JK matrices and diagonal two-electron integrals
@@ -542,8 +562,31 @@ class CSF(Wavefunction):
                 Ipqpq: Diagonal elements of J matrix
                 Ipqqp: Diagonal elements of K matrix
         '''
-        # Call integrals object to build J and K matrices
-        self.vJ, self.vK = self.integrals.build_multiple_JK(vd,vd,self.nopen+1,self.nopen+1)
+        # Implement difference fock build
+        # NOTE PySCF does not include incremental JK build, but this is still useful 
+        # if we work with DFT functionals
+        if(self.jk_cache % self.jk_cache_reset == 0):
+            # Save current density to the cache
+            self.vd_cache = vd.copy()
+            # Build the integrals
+            self.vJ, self.vK = self.integrals.build_multiple_JK(vd,vd,self.nopen+1,self.nopen+1)
+            # Save integrals to cache
+            self.vJ_cache = self.vJ.copy()
+            self.vK_cache = self.vK.copy()
+        else:
+            # Compute differences
+            vd_diff = vd - self.vd_cache
+            vJ_diff, vK_diff = self.integrals.build_multiple_JK(
+                                      vd_diff,vd_diff,self.nopen+1,self.nopen+1)
+            # Compute full values
+            self.vJ = self.vJ_cache + vJ_diff
+            self.vK = self.vK_cache + vK_diff
+            # Update the cache
+            self.vd_cache = vd.copy()
+            self.vJ_cache = self.vJ.copy()
+            self.vK_cache = self.vK.copy()
+        self.jk_cache += 1
+
         # Get the total J matrix
         J = np.einsum('kpq->pq',self.vJ)
         # Get exchange matrices for each shell
@@ -739,6 +782,26 @@ class CSF(Wavefunction):
                 frozen = np.asarray(frozen)
                 mask[frozen] = mask[:, frozen] = False
         return mask
+
+
+    def koopmans(self):
+        """
+        Solve IP using Koopmans theory
+        """
+        from scipy.linalg import eigh
+        # Transform gen Fock matrix to MO basis
+        gen_fock = self.gen_fock[:self.nocc,:self.nocc]
+        gen_dens = np.diag(self.mo_occ[:self.nocc])
+        e, v = eigh(-gen_fock, gen_dens)
+        # Normalize ionization orbitals wrt standard metric
+        for i in range(self.nocc):
+            v[:,i] /= np.linalg.norm(v[:,i])
+        # Convert ionization orbitals to MO basis
+        cip = self.mo_coeff[:,:self.nocc].dot(v)
+        # Compute occupation of ionization orbitals
+        occip = np.diag(np.einsum('ip,i,iq->pq',v,self.mo_occ[:self.nocc],v))   
+        return e, cip, occip
+
 
     def canonicalize(self):
         """

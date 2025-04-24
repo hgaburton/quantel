@@ -47,7 +47,9 @@ def standard_guess(ints, config):
 
     # Initialise optimisation object
     myfun = WFN(ints, **wfnconfig)
-    myfun.get_orbital_guess(method=config["jobcontrol"]["guess_method"])
+    myfun.get_orbital_guess(method=config["jobcontrol"]["guess_method"],
+                            avas_ao_labels=config["jobcontrol"]["avas_ao_labels"],
+                            reorder=config["jobcontrol"]["csf_reorder"])
 
     # Run the optimisation
     myopt = OPT(**optconfig)
@@ -56,15 +58,20 @@ def standard_guess(ints, config):
 
     # Check the Hessian index
     myfun.canonicalize()
-    myfun.hess_index = (0,0,0)
-    #myfun.get_davidson_hessian_index()
-    hindices = myfun.hess_index
-    if (hindices[0] != target_index) and (target_index is not None):
-        return
+    if config["jobcontrol"]["nohess"]:
+        myfun.hess_index = (0,0,0) 
+        hindices = myfun.hess_index       
+    else:
+        myfun.get_davidson_hessian_index()
+        hindices = myfun.hess_index
+        if (hindices[0] != target_index) and (target_index is not None):
+            return 
 
     # Save the solution if it is a new one!
     if config["wavefunction"]["method"] == "esmf":
         myfun.canonicalize()
+    myfun.print(config["jobcontrol"]["print_final"])
+
     # Get the prefix for this solution
     count += 1
     tag = "0001"

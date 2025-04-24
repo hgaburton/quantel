@@ -57,7 +57,7 @@ class Davidson:
         else:
             assert(xguess.shape[1] == n)
             K = xguess.copy()
-        K = orthogonalise(K,np.identity(dim),fill=False)
+        K = orthogonalise(K,fill=False)
 
         # Initialise HK vectors
         HK = np.empty((dim, 0))

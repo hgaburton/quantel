@@ -172,3 +172,78 @@ def get_shells(ncore, spin_coupling):
         for i in range(active_shells[-1]+1):
             shell_indices.append((ncore+np.argwhere(active_shells==i).ravel()).tolist())
     return core_indices, shell_indices
+
+def optimise_order(K, X):
+    """
+    Discrete (local) optimisation of the open-shell orbital ordering through orbital swaps. 
+    This algorithm is designed to quickly minimise the exchange energy, but is not guaranteed 
+    to find the global minimum.
+        Input:
+            K : Matrix of exchange integrals in the active orbital space <pq|qp>
+            X : Matrix of exchange coupling terms Xpq
+        Returns:
+            order : Optimised orbital ordering
+    """
+    norb = K.shape[0]
+    order = np.arange(norb)
+    for it in range(10):
+        sweep_swap = False
+        for i in range(norb):
+            for j in range(i):
+                Knew = K.copy()
+                Knew[[i,j],:] = Knew[[j,i],:]
+                Knew[:,[i,j]] = Knew[:,[j,i]]
+                if(0.5 * np.vdot(Knew-K, X) < -1e-10):
+                    # Swap the orbitals
+                    order[[j,i]] = order[[i,j]]
+                    K[[i,j],:] = K[[j,i],:]
+                    K[:,[i,j]] = K[:,[j,i]]
+                    sweep_swap = True
+
+        # If we have not made any further swaps, we are done.
+        if(not sweep_swap):
+            break
+
+    return order
+
+def csf_reorder_orbitals(integrals, exchange_matrix, cinit, pop_method='becke'):  
+    """
+    Optimise the order of the CSF orbitals using the exchange matrix 
+    to minimise the exchange energy
+        Input:
+            integrals : Integrals object
+            exchange_matrix : Exchange coupling matrix for the CSF
+            cinit    : Initial open-shell orbitals
+        Returns:
+            copt     : Optimised orbital guess
+    """
+    from pyscf import scf, lo
+
+    # Get the number of open-shell orbitals
+    nopen = cinit.shape[1]
+    if(exchange_matrix.shape[0] != nopen):
+        raise RuntimeError("  Number of CSF orbitals does not match number of open-shell orbitals")
+
+    # Access the PySCF molecule object
+    pymol = integrals.molecule()
+
+    # Localise the active orbitals
+    print("  Localising open-shell orbitals")
+    pm = lo.PM(pymol, cinit, scf.ROHF(pymol))
+    pm.pop_method = pop_method
+    cactive = pm.kernel()
+
+    # Get exchange integrals in active orbital space
+    print("  Computing localised orbital exchange integrals")
+    vdm = np.einsum('pi,qi->ipq',cinit,cinit)
+    vJ, vK = integrals.build_multiple_JK(vdm,vdm,nopen,nopen)
+    # Transform to MO basis
+    K = np.einsum('pmn,mq,nq->pq',vK,cinit,cinit)
+
+    # These are the active exchange integrals in chemists order (pq|rs)
+    print("  Optimising order of open-shell orbitals")
+    order = optimise_order(K, exchange_matrix)
+
+    # Save initial guess and return
+    copt = cinit[:,order].copy()
+    return copt

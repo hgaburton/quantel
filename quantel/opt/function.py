@@ -142,7 +142,8 @@ class Function(metaclass=ABCMeta):
 
         while True:
             # Get lowest eigenvalues through Davidson algorithm
-            eigs, x = david.run(self.approx_hess_on_vec,diag,nv,xguess=x,tol=1e-4,maxit=1000,Hv_args=dict(eps=1e-5))
+            eigs, x = david.run(self.approx_hess_on_vec,diag,nv,
+                                xguess=x,plev=2,tol=1e-4,maxit=1000,Hv_args=dict(eps=1e-5))
             if(np.any(eigs > 0)):
                 # We have found the first positive eigenvalue, so we can break
                 break

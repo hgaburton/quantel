@@ -104,6 +104,22 @@ class PySCFIntegrals:
         """Return the orthogonalisation matrix"""
         return self.X
     
+    def dipole_matrix(self,origin=None):
+        """Return the dipole matrix"""
+        if origin is None:
+            origin = np.zeros(3)
+        else:
+            origin = np.asarray(origin, dtype=np.float64)
+
+        # Get nuclear dipole    
+        charges = self.mol.atom_charges()
+        coords  = self.mol.atom_coords()
+        nucl_dip = np.einsum('i,ix->x',charges,coords - origin[None,:])
+
+        # Get AO dipole matrices
+        ao_dip = self.mol.intor_symmetric('int1e_r', comp=3)
+        return nucl_dip, ao_dip 
+
     def build_fock(self,dm):
         """ Build the Fock matrix
             Args:
@@ -130,7 +146,7 @@ class PySCFIntegrals:
                 ndarray : The Coulomb matrix
                 ndarray : The Exchange matrix
         """
-        vJ, vK = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK))
+        vJ, vK = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=0)
         return vJ[0], vK[1]
     
     def build_JK(self,dm):
