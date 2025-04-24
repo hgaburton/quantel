@@ -3,6 +3,7 @@
 import sys, re, numpy, glob
 from pyscf import gto
 from pyscf.tools import cubegen
+import quantel
 
 def analyse(ints, config):
     """Analyse either all the states or a given state"""
@@ -42,8 +43,6 @@ def analyse(ints, config):
         myfun.read_from_disk(fname)
         # Store dipole and quadrupole
         dip  = myfun.dipole
-        
-        #quit()
         #quad = myfun.quadrupole
 
         # Plot orbitals
@@ -57,11 +56,12 @@ def analyse(ints, config):
             if(len(orbrange)>0):
                 for i in range(myfun.nocc+orbrange[0], myfun.nocc+orbrange[1]):
                     cubegen.orbital(ints.mol, fname+'.mo.{:d}.cube'.format(i+1), myfun.mo_coeff[:,i])
-            
-            for i in range(myfun.nshell+1):
-                cubegen.density(ints.mol, fname+'.shell.{:d}.cube'.format(i), myfun.dk[i])
-            open_dens = numpy.einsum('ipq->pq', myfun.dk[1:])
-            cubegen.density(ints.mol, fname+'.open.cube', open_dens)
+
+            if(type(myfun) is quantel.wfn.csf.CSF):
+                for i in range(myfun.nshell+1):
+                    cubegen.density(ints.mol, fname+'.shell.{:d}.cube'.format(i), myfun.dk[i])
+                open_dens = numpy.einsum('ipq->pq', myfun.dk[1:])
+                cubegen.density(ints.mol, fname+'.open.cube', open_dens)
 
             for i in range(dysonorbs):
                 cubegen.orbital(ints.mol, fname+'.dyson.{:d}.cube'.format(i+1), cip[:,i])

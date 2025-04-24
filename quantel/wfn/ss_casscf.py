@@ -6,7 +6,7 @@ import scipy.special
 import h5py # type: ignore
 import quantel
 from functools import reduce
-from quantel.utils.linalg import orthogonalise
+from quantel.utils.linalg import orthogonalise, matrix_print
 from quantel.gnme.cas_noci import cas_coupling
 from .wavefunction import Wavefunction
 from quantel.ints.pyscf_integrals import PySCF_MO_Integrals, PySCF_CIspace
@@ -135,15 +135,16 @@ class SS_CASSCF(Wavefunction):
     @property
     def dipole(self):
         '''Compute the dipole vector'''
-        raise NotImplementedError("Dipole computation not implemented")
-        #ncore, nocc = self.ncore, self.ncore + self.cas_nmo
+        ncore, nocc = self.ncore, self.ncore + self.cas_nmo
+        # Get the dipole integrals
+        nucl_dip, ao_dip = self.integrals.dipole_matrix()
         # Transform dipole matrices to MO basis
-        #dip_mo = np.einsum('xpq,pm,qn->xmn', self.dip_mat, self.mo_coeff, self.mo_coeff)
+        dip_mo = np.einsum('xpq,pm,qn->xmn', ao_dip, self.mo_coeff, self.mo_coeff)
         # Nuclear and core contributions
-        #dip = self.dip_nuc + 2*np.einsum('ipp->i', dip_mo[:,:ncore,:ncore]) 
+        dip = nucl_dip + 2*np.einsum('ipp->i', dip_mo[:,:ncore,:ncore]) 
         # Active space contribution
-        #dip += np.einsum('ipq,pq->i', dip_mo[:,ncore:nocc,ncore:nocc], self.dm1_cas)
-        #return dip
+        dip += np.einsum('ipq,pq->i', dip_mo[:,ncore:nocc,ncore:nocc], self.dm1_cas)
+        return dip
 
     @property
     def quadrupole(self):
@@ -174,6 +175,37 @@ class SS_CASSCF(Wavefunction):
         H_OrbCI  = self.get_hessianOrbCI()[self.rot_idx,:]
         return np.block([[H_OrbOrb, H_OrbCI],
                          [H_OrbCI.T, H_CICI]])
+
+    
+    def print(self,verbose=1):
+        """ Print details about the state energy and orbital coefficients
+
+            Inputs:
+                verbose : level of verbosity
+                          0 = No output
+                          1 = Print energy components and spinao2mo
+                          2 = Print energy components, spin, and exchange matrices
+                          3 = Print energy components, spin, exchange matrices, and occupied orbital coefficients
+                          4 = Print energy components, spin, exchange matrices, and all orbital coefficients
+                          5 = Print energy components, spin, exchange matrices, generalised Fock matrix, and all orbital coefficients 
+        """
+        print("verbose = ", verbose)
+        if(verbose > 0):
+            print("\n ---------------------------------------------")
+            print(f"         Total Energy = {self.energy:14.8f} Eh")
+            print(" ---------------------------------------------")
+            print(f"        <Sz> = {self.sz:5.2f}")
+            print(f"        <S2> = {self.s2:5.2f}")
+    
+        if(verbose > 1):
+            matrix_print(self.mo_coeff[:,:self.nocc], title="Occupied Orbital Coefficients")
+        if(verbose > 2):
+            matrix_print(self.mat_ci[:,[0]], title="CI Coefficients")
+        if(verbose > 3):
+            matrix_print(self.mo_coeff[:,self.nocc:], title="Virtual Orbital Coefficients", offset=self.nocc)
+        if(verbose > 4):
+            matrix_print(self.gen_fock[:self.nocc,:].T, title="Generalised Fock Matrix (MO basis)")
+        print()
 
     def save_to_disk(self,tag):
         """Save a SS-CASSCF object to disk with prefix 'tag'"""
@@ -308,6 +340,9 @@ class SS_CASSCF(Wavefunction):
         # Sigma vector in active space
         civec    = self.mat_ci[:,0].copy()
         self.sigma = self.ham @ civec
+
+        # Generalised Fock matrix
+        self.gen_fock = self.get_gen_fock(self.dm1_cas, self.dm2_cas, False)
         return 
 
     def restore_last_step(self):
@@ -352,6 +387,10 @@ class SS_CASSCF(Wavefunction):
         S       = np.zeros((self.ndet,self.ndet))
         S[1:,0] = step
         self.mat_ci = np.dot(self.mat_ci, scipy.linalg.expm(S - S.T))
+
+    def transform_vector(self,vec,step,X):
+        # No parallel transport as not yet implemented.
+        return vec
 
     def get_casrdm_12(self):
         """ Compute the 1- and 2-electron reduced density matrices in the active space.
@@ -451,8 +490,8 @@ class SS_CASSCF(Wavefunction):
 
     def get_orbital_gradient(self):
         """ Build the orbital rotation part of the gradient"""
-        g_orb = self.get_gen_fock(self.dm1_cas, self.dm2_cas, False)
-        return (g_orb - g_orb.T)[self.rot_idx]
+        #g_orb = self.get_gen_fock(self.dm1_cas, self.dm2_cas, False)
+        return (self.gen_fock - self.gen_fock.T)[self.rot_idx]
 
     def get_ci_gradient(self):
         """ Build the CI component of the gradient"""
@@ -586,6 +625,30 @@ class SS_CASSCF(Wavefunction):
                     self.mat_ci[:,1:], self.ham - self.energy * np.identity(self.ndet), self.mat_ci[:,1:], optimize="optimal")
         else: 
             return np.zeros((0,0))
+
+    
+    def koopmans(self):
+        """
+        Solve IP using Koopmans theory
+        """
+        from scipy.linalg import eigh
+        # Transform gen Fock matrix to MO basis
+        gen_fock = self.gen_fock[:self.nocc,:self.nocc]
+        # Compute the density matrix in occupied space
+        gen_dens = np.zeros((self.nocc,self.nocc))
+        gen_dens[:self.ncore,:self.ncore] = np.eye(self.ncore)*2
+        gen_dens[self.ncore:,self.ncore:] = self.dm1_cas
+        # Solve the generalized eigenvalue problem
+        e, v = eigh(-gen_fock, gen_dens)
+        # Normalize ionization orbitals wrt standard metric
+        for i in range(self.nocc):
+            v[:,i] /= np.linalg.norm(v[:,i])
+        # Convert ionization orbitals to MO basis
+        cip = self.mo_coeff[:,:self.nocc].dot(v)
+        # Compute occupation of ionization orbitals
+        occip = np.diag(np.einsum('ip,ij,jq->pq',v,gen_dens,v))   
+        return e, cip, occip
+
 
     def canonicalize(self):
         """Canonicalise the natural orbitals and CI coefficients"""
