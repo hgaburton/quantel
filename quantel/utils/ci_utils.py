@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 import numpy as np
 
-def write_cidump(civec, ncore, nbsf, filename):
+def write_cidump(civec, ncore, nbsf, filename,thresh=1e-10):
     """ Write a CI vector dump file from CI vector
 
         Input:
@@ -35,7 +35,8 @@ def write_cidump(civec, ncore, nbsf, filename):
         beta_bs = '0b'+(''.join(map(str,beta_occ)))[::-1]
 
         # Write to file
-        outF.write(f'{alfa_bs}  {beta_bs}  {det[1]:20.16f}\n')
+        if(abs(det[1]) > thresh):
+            outF.write(f'{alfa_bs}  {beta_bs}  {det[1]:20.16f}\n')
 
     # Close output file
     outF.close()

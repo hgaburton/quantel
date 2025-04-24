@@ -60,6 +60,8 @@ def analyse(ints, config):
             
             for i in range(myfun.nshell+1):
                 cubegen.density(ints.mol, fname+'.shell.{:d}.cube'.format(i), myfun.dk[i])
+            open_dens = numpy.einsum('ipq->pq', myfun.dk[1:])
+            cubegen.density(ints.mol, fname+'.open.cube', open_dens)
 
             for i in range(dysonorbs):
                 cubegen.orbital(ints.mol, fname+'.dyson.{:d}.cube'.format(i+1), cip[:,i])

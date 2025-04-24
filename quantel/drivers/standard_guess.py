@@ -47,7 +47,9 @@ def standard_guess(ints, config):
 
     # Initialise optimisation object
     myfun = WFN(ints, **wfnconfig)
-    myfun.get_orbital_guess(method=config["jobcontrol"]["guess_method"])
+    myfun.get_orbital_guess(method=config["jobcontrol"]["guess_method"],
+                            avas_ao_labels=config["jobcontrol"]["avas_ao_labels"],
+                            reorder=config["jobcontrol"]["csf_reorder"])
 
     # Run the optimisation
     myopt = OPT(**optconfig)

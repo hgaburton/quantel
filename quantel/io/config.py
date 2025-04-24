@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 import numpy
-from .parser import getvalue, getlist, getbool
+from .parser import getvalue, getlist, getbool, getstrlist
 
 class Config(dict):
     def __init__(self, fname):
@@ -137,7 +137,6 @@ class Config(dict):
                                                 init_scf_cycles = getvalue(self.lines,"init_scf_cycles",int,False,default=500),
                                                 mo_rot_range= getvalue(self.lines,"mo_rot_range",float,False,default=numpy.pi)
                                                )
-
         elif self["jobcontrol"]["guess"] == "fromfile":
             self["jobcontrol"]["read_dir"] = getlist(self.lines,"read_dir",str,True)
         
@@ -154,6 +153,8 @@ class Config(dict):
             self["jobcontrol"]["linesearch_nopt"] = getvalue(self.lines,"linesearch_nopt",int,False,default=5)
         elif self["jobcontrol"]["guess"] == "standard":
             self["jobcontrol"]["guess_method"] = getvalue(self.lines,"guess_method",str,False,default="core")
+            self["jobcontrol"]["avas_ao_labels"] = getstrlist(self.lines,"avas_ao_labels",False,default=None)
+            self["jobcontrol"]["csf_reorder"] = getbool(self.lines,"csf_reorder",False,default=True)
         else:
             errstr = "'"+self["jobcontrol"]["guess"]+"' is not a valid option for keyword 'guess'"
             raise ValueError(errstr)

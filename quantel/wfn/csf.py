@@ -7,6 +7,8 @@ from quantel.utils.csf_utils import get_shells, get_shell_exchange, get_csf_vect
 from quantel.utils.linalg import orthogonalise, stable_eigh, matrix_print
 from quantel.gnme.csf_noci import csf_coupling, csf_coupling_slater_condon
 from .wavefunction import Wavefunction
+from quantel.utils.csf_utils import csf_reorder_orbitals
+from quantel.utils.orbital_guess import orbital_guess
 
 def flag_transport(A,T,mask,max_order=50,tol=1e-4):
    tA = A.copy()
@@ -38,7 +40,7 @@ class CSF(Wavefunction):
                 spin_coupling : genealogical coupling pattern
                 verbose       : verbosity level
         """
-
+        # How noisy am I?
         self.verbose       = verbose
         # Initialise integrals object
         self.integrals  = integrals
@@ -226,7 +228,7 @@ class CSF(Wavefunction):
             Inputs:
                 verbose : level of verbosity
                           0 = No output
-                          1 = Print energy components and spin
+                          1 = Print energy components and spinao2mo
                           2 = Print energy components, spin, and exchange matrices
                           3 = Print energy components, spin, exchange matrices, and occupied orbital coefficients
                           4 = Print energy components, spin, exchange matrices, and all orbital coefficients
@@ -256,17 +258,17 @@ class CSF(Wavefunction):
         """ Compute the approximate Hess * vec product using forward finite difference """
         # Get current gradient
         g0 = self.gradient.copy()
-        # Save current position
-        mo_save = self.mo_coeff.copy()
+
         # Get forward gradient
-        self.take_step(eps * vec)
-        g1 = self.gradient.copy()
-        # Restore to origin
-        self.mo_coeff = mo_save.copy()
-        self.update_integrals()
+        # First copy CSF but don't initialise integrals
+        them = self.copy(integrals=False)
+        # Take step (this will evaluate necessary integrals)
+        them.take_step(eps * vec)
+        g1 = them.gradient.copy()
         # Parallel transport back to current position
         g1 = self.transform_vector(g1, - eps * vec)
-        # Get approximation to H @ sk
+        
+        # Return approximation to H @ sk
         return (g1 - g0) / eps
 
     def hess_on_vec(self, vec):
@@ -423,10 +425,10 @@ class CSF(Wavefunction):
         return
 
 
-    def copy(self):
+    def copy(self,integrals=True):
         """Return a copy of the current object"""
         newcsf = CSF(self.integrals, self.spin_coupling, verbose=self.verbose)
-        newcsf.initialise(self.mo_coeff,spin_coupling=self.spin_coupling)
+        newcsf.initialise(self.mo_coeff,spin_coupling=self.spin_coupling,integrals=integrals)
         return newcsf
 
 
@@ -449,30 +451,17 @@ class CSF(Wavefunction):
         return csf_coupling(self, them, ovlp, hcore, eri, enuc)
     
 
-    def get_orbital_guess(self, method="gwh"):
+    def get_orbital_guess(self, method="gwh",avas_ao_labels=None,reorder=True):
         """Get a guess for the molecular orbital coefficients"""
-        h1e = self.integrals.oei_matrix(True)
-        s = self.integrals.overlap_matrix()
-        
-        if(method.lower() == "core"):
-            from quantel.utils.orbital_guess import core_guess
-            Cguess = core_guess(self.integrals)
-        elif(method.lower() == "gwh"):
-            from quantel.utils.orbital_guess import gwh_guess
-            Cguess = gwh_guess(self.integrals, K=1.75)
-        elif(method.lower() == "avas"):
-            from quantel.utils.orbital_guess import get_avas
-            Cguess = get_avas(self.integrals, self.exchange_matrix)
-        elif(method.lower() == "rohf"):
-            from quantel.utils.orbital_guess import rohf_local_guess
-            Cguess = rohf_local_guess(self.integrals, self.exchange_matrix)
-        elif(method.lower() == "fromfile"):
-            from quantel.utils.orbital_guess import coeff_from_file
-            Cguess = coeff_from_file(self.integrals, self.exchange_matrix)
-        else:
-            raise NotImplementedError(f"Orbital guess method {method} not implemented")
-        
-        # Solve initial generalised eigenvalue problem
+        # Get the guess for the molecular orbital coefficients
+        Cguess = orbital_guess(self.integrals,method,avas_ao_labels=avas_ao_labels,rohf_ms=0.5*self.nopen)
+
+        # Optimise the order of the CSF orbitals and return
+        if(reorder):
+            Cguess[:,self.ncore:self.nocc] = csf_reorder_orbitals(self.integrals,self.exchange_matrix,
+                                                                  np.copy(Cguess[:,self.ncore:self.nocc]))
+
+        # Initialise the CSF object with the guess coefficients.
         self.initialise(Cguess, spin_coupling=self.spin_coupling)
 
 

@@ -1,50 +1,38 @@
 from pyscf.mcscf import avas
 import numpy as np
-from pyscf import scf, lo, ao2mo
-from quantel.utils.csf_utils import optimise_order
+from pyscf import scf
 import scipy.linalg, h5py
 
-def coeff_from_file(integrals,exchange_matrix,filename="guess.hdf5"):
 
-    # Get the number of open-shell orbitals
-    nopen = exchange_matrix.shape[0]
-    # Create new high-spin PySCF molecule
-    pymol = integrals.molecule()
-    nelec = pymol.nalfa() + pymol.nbeta()
-    ncore = (nelec - nopen) // 2
-    
+def coeff_from_file(filename="guess.hdf5"):
+    """
+    Read the initial orbital guess from a file
+        Input:
+            filename : Name of the file to read
+        Returns:
+            cguess   : Initial orbital guess
+    """
     # Read the coefficients from the file
     print(f"  Reading initial coefficients from {filename}")
     with h5py.File(filename,'r') as F:
-        cguess = F['mo_coeff'][:]
-    
-    # Localise the active orbitals
-    print("  Localising open-shell orbitals")
-    cactive = np.copy(cguess[:,ncore:ncore+nopen])
-    pm = lo.PM(pymol, cactive, scf.ROHF(pymol))
-    pm.pop_method = 'becke'
-    cactive = pm.kernel()
+        return F['mo_coeff'][:]
 
-    # Get exchange integrals in active orbital space
-    print("  Computing localised orbital exchange integrals")
-    vdm = np.einsum('pi,qi->ipq',cactive,cactive)
-    vJ, vK = integrals.build_multiple_JK(vdm,vdm,nopen,nopen)
-    # Transform to MO basis
-    K = np.einsum('pmn,mq,nq->pq',vK,cactive,cactive)
 
-    # These are the active exchange integrals in chemists order (pq|rs)
-    print("  Optimising order of open-shell orbitals")
-    order = optimise_order(K, exchange_matrix)
+def get_avas(integrals, ao_labels,ms=0):
+    """
+    Get initial orbital guess using AVAS method with predetermined AO labels
+        Input:
+            integrals : Integrals object
+            ao_labels : List of atomic orbital labels
+        Returns:
+            Cguess    : Initial orbital guess
+    """
+    if(ao_labels is None):
+        raise RuntimeError("No atomic orbital labels provided for AVAS method")
 
-    # Save initial guess and return
-    return cguess
-
-def get_avas(integrals, exchange_matrix):
-    # Get the number of open-shell orbitals
-    ncas = exchange_matrix.shape[0]
     # Create new high-spin PySCF molecule
     pymol = integrals.molecule().copy(deep=True)
-    pymol.ms = 0.5 * ncas
+    pymol.ms = ms
 
     # Run the high-spin ROHF calculation in PySCF
     mf = scf.ROHF(pymol).newton()
@@ -54,56 +42,25 @@ def get_avas(integrals, exchange_matrix):
     print(f"  High-spin ROHF energy: {mf.e_tot:.10f}")
     
     # Set AO labels
-    ao_labels = ['Fe 3d']
     avas_obj = avas.AVAS(mf,ao_labels,canonicalize=True)
     avas_obj.kernel()
-    if(avas_obj.nelecas != ncas):
+    if(avas_obj.nelecas != int(2*ms)):
         raise RuntimeError("  Number of AVAS electrons does not match number of CSF orbitals")
 
-    nelec = pymol.nalfa() + pymol.nbeta()
-    ncore = (nelec - avas_obj.nelecas) // 2
-    ncas = avas_obj.ncas
+    return avas_obj.mo_coeff.copy()
 
-    cguess  = avas_obj.mo_coeff.copy()
-    cactive = cguess[:,ncore:ncore+ncas]
-    
-    # Localise the active orbitals
-    print("  Localising open-shell orbitals")
-    pm = lo.PM(pymol, cactive, mf)
-    pm.pop_method = 'becke'
-    cactive = pm.kernel()
 
-    # Get exchange integrals in active orbital space
-    print("  Computing localised orbital exchange integrals")
-    vdm = np.einsum('pi,qi->ipq',cactive,cactive)
-    vJ, vK = integrals.build_multiple_JK(vdm,vdm,nact,nact)
-    # Transform to MO basis
-    K = np.einsum('pmn,mq,nq->pq',vK,cactive,cactive)
-
-    # These are the active exchange integrals in chemists order (pq|rs)
-    print("  Optimising order of open-shell orbitals")
-    order = optimise_order(K, exchange_matrix)
-
-    # Save initial guess and return
-    cguess = mf.mo_coeff.copy()
-    cguess[:,mf.mo_occ==1] = cactive[:,order]
-    return cguess
-
-def rohf_local_guess(integrals, exchange_matrix):
+def rohf_local_guess(integrals,ms=0):
     """
-    Get initial orbital guess for CSF method using high-spin ROHF 
-    orbitals that are localised to minimise the exchange energy
+    Get initial orbital guess using high-spin ROHF orbitals
         Input:
             integrals : Integrals object
-            exchange_matrix : Exchange coupling matrix for the CSF
         Returns:
             Cguess    : Initial orbital guess
     """
-    # Get the number of open-shell orbitals
-    ncas = exchange_matrix.shape[0]
     # Create new high-spin PySCF molecule
     pymol = integrals.molecule().copy(deep=True)
-    pymol.ms = 0.5 * ncas
+    pymol.ms = ms
 
     # Run the high-spin ROHF calculation in PySCF
     mf = scf.ROHF(pymol).newton()
@@ -111,30 +68,8 @@ def rohf_local_guess(integrals, exchange_matrix):
     mf.max_cycle = 500
     mf.kernel()
     print(f"  High-spin ROHF energy: {mf.e_tot:.10f}")
+    return mf.mo_coeff.copy()
 
-    # Localise the open-shell orbitals using Pipek-Mezey
-    print("  Localising open-shell orbitals")
-    cactive = mf.mo_coeff[:,mf.mo_occ==1]
-    pm = lo.PM(pymol, cactive, mf)
-    pm.pop_method = 'becke'
-    cactive = pm.kernel()
-    nact = cactive.shape[1]
-
-    # Get exchange integrals in active orbital space
-    print("  Computing localised orbital exchange integrals")
-    vdm = np.einsum('pi,qi->ipq',cactive,cactive)
-    vJ, vK = integrals.build_multiple_JK(vdm,vdm,nact,nact)
-    # Transform to MO basis
-    K = np.einsum('pmn,mq,nq->pq',vK,cactive,cactive)
-
-    # These are the active exchange integrals in chemists order (pq|rs)
-    print("  Optimising order of open-shell orbitals")
-    order = optimise_order(K, exchange_matrix)
-
-    # Save initial guess and return
-    cguess = mf.mo_coeff.copy()
-    cguess[:,mf.mo_occ==1] = cactive[:,order]
-    return cguess
 
 def core_guess(integrals):
     """
@@ -172,3 +107,34 @@ def gwh_guess(integrals, K=1.75):
                 hguess[i,j] *= 1.75
     # Solve initial generalised eigenvalue problem
     return scipy.linalg.eigh(hguess, s)[1]
+
+
+def orbital_guess(integrals, method="gwh", avas_ao_labels=None, gwh_K=1.75, rohf_ms=0):
+    """
+    Get initial orbital guess using different methods
+        Input:
+            integrals : Integrals object
+            method    : Method to use for initial guess
+            avas_ao_labels : List of atomic orbital labels (for AVAS method only)
+        Returns:
+            Cguess    : Initial orbital guess
+    """
+    if(method.lower() == "core"):
+        from quantel.utils.orbital_guess import core_guess
+        Cguess = core_guess(integrals)
+    elif(method.lower() == "gwh"):
+        from quantel.utils.orbital_guess import gwh_guess
+        Cguess = gwh_guess(integrals,K=gwh_K)
+    elif(method.lower() == "avas"):
+        from quantel.utils.orbital_guess import get_avas
+        Cguess = get_avas(integrals,avas_ao_labels,ms=rohf_ms)
+    elif(method.lower() == "rohf"):
+        from quantel.utils.orbital_guess import rohf_local_guess
+        Cguess = rohf_local_guess(integrals,ms=rohf_ms)
+    elif(method.lower() == "fromfile"):
+        from quantel.utils.orbital_guess import coeff_from_file
+        Cguess = coeff_from_file(integrals)
+    else:
+        raise NotImplementedError(f"Orbital guess method {method} not implemented")
+    
+    return Cguess
