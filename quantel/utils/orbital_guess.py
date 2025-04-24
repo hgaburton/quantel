@@ -133,7 +133,7 @@ def orbital_guess(integrals, method="gwh", avas_ao_labels=None, gwh_K=1.75, rohf
         Cguess = rohf_local_guess(integrals,ms=rohf_ms)
     elif(method.lower() == "fromfile"):
         from quantel.utils.orbital_guess import coeff_from_file
-        Cguess = coeff_from_file(integrals)
+        Cguess = coeff_from_file()
     else:
         raise NotImplementedError(f"Orbital guess method {method} not implemented")
     
