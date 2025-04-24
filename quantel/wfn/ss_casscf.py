@@ -9,6 +9,8 @@ from functools import reduce
 from quantel.utils.linalg import orthogonalise
 from quantel.gnme.cas_noci import cas_coupling
 from .wavefunction import Wavefunction
+from quantel.ints.pyscf_integrals import PySCF_MO_Integrals, PySCF_CIspace
+
 
 class SS_CASSCF(Wavefunction):
     """
@@ -30,13 +32,10 @@ class SS_CASSCF(Wavefunction):
                 ncore: number of core electrons
                 verbose: verbosity level
         """
-
         # Initialise integrals object
         self.integrals  = integrals
         self.nalfa      = integrals.molecule().nalfa()
         self.nbeta      = integrals.molecule().nbeta()
-        # Initialise molecular integrals object
-        self.mo_ints    = quantel.MOintegrals(integrals)
         # Get number of basis functions and linearly independent orbitals
         self.nbsf       = integrals.nbsf()
         self.nmo        = integrals.nmo()
@@ -51,7 +50,8 @@ class SS_CASSCF(Wavefunction):
 
         # Get number of core electrons
         if ncore is None:
-            self.ncore = integrals.molecule().nelec() - self.cas_nalfa - self.cas_nbeta
+            ne = integrals.molecule().nalfa() + integrals.molecule().nbeta()
+            self.ncore = ne - self.cas_nalfa - self.cas_nbeta
             if(self.ncore % 2 != 0):
                 raise ValueError("Number of core electrons must be even")
             if(self.ncore < 0):
@@ -63,9 +63,14 @@ class SS_CASSCF(Wavefunction):
         self.nocc       = self.ncore + self.cas_nmo
         self.sanity_check()
 
-        # Initialise CI space
-        self.cispace    = quantel.CIspace(self.mo_ints, self.cas_nmo, self.cas_nalfa, self.cas_nbeta)
-        self.cispace.initialize('FCI')
+        # Initialise mo integrals and CI space
+        if(type(integrals) is quantel.ints.pyscf_integrals.PySCFIntegrals):
+            self.mo_ints    = PySCF_MO_Integrals(integrals)
+            self.cispace    = PySCF_CIspace(self.mo_ints, self.cas_nmo, self.cas_nalfa, self.cas_nbeta)
+        else:
+            self.mo_ints    = quantel.MOintegrals(integrals)
+            self.cispace    = quantel.CIspace(self.mo_ints, self.cas_nmo, self.cas_nalfa, self.cas_nbeta)
+            self.cispace.initialize('FCI')
 
         # Get number of determinants
         self.ndeta      = (scipy.special.comb(self.cas_nmo,self.cas_nalfa)).astype(int)
@@ -302,7 +307,7 @@ class SS_CASSCF(Wavefunction):
         self.ham = self.cispace.build_Hmat()
         # Sigma vector in active space
         civec    = self.mat_ci[:,0].copy()
-        self.sigma = self.cispace.H_on_vec(civec)
+        self.sigma = self.ham @ civec
         return 
 
     def restore_last_step(self):
@@ -584,22 +589,12 @@ class SS_CASSCF(Wavefunction):
 
     def canonicalize(self):
         """Canonicalise the natural orbitals and CI coefficients"""
-        # Save the old energy
-        eold = self.energy
-        # Compute the natural orbitals
-        occ, u = np.linalg.eigh(-self.dm1_cas)
-        # Update the orbitals and integrals
-        self.mo_coeff[:,self.ncore:self.nocc] = self.mo_coeff[:,self.ncore:self.nocc] @ u
-        self.update_integrals()
-        
-        # For now, we update the CI coefficients by just re-diagonalising the Hamiltonian
-        # TODO: Perform the transformation directly from the orbital rotation to avoid any 
-        #       issues with degeneracies
-        enew, self.mat_ci = np.linalg.eigh(self.ham)
-        n = np.argwhere(abs(enew - eold)<1e-6).flatten()[0]
-        self.mat_ci[:,[0,n]] = self.mat_ci[:,[n,0]]
-        self.update_integrals()
+        # TODO: Implement canonicalisation of SS-CASSCF state
         return
+    
+    def get_preconditioner(self):
+        # TODO: Implement a preconditioner for approximate inverse Hessian
+        return np.ones(self.dim)
 
     def uniq_var_indices(self, frozen):
         """ Create a mask indicating the non-redundant orbital rotations.
