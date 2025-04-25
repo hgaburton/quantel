@@ -231,7 +231,7 @@ def csf_reorder_orbitals(integrals, exchange_matrix, cinit, pop_method='becke'):
     print("  Localising open-shell orbitals")
     pm = lo.PM(pymol, cinit, scf.ROHF(pymol))
     pm.pop_method = pop_method
-    cactive = pm.kernel()
+    cinit = pm.kernel()
 
     # Get exchange integrals in active orbital space
     print("  Computing localised orbital exchange integrals")

@@ -9,6 +9,7 @@ from quantel.gnme.csf_noci import csf_coupling, csf_coupling_slater_condon
 from .wavefunction import Wavefunction
 from quantel.utils.csf_utils import csf_reorder_orbitals
 from quantel.utils.orbital_guess import orbital_guess
+from pyscf.tools import cubegen
 
 def flag_transport(A,T,mask,max_order=50,tol=1e-4):
    tA = A.copy()
@@ -53,6 +54,7 @@ class CSF(Wavefunction):
         if(type(integrals) is quantel.ints.pyscf_integrals.PySCFIntegrals):
             self.with_xc = (integrals.xc is not None)
             self.Kscale  = integrals.kscale 
+            self.with_pyscf = True
         else:
             self.with_xc = False
             self.Kscale  = 1.0
@@ -463,6 +465,7 @@ class CSF(Wavefunction):
 
         # Initialise the CSF object with the guess coefficients.
         self.initialise(Cguess, spin_coupling=self.spin_coupling)
+        return
 
 
     def restore_last_step(self):
