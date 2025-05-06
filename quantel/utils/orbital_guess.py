@@ -15,7 +15,7 @@ def coeff_from_file(filename="guess.hdf5"):
     # Read the coefficients from the file
     print(f"  Reading initial coefficients from {filename}")
     with h5py.File(filename,'r') as F:
-        return F['mo_coeff'][:]
+        return np.copy(F['mo_coeff'][:])
 
 
 def get_avas(integrals, ao_labels,ms=0):

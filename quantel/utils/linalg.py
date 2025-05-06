@@ -109,6 +109,14 @@ def orthogonalise(mat, metric=None, thresh=1e-10, fill=True):
         else:
             return np.dot(a.conj().T,metric.dot(b))
 
+    def norm(v):
+        """Get the norm of a vector for different metric tensor"""
+        if(metric is None):
+            return np.sqrt(np.dot(v.conj().T,v))
+        else:
+            return np.sqrt(np.dot(v.conj().T,metric.dot(v)))
+
+
     # Pad the output matrix if requested
     if(nc < nr and fill):
         new_mat = np.zeros((nr,nr)) if(metric is None) else np.zeros(metric.shape)
@@ -123,21 +131,30 @@ def orthogonalise(mat, metric=None, thresh=1e-10, fill=True):
     ortho_test = np.max(np.abs(ortho))
 
     # If the orthogonality test fails, we need to orthogonalise
+    (nrow, ncol) = mat.shape
     if ortho_test > thresh:
+        # First multiply to get S_v, speeds up later projection
+        Sv = mat if (metric is None) else metric @ mat
         # First Gram-Schmidt
-        for i in range(0,mat.shape[1]):
+        for i in range(0,ncol):
+            vi  = mat[:,i]
+            Svi = Sv[:,i]
             for j in range(i):
-                mat[:,i] -= mat[:,j] * inner_prod(mat[:,j],mat[:,i])
-            mat[:,i] /= np.sqrt(inner_prod(mat[:,i],mat[:,i]))
+                vj = mat[:,j]
+                vi -= vj * np.dot(vj.conj().T, Svi)
+            vi /= norm(vi)
         # Second Gram-Schmidt
-        for i in range(0,mat.shape[1]):
+        for i in range(0,ncol):
+            vi  = mat[:,i]
+            Svi = Sv[:,i]
             for j in range(i):
-                mat[:,i] -= mat[:,j] * inner_prod(mat[:,j],mat[:,i])
-            mat[:,i] /= np.sqrt(inner_prod(mat[:,i],mat[:,i]))
+                vj = mat[:,j]
+                vi -= vj * np.dot(vj.conj().T, Svi)
+            vi /= norm(vi)
         # Double-check the normalisation
-        for i in range(mat.shape[1]):
-            mat[:,i] /= np.sqrt(inner_prod(mat[:,i],mat[:,i]))
-      
+        for i in range(ncol):
+            mat[:,i] /= norm(mat[:,i])
+
     return mat
 
 def matrix_print(M, title=None, ncols=6, offset=0):
