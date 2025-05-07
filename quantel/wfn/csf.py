@@ -58,8 +58,6 @@ class CSF(Wavefunction):
         else:
             self.with_xc = False
             self.Kscale  = 1.0
-        # Control for cache reset
-        self.jk_cache_reset = 20
 
         self.setup_spin_coupling(spin_coupling)
     
@@ -130,7 +128,6 @@ class CSF(Wavefunction):
         self.nrot       = np.sum(self.rot_idx)
 
         # Initialise integrals
-        self.jk_cache = 0
         if (integrals): self.update_integrals()
 
     def deallocate(self):
@@ -565,30 +562,8 @@ class CSF(Wavefunction):
                 Ipqpq: Diagonal elements of J matrix
                 Ipqqp: Diagonal elements of K matrix
         '''
-        # Implement difference fock build
-        # NOTE PySCF does not include incremental JK build, but this is still useful 
-        # if we work with DFT functionals
-        if(self.jk_cache % self.jk_cache_reset == 0):
-            # Save current density to the cache
-            self.vd_cache = vd.copy()
-            # Build the integrals
-            self.vJ, self.vK = self.integrals.build_multiple_JK(vd,vd,self.nopen+1,self.nopen+1)
-            # Save integrals to cache
-            self.vJ_cache = self.vJ.copy()
-            self.vK_cache = self.vK.copy()
-        else:
-            # Compute differences
-            vd_diff = vd - self.vd_cache
-            vJ_diff, vK_diff = self.integrals.build_multiple_JK(
-                                      vd_diff,vd_diff,self.nopen+1,self.nopen+1)
-            # Compute full values
-            self.vJ = self.vJ_cache + vJ_diff
-            self.vK = self.vK_cache + vK_diff
-            # Update the cache
-            self.vd_cache = vd.copy()
-            self.vJ_cache = self.vJ.copy()
-            self.vK_cache = self.vK.copy()
-        self.jk_cache += 1
+        # Build the integrals
+        self.vJ, self.vK = self.integrals.build_multiple_JK(vd,vd,self.nopen+1,self.nopen+1)
 
         # Get the total J matrix
         J = np.einsum('kpq->pq',self.vJ)
