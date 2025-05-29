@@ -1,13 +1,13 @@
 #!/usr/bin/python3
 import numpy as np
 
-def write_cidump(civec, ncore, nbsf, filename,thresh=1e-10):
+def write_cidump(civec, ncore, nmo, filename,thresh=1e-10):
     """ Write a CI vector dump file from CI vector
 
         Input:
             civec: list of tuples (det, ci) where det is the determinant string and ci is the CI coefficient
             ncore: number of core orbitals
-            nbsf: number of basis functions
+            nmo  : number of molecular orbitals
             filename: name of the output file
     """ 
     # Open output file for writing
@@ -16,8 +16,8 @@ def write_cidump(civec, ncore, nbsf, filename,thresh=1e-10):
     # Loop over CI vector
     for det in civec:
         # Initialise occupation vectors
-        alfa_occ = np.zeros(nbsf,dtype=int)
-        beta_occ = np.zeros(nbsf,dtype=int)
+        alfa_occ = np.zeros(nmo,dtype=int)
+        beta_occ = np.zeros(nmo,dtype=int)
 
         # Get occupation of core orbitals
         alfa_occ[:ncore] = 1

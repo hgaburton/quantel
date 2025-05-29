@@ -26,11 +26,6 @@ class ArbitraryCI:
         return self.cispace.ndet()
     
     @property
-    def nmo(self):
-        """ Number of orbitals in the CI space."""
-        return self.cispace.nmo()
-    
-    @property
     def nelec(self):
         """ Number of electrons in the CI space."""
         return (self.cispace.nalfa(), self.cispace.nbeta())
@@ -48,7 +43,19 @@ class ArbitraryCI:
         self.eigval, self.eigvec = davidson.run(self.H_on_vec, self.Hd, nroots, 
                                                 xguess=xguess, maxit=maxit, tol=tol, plev=verbose)
         return self.eigval, self.eigvec
-    
+
+    def get_det_index(self, occstr):
+        return self.cispace.get_det_index(quantel.Determinant(occstr))
+
+    def write_cidump(self,tag,civec=None):
+        # Write the CI vector dump
+        from quantel.utils.ci_utils import write_cidump
+        if civec is None:
+            vec = list(zip(self.cispace.get_det_list(),self.eigvec[:,0]))
+        else:
+            vec = list(zip(self.cispace.get_det_list(),civec))
+        write_cidump(vec,self.ncore,self.nmo,tag+'_civec.txt')
+
     def get_hamiltonian(self):
         """
         Get the Hamiltonian matrix of the CI problem.
@@ -66,9 +73,11 @@ class FCI(ArbitraryCI):
         # Save mo_ints object
         self.mo_ints = mo_ints
         # Number of core orbitals
-        self.ncore = mo_ints.nmo() - mo_ints.nact()
+        self.ncore = mo_ints.ncore()
         # Number of correlated orbitals
         self.nact = mo_ints.nact()
+        # Number of molecular orbitals
+        self.nmo = mo_ints.nmo()
         # Number of electrons
         self.nalfa = nelec[0]
         self.nbeta = nelec[1]

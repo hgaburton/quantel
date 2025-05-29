@@ -70,7 +70,7 @@ def main():
         if(config["jobcontrol"]["xc_functional"] is not None):
             raise ValueError("Libint does not support the use of XC functionals")
         mol = Molecule(config["molecule"]["atom"], config["molecule"]["unit"])
-        ints = LibintInterface(config["molecule"]["basis"],mol,True)
+        ints = LibintInterface(config["molecule"]["basis"],mol)
         
     # Generate wavefunctions 
     wfnlist = None

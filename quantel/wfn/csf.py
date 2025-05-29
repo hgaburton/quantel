@@ -9,6 +9,7 @@ from quantel.gnme.csf_noci import csf_coupling, csf_coupling_slater_condon
 from .wavefunction import Wavefunction
 from quantel.utils.csf_utils import csf_reorder_orbitals
 from quantel.utils.orbital_guess import orbital_guess
+from quantel.ints.pyscf_integrals import PySCFIntegrals
 from pyscf.tools import cubegen
 
 def flag_transport(A,T,mask,max_order=50,tol=1e-4):
@@ -51,7 +52,7 @@ class CSF(Wavefunction):
         self.nbsf       = integrals.nbsf()
         self.nmo        = integrals.nmo()
         # Read integral dependent factors
-        if(type(integrals) is quantel.ints.pyscf_integrals.PySCFIntegrals):
+        if(type(integrals) is PySCFIntegrals):
             self.with_xc = (integrals.xc is not None)
             self.Kscale  = integrals.kscale 
             self.with_pyscf = True
@@ -370,9 +371,11 @@ class CSF(Wavefunction):
         mol.spin = int(2 * self.sz)
         fcidump.from_mo(mol, tag+'.fcid', self.mo_coeff, ms=self.sz)
 
+    def write_cidump(self, tag):
         # Write the CI vector dump
         from quantel.utils.ci_utils import write_cidump
         write_cidump(get_csf_vector(self.spin_coupling),self.ncore,self.nbsf,tag+'_civec.txt')
+
 
     def read_from_orca(self,json_file):
         """ Read a set of CSF coefficients from ORCA gbw file.
@@ -454,9 +457,8 @@ class CSF(Wavefunction):
         """Get a guess for the molecular orbital coefficients"""
         # Get the guess for the molecular orbital coefficients
         Cguess = orbital_guess(self.integrals,method,avas_ao_labels=avas_ao_labels,rohf_ms=0.5*self.nopen)
-
         # Optimise the order of the CSF orbitals and return
-        if(reorder):
+        if(reorder and (not self.spin_coupling is '')):
             Cguess[:,self.ncore:self.nocc] = csf_reorder_orbitals(self.integrals,self.exchange_matrix,
                                                                   np.copy(Cguess[:,self.ncore:self.nocc]))
 

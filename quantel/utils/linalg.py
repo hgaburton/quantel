@@ -166,7 +166,7 @@ def orthogonalise(mat, metric=None, thresh=1e-10, fill=True):
     # Pad the output matrix if requested
     (nr,nc) = mat.shape
     if(nc < nr and fill):
-        new_mat = np.zeros((nr,nr)) if(metric is None) else np.zeros(metric.shape)
+        new_mat = np.zeros((nr,nr),dtype=mat.dtype) if(metric is None) else np.zeros(metric.shape,dtype=mat.dtype)
         new_mat[:,:nc] = mat.copy()
         new_mat[:,nc:] = np.random.rand(mat.shape[0],new_mat.shape[1]-nc)
         mat = new_mat
