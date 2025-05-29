@@ -33,7 +33,7 @@ void LibintInterface::initialize()
 void LibintInterface::compute_nuclear_potential() 
 {
     // Initialise value
-    double m_Vvnuc = 0.0;
+    m_V = 0.0;
 
     // Loop over atom pairs
     for(size_t i=0;   i < m_mol.atoms.size(); i++)

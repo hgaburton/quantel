@@ -65,6 +65,8 @@ public:
     size_t nmo() const { return m_nmo; }
     /// \brief Get the number of correlated orbitals
     size_t nact() const { return m_nact; }
+    /// \brief Get the number of inactive orbitals
+    size_t ncore() const { return m_ncore; }
     /// \brief Get integral screening threshold
     double tol() const { return m_tol; }
 

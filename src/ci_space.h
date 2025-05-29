@@ -88,6 +88,37 @@ public:
         const std::vector<double> &bra, const std::vector<double> &ket, 
         std::vector<double> &rdm2, bool alpha1, bool alpha2);
 
+    /// @brief Get the index of a determinant
+    /// @param det Determinant to get the index of
+    /// @return Index of the determinant
+    int get_det_index(const Determinant &det) const
+    {
+        auto it = m_dets.find(det);
+        if(it == m_dets.end())
+            throw std::runtime_error("CIspace::get_index: Determinant not found");
+        return it->second;
+    }
+
+    /// @brief Get a list of tupes with determinants and their index
+    /// @return List of determinants
+    std::vector<std::string> get_det_list() const
+    {
+        // Get list of tuples so we can sort by index
+        std::vector<std::tuple<int,std::string> > dets;
+        for(auto &[det, ind] : m_dets)
+            dets.push_back(std::make_tuple(ind,det_str(det)));
+        // Sort the list by index
+        std::sort(dets.begin(), dets.end(), [](const auto &a, const auto &b) {
+            return std::get<0>(a) < std::get<0>(b);
+        });
+
+        // Convert to a list of strings without the index
+        std::vector<std::string> dets_str;
+        for(auto &[ind, det] : dets)
+            dets_str.push_back(det);
+        return dets_str;
+    }
+
 private:
     /// MO integrals
     MOintegrals &m_ints;

@@ -109,6 +109,8 @@ PYBIND11_MODULE(_quantel, m) {
           .def("nalfa", &CIspace::nalfa, "Get the number of high-spin electrons")
           .def("nbeta", &CIspace::nbeta, "Get the number of low-spin electrons")
           .def("nmo", &CIspace::nmo, "Get the number of molecular orbitals")
+          .def("get_det_index", &CIspace::get_det_index, "Get the index of a determinant")
+          .def("get_det_list", &CIspace::get_det_list, "Get the list of determinants")
           .def("H_on_vec", [](CIspace &ci, py::array_t<double> &V)
                {
                     size_t ndet = ci.ndet();
@@ -218,6 +220,7 @@ PYBIND11_MODULE(_quantel, m) {
           .def("nbsf", &MOintegrals::nbsf, "Get the number of basis functions")
           .def("nmo", &MOintegrals::nmo, "Get the number of molecular orbitals")
           .def("nact", &MOintegrals::nact, "Get the number of active orbitals")
+          .def("ncore", &MOintegrals::ncore, "Get the number of inactive orbitals")
           ;
 
      py::class_<LibintInterface>(m, "LibintInterface")
