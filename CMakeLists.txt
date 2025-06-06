@@ -81,11 +81,9 @@ target_link_libraries(_quantel PRIVATE
             ${EIGEN3_LIBRARIES})
 
 # specify open MP flags
-if(USE_OpenMP)
-  find_package(OpenMP REQUIRED)
-  if(OpenMP_CXX_FOUND)
-      target_link_libraries(_quantel PUBLIC OpenMP::OpenMP_CXX)
-  endif()
-endif(USE_OpenMP)
+find_package(OpenMP REQUIRED)
+if(OpenMP_CXX_FOUND)
+  target_link_libraries(_quantel PUBLIC OpenMP::OpenMP_CXX)
+endif()
 
 install(TARGETS _quantel DESTINATION ${ROOT_DIR}/quantel/lib)
