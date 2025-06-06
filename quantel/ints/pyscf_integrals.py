@@ -8,7 +8,7 @@ from pyscf import fci
 
 class PySCFMolecule(pyscf.gto.Mole):
     """Wrapper class to call molecule functions from PySCF"""
-    def __init__(self,_atom,_basis,_unit):
+    def __init__(self,_atom,_basis,_unit,_charge=0,_spin=0):
         """Initialise the PySCF molecule
                 _atom  : str
                     The path to the atom file
@@ -16,13 +16,12 @@ class PySCFMolecule(pyscf.gto.Mole):
                     The basis set
                 _unit  : str
                     The unit of the atom file (Angstrom or Bohr)
+                _charge : int
+                    Charge of molecule (default = 0)
+                _spin  : int
+                    Spin ms value (defualt = 0)
         """
         # Get spin from 2nd line of atom file
-        with open(_atom) as f:
-            f.readline()
-            tmp = f.readline().split()
-            _charge = int(tmp[0])
-            _spin = int(tmp[1])-1
         # Initialise underlying PySCF molecule
         super().__init__(atom=_atom,basis=_basis,unit=_unit,spin=_spin,charge=_charge)
         self.atom = _atom
@@ -188,10 +187,10 @@ class PySCFIntegrals:
         """
         return np.linalg.multi_dot([C1.T, self.oei, C1])
 
-    def tei_array(self):
+    def tei_array(self,spin1=None,spin2=None):
         """ Return an array containing the AO eri integrals"""
         n = self.nbsf()
-        return np.reshape(self.mol.intor("int2e", aosym="s1"),(n,n,n,n))
+        return np.reshape(self.mol.intor("int2e", aosym="s1"),(n,n,n,n))#.transpose(0,2,1,3)
     
     def tei_ao_to_mo(self, C1, C2, C3, C4, alpha1, alpha2):
         """ Transform the two-electron integrals from AO to MO basis. Order is <12|34> (physicists)

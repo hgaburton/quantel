@@ -259,8 +259,9 @@ class SS_CASSCF(Wavefunction):
 
     def hamiltonian(self, them):
         """Compute the many-body Hamiltonian coupling with another CSF wavefunction (them)"""
-        hcore = self.integrals.oei_matrix(True)
-        eri   = self.integrals.tei_array(True,False).transpose(0,2,1,3).reshape(self.nbsf**2,self.nbsf**2)
+        n2 = self.nbsf * self.nbsf 
+        hcore = self.integrals.oei_matrix()
+        eri   = self.integrals.tei_array().reshape(n2,n2)
         ovlp  = self.integrals.overlap_matrix()
         enuc  = self.integrals.scalar_potential()
         return cas_coupling(self, them, ovlp, hcore, eri, enuc)
@@ -649,6 +650,19 @@ class SS_CASSCF(Wavefunction):
         occip = np.diag(np.einsum('ip,ij,jq->pq',v,gen_dens,v))   
         return e, cip, occip
 
+    def get_civector(self):
+        from pyscf.fci.cistring import gen_occslst
+        
+        occlst_a = gen_occslst(range(self.ncore,self.nocc),self.cas_nalfa)
+        occlst_b = gen_occslst(range(self.ncore,self.nocc),self.cas_nbeta) 
+        na = len(occlst_a)
+        nb = len(occlst_b)
+        core_list = list(range(0,self.ncore))
+
+        for ia, occa in enumerate(occlst_a):
+            for ib, occb in enumerate(occlst_b):
+                yield self.mat_ci[ia*nb+ib,0], core_list+list(occa), core_list+list(occb)
+        
 
     def canonicalize(self):
         """Canonicalise the natural orbitals and CI coefficients"""

@@ -62,8 +62,17 @@ def main():
         print("    Exchange scaling = ",config["jobcontrol"]["kscale"])
         print("   Number of threads = ",lib.num_threads())
         print()
-        mol  = PySCFMolecule(config["molecule"]["atom"],config["molecule"]["basis"],config["molecule"]["unit"])
-        ints = PySCFIntegrals(mol,xc=config["jobcontrol"]["xc_functional"],kscale=config["jobcontrol"]["kscale"])
+        with open(config["molecule"]["atom"]) as f:
+            f.readline()
+            tmp = f.readline().split()
+            charge = int(tmp[0])
+            spin = int(tmp[1])-1
+        mol  = PySCFMolecule(config["molecule"]["atom"],
+                            config["molecule"]["basis"],
+                            config["molecule"]["unit"],
+                            _charge=charge,_spin=spin)
+        ints = PySCFIntegrals(mol,xc=config["jobcontrol"]["xc_functional"],
+                                  kscale=config["jobcontrol"]["kscale"])
     elif(config["jobcontrol"]["integrals"]=='libint'):
         print(" *** Using Libint for integral evaluation ***\n")
         # Raise error if xc_functional is not None
