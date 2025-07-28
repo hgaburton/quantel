@@ -54,6 +54,7 @@ class Function(metaclass=ABCMeta):
     def get_numerical_gradient(self,eps=1e-3):
         """Finite difference gradient for debugging"""
         grad = np.zeros((self.dim))
+        self.save_last_step()
         for i in range(self.dim):
             x1 = np.zeros(self.dim)
             x2 = np.zeros(self.dim)

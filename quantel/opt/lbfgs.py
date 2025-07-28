@@ -57,7 +57,6 @@ class LBFGS:
 
 
         if plev>0:
-            print(f"    > Num. MOs       = {obj.nmo: 6d}")
             print(f"    > Num. params    = {dim: 6d}")
             print(f"    > Max subspace   = {max_subspace: 6d}")
             print(f"    > Backtracking   = {self.control['backtrack_scale']: 6.3f}")
