@@ -3,45 +3,63 @@ from quantel.opt.function import Function
 from quantel.opt.lbfgs import LBFGS
 from qiskit_nature.second_q.operators import FermionicOp
 from qiskit_nature.second_q.mappers import JordanWignerMapper as jw
-from scipy.linalg import expm
+from scipy.sparse import csc_matrix
+from scipy.sparse.linalg import expm, expm_multiply
+from timeit import default_timer as timer
+
 
 class T_UPS(Function):
     """ Tiled Unitary Product States
 
         Inherits from the Function abstract base class
     """
-    def __init__(self,include_doubles=False):
+    def __init__(self,include_doubles=False, approx_prec=False):
+        # Hamiltonian variables
         self.t = 1
         self.U = 6
-        self.no_spat = 4
+
+        # define number of spin and spat orbitals
+        self.no_spat = 6
         self.no_spin = self.no_spat * 2
         # Num of alpha spin
-        self.no_alpha = 2           
+        self.no_alpha = 3
         # Num of alpha spin
-        self.no_beta = 2
+        self.no_beta = 3
         # Basis size of Fock Space
         self.N = 2**self.no_spin
 
-        # operator order from left to right
-        self.op_order = [0,1,0,0,1,0]     
+        # approximate diagonal of hessian for preconditioner
+        self.approx_prec = approx_prec
 
         # Number of operators (parameters)
         self.include_doubles = include_doubles
-        self.nop = int(self.no_spat * (self.no_spat - 1) / 2)
-        if(self.include_doubles): self.nop *= 2
-        self.initialise_op_mat()
+        # self.nop = int(self.no_spat * (self.no_spat - 1) / 2)
+        self.nop = self.no_spat - 1
+        if(self.include_doubles): 
+            self.nop *= 2
+        
+        self.initialise_tups_op_mat()
+        print('Operator Matrices Generated')
 
+        # operator order from left to right
+        self.layers = 2
+        self.initialise_op_order() 
+        print('Operator Order Generated')
+
+        
         # Define Hamiltonian and reference
         self.hamiltonian()
+        print('Hamiltonian Generated')
         self.initialise_ref()
+        print('Wavefunction Reference Generated')
 
         # Current position
-        self.x = np.zeros(self.dim)
-        self.update()
+        # self.x = np.zeros(self.dim)
+        # self.update()
 
     @property
     def dim(self):
-        """Dimension of parameter matrix"""
+        """Dimension of parameter vector, x"""
         return len(self.op_order)
 
     @property
@@ -57,50 +75,25 @@ class T_UPS(Function):
     @property
     def gradient(self):
         """Get the function gradient"""
-        return 2* self.wfn_grad @ (self.mat_H @ self.wfn)
+        return 2* self.wfn_grad.T @ (self.mat_H @ self.wfn)
     
     @property
     def hessian_diagonal(self):
-        hess1 = 2 * np.einsum('i,ij,dj->d', self.wfn, self.mat_H, self.wfn_hess)
-        hess2 = 2 * np.einsum('di,ij,dj->d', self.wfn_grad, self.mat_H, self.wfn_grad)
-        return hess1 + hess2
-        hess_diag = np.zeros(self.dim)
+        hess2 = 2 * np.einsum('id,ij,jd->d', self.wfn_grad, self.mat_H, self.wfn_grad)
+        if self.approx_prec == False: 
+            hess1 = 2 * np.einsum('i,ij,jd->d', self.wfn, self.mat_H, self.wfn_hess)
+            return hess1 + hess2
+        else: 
+            return hess2
 
-
-
-        wfn_grad_sq = np.zeros((self.dim, self.N))
-        for j in range(self.dim):
-            tmp = self.wf_ref
-            # transform reference until the jth parameter
-            for idx, op in enumerate(self.op_order[:j]):
-                tmp = expm(self.kop_ij[op]*self.x[idx]) @ tmp
-            # multiply with operator matrix
-            tmp = self.kop_ij[self.op_order[j]] @ tmp
-            tmp = self.kop_ij[self.op_order[j]] @ tmp
-            # continue transforming the reference wavefunction
-            for idx, op in enumerate(self.op_order[j:]):
-                tmp = expm(self.kop_ij[op]*self.x[idx+j]) @ tmp
-            wfn_grad_sq[j] = tmp
-        
-        #hess1 = 2*wfn_grad_sq @ (self.mat_H @ self.wfn)
-        #hess2 = np.diag(2*self.wfn_gradient @ (self.mat_H @ self.wfn_gradient.T))
-
-        tmp = np.einsum('ij, dj->di', self.mat_H, wfn_grad_sq)
-        hess_diag += 2*np.einsum('i,di->d', self.wfn, tmp)
-
-        tmp = np.einsum('ij, dj->di', self.mat_H, self.wfn_gradient)
-        hess_diag += 2*np.einsum('di,di->d', self.wfn_gradient, tmp)
-        return hess_diag
-
-
-    @property    
+    @property 
     def hessian(self):
         """Get the Hessian matrix of second-derivatives"""
         pass
 
     def get_preconditioner(self):
 
-        return np.ones(self.dim)# * self.hessian_diagonal
+        return np.ones(self.dim) * self.hessian_diagonal
     
     def take_step(self,step):
         """Take a step in parameter space"""
@@ -109,34 +102,34 @@ class T_UPS(Function):
     
     def get_wfn(self,x):
         '''Rotates the wavefunction to generate a new wavefunction'''
-        U = np.identity(self.N)
         wfn = self.wf_ref.copy()
-        # K = np.einsum('pij,p->ij',self.kop_ij,self.x)
         for idx, op in enumerate(self.op_order):
-            wfn = expm(self.kop_ij[op]*x[idx]) @ wfn
+            wfn = expm_multiply(self.kop_ij[op]*x[idx], wfn)
         return wfn
 
     def get_wfn_gradient(self,x):
-        wfn_grad = np.zeros((2*self.dim, self.N))
-        for j in range(2*self.dim):
-            wfn_grad[j] = self.wf_ref.copy()
+        if self.approx_prec == False:
+            wfn_grad = np.zeros((self.N, 2*self.dim))
+        else:
+            wfn_grad = np.zeros((self.N, self.dim))
+
+        for j in range(wfn_grad.shape[1]):
+            wfn_grad[:,j] = self.wf_ref.copy()
 
         for j, op in enumerate(self.op_order):
-            U = expm(self.kop_ij[op]*x[j])
-            wfn_grad = np.einsum('pq,jq->jp', U, wfn_grad)
-            wfn_grad[j] = self.kop_ij[self.op_order[j]] @ wfn_grad[j]
-            wfn_grad[j+self.dim] = self.kop_ij[self.op_order[j]] @ wfn_grad[j]
+            wfn_grad = expm_multiply(self.kop_ij[op]*x[j], wfn_grad)
+            wfn_grad[:,j] = self.kop_ij[self.op_order[j]] @ wfn_grad[:,j]
+            if self.approx_prec == False:
+                wfn_grad[:,j+self.dim] = self.kop_ij[self.op_order[j]] @ wfn_grad[:,j]
 
-        return wfn_grad[:self.dim], wfn_grad[self.dim:]    
+        return wfn_grad[:,:self.dim], wfn_grad[:,self.dim:]    
     
     def update(self):
         '''Updates the parameters'''
         self.wfn = self.get_wfn(self.x)
         self.wfn_grad, self.wfn_hess = self.get_wfn_gradient(self.x)
-        # TODO: You might store current wfn so you have to keep evaluating 
-        #       for computing gradients and/or energy 
-        pass
-    
+
+
     def save_last_step(self):
         """Save current position"""
         self.xsave = self.x.copy()
@@ -147,7 +140,7 @@ class T_UPS(Function):
         self.update()
 
     def hamiltonian(self):
-        '''Initialises the Hamiltonian matrix'''
+        '''Initialises the Hamiltonian matrix for the Hubbard system'''
         H = FermionicOp({'':0},num_spin_orbitals=self.no_spin)
         # one body alpha
         for p in range(self.no_spat-1):
@@ -168,7 +161,7 @@ class T_UPS(Function):
         self.mat_H = jw().map(H).to_matrix().real
     
     def get_initial_guess(self):
-        # Generate current position
+        # Generate initial position
         self.x = 2*np.pi*(np.random.rand(self.dim)-0.5)
         self.update()
 
@@ -185,44 +178,84 @@ class T_UPS(Function):
         self.wf_ref = mat_hf_op @ wf_vac
     
     def initialise_op_mat(self):
-        '''Initialise matrices for the 2nd quantised operators'''
-        self.kop_ij = np.zeros((self.nop,self.N,self.N))
+        '''Initialise matrices using the 2nd quantised operators - general case'''
+        self.kop_ij = {}
         # paired single
         count = 0
         for p in range(self.no_spat):
             for q in range(p):
-                t = FermionicOp({f"+_{p} -_{q}": 1.0}, num_spin_orbitals=self.no_spin)
-                t += FermionicOp({f"+_{p+self.no_spat} -_{q+self.no_spat}": 1.0}, num_spin_orbitals=self.no_spin)
-                k = t - t.adjoint()
-                mat_k = jw().map(k).to_matrix().real
-                self.kop_ij[count,:,:] = mat_k
+                self.kop_ij[count] = self.get_singles_matrix(p,q)
                 count += 1
         # paired doubles
         if(self.include_doubles):
             for p in range(self.no_spat):
                 for q in range(p):
-                    t = FermionicOp({f"+_{p} +_{p+self.no_spat} -_{q+self.no_spat} -_{q}": 1.0}, num_spin_orbitals=self.no_spin)
-                    k = t - t.adjoint()
-                    mat_k = jw().map(k).to_matrix().real
-                    self.kop_ij[count,:,:] = mat_k
+                    self.kop_ij[count] = self.get_doubles_matrix
                     count += 1
+    
+    def initialise_tups_op_mat(self):
+        '''Initialise matrices using the 2nd quantised operators - tUPS case'''
+        self.kop_ij = {}
+        # paired single
+        count = 0
+        # defining k_10, k_32, k_54, ... k_pq. where q is even 
+        for p in range(1, self.no_spat, 2):
+            q = p-1
+            self.kop_ij[count] = self.get_singles_matrix(p,q)
+            count += 1
+
+            # paired doubles
+            if(self.include_doubles):
+                self.kop_ij[count] = self.get_doubles_matrix(p,q)
+                count += 1
+        # defining k_21, k_43, k_65, ... k_pq. where q is odd 
+        for q in range(1, self.no_spat-1, 2):
+            p = q+1
+            self.kop_ij[count] = self.get_singles_matrix(p,q)
+            count += 1
+
+            # paired doubles
+            if(self.include_doubles):
+                self.kop_ij[count] = self.get_doubles_matrix(p,q)
+                count += 1
+        
+    def initialise_op_order(self):
+        self.op_order = []
+        for i in range(0,len(self.kop_ij),2):
+            self.op_order.extend([i,i+1,i])
+        for L in range(self.layers):
+            self.op_order.extend(self.op_order)
+
+    def get_singles_matrix(self, p, q):
+        t = FermionicOp({f"+_{p} -_{q}": 1.0}, num_spin_orbitals=self.no_spin)
+        t += FermionicOp({f"+_{p+self.no_spat} -_{q+self.no_spat}": 1.0}, num_spin_orbitals=self.no_spin)
+        k = t - t.adjoint()
+        mat_k = jw().map(k).to_matrix().real
+        return csc_matrix(mat_k)
+
+    def get_doubles_matrix(self, p, q):
+        t = FermionicOp({f"+_{p} +_{p+self.no_spat} -_{q+self.no_spat} -_{q}": 1.0}, num_spin_orbitals=self.no_spin)
+        k = t - t.adjoint()
+        mat_k = jw().map(k).to_matrix().real
+        return csc_matrix(mat_k)
+
+
 
 np.random.seed(7)
-test = T_UPS(include_doubles=True)
-test.get_initial_guess()
+# test = T_UPS(include_doubles=True, approx_prec=False)
+# test.get_initial_guess()
 
-print(test.x)
-print(test.gradient)
-print(test.get_numerical_gradient())
-#hess = test.get_numerical_hessian()
-#hess_an = test.hessian_diagonal
-#print(np.diag(hess))
-#print(hess_an)
-
+# print(test.x)
+# print(test.gradient)
+# print(test.get_numerical_gradient())
+# hess = test.get_numerical_hessian()
+# hess_an = test.hessian_diagonal
+# print(np.diag(hess))
+# print(hess_an)
+# quit()
 for isample in range(1):
-    test = T_UPS(include_doubles=True)
-    
+    test = T_UPS(include_doubles=True, approx_prec=False)
     test.get_initial_guess()
+    print('Initial Guess Applied')
     opt = LBFGS(with_transport=False,with_canonical=False)
-    opt.run(test)
-quit()
+    opt.run(test, maxit=200)
