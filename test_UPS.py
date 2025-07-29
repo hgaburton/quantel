@@ -13,7 +13,7 @@ class T_UPS(Function):
 
         Inherits from the Function abstract base class
     """
-    def __init__(self,include_doubles=False, approx_prec=False):
+    def __init__(self,include_doubles=False, approx_prec=False, use_prec=True):
         # Hamiltonian variables
         self.t = 1
         self.U = 6
@@ -23,11 +23,12 @@ class T_UPS(Function):
         self.no_spin = self.no_spat * 2
         # Num of alpha spin
         self.no_alpha = 3
-        # Num of alpha spin
+        # Num of beta spin
         self.no_beta = 3
         # Basis size of Fock Space
         self.N = 2**self.no_spin
 
+        self.use_prec = use_prec
         # approximate diagonal of hessian for preconditioner
         self.approx_prec = approx_prec
 
@@ -42,11 +43,10 @@ class T_UPS(Function):
         print('Operator Matrices Generated')
 
         # operator order from left to right
-        self.layers = 6
+        self.layers = 3
         self.initialise_op_order() 
         print('Operator Order Generated')
 
-        
         # Define Hamiltonian and reference
         self.hamiltonian()
         print('Hamiltonian Generated')
@@ -54,8 +54,8 @@ class T_UPS(Function):
         print('Wavefunction Reference Generated')
 
         # Current position
-        # self.x = np.zeros(self.dim)
-        # self.update()
+        self.x = np.zeros(self.dim)
+        self.update()
 
     @property
     def dim(self):
@@ -69,19 +69,21 @@ class T_UPS(Function):
 
     @property
     def energy(self):
-        E = np.dot(np.conj(self.wfn), self.mat_H @ self.wfn)
+        E = np.dot(np.conj(self.wfn), self.H_wfn)
         return E
 
     @property
     def gradient(self):
         """Get the function gradient"""
-        return 2* self.wfn_grad.T @ (self.mat_H @ self.wfn)
+        grad = 2* self.wfn_grad.T @ self.H_wfn
+        return grad
     
     @property
     def hessian_diagonal(self):
-        hess2 = 2 * np.einsum('id,ij,jd->d', self.wfn_grad, self.mat_H, self.wfn_grad)
+        hess2 = 2 * np.einsum('id,ij,jd->d', self.wfn_grad, self.mat_H, self.wfn_grad, optimize=True)
         if self.approx_prec == False: 
-            hess1 = 2 * np.einsum('i,ij,jd->d', self.wfn, self.mat_H, self.wfn_hess)
+            hess1 = 2 * self.wfn_hess.T @ self.H_wfn
+            # np.einsum('i,ij,jd->d', self.wfn, self.mat_H, self.wfn_hess, optimize=True)
             return hess1 + hess2
         else: 
             return hess2
@@ -92,8 +94,10 @@ class T_UPS(Function):
         pass
 
     def get_preconditioner(self):
-
-        return np.ones(self.dim) * self.hessian_diagonal
+        if self.use_prec == True:
+            return self.hessian_diagonal
+        else:
+            return np.ones(self.dim)
     
     def take_step(self,step):
         """Take a step in parameter space"""
@@ -128,6 +132,7 @@ class T_UPS(Function):
         '''Updates the parameters'''
         self.wfn = self.get_wfn(self.x)
         self.wfn_grad, self.wfn_hess = self.get_wfn_gradient(self.x)
+        self.H_wfn = self.mat_H @ self.wfn
 
 
     def save_last_step(self):
@@ -224,6 +229,7 @@ class T_UPS(Function):
         for i in range(0,len(self.kop_ij),2):
             self.op_order.extend([i,i+1,i])
         self.op_order.extend(self.op_order*(self.layers-1))
+        print(self.op_order)
 
     def get_singles_matrix(self, p, q):
         t = FermionicOp({f"+_{p} -_{q}": 1.0}, num_spin_orbitals=self.no_spin)
@@ -240,11 +246,11 @@ class T_UPS(Function):
 
 
 
-np.random.seed(7)
+# np.random.seed(7)
 # test = T_UPS(include_doubles=True, approx_prec=False)
 # test.get_initial_guess()
 
-# # print(test.x)
+# print(test.x)
 # print(test.gradient)
 # print(test.get_numerical_gradient())
 # hess = test.get_numerical_hessian()
@@ -253,8 +259,8 @@ np.random.seed(7)
 # print(hess_an)
 # quit()
 for isample in range(1):
-    test = T_UPS(include_doubles=True, approx_prec=False)
-    test.get_initial_guess()
+    test = T_UPS(include_doubles=True, approx_prec=False, use_prec=False)
+    # test.get_initial_guess()
     print('Initial Guess Applied')
     opt = LBFGS(with_transport=False,with_canonical=False)
-    opt.run(test, maxit=500)
+    opt.run(test, maxit=50)
