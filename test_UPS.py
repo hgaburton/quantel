@@ -42,7 +42,7 @@ class T_UPS(Function):
         print('Operator Matrices Generated')
 
         # operator order from left to right
-        self.layers = 2
+        self.layers = 6
         self.initialise_op_order() 
         print('Operator Order Generated')
 
@@ -223,8 +223,7 @@ class T_UPS(Function):
         self.op_order = []
         for i in range(0,len(self.kop_ij),2):
             self.op_order.extend([i,i+1,i])
-        for L in range(self.layers):
-            self.op_order.extend(self.op_order)
+        self.op_order.extend(self.op_order*(self.layers-1))
 
     def get_singles_matrix(self, p, q):
         t = FermionicOp({f"+_{p} -_{q}": 1.0}, num_spin_orbitals=self.no_spin)
@@ -245,7 +244,7 @@ np.random.seed(7)
 # test = T_UPS(include_doubles=True, approx_prec=False)
 # test.get_initial_guess()
 
-# print(test.x)
+# # print(test.x)
 # print(test.gradient)
 # print(test.get_numerical_gradient())
 # hess = test.get_numerical_hessian()
@@ -258,4 +257,4 @@ for isample in range(1):
     test.get_initial_guess()
     print('Initial Guess Applied')
     opt = LBFGS(with_transport=False,with_canonical=False)
-    opt.run(test, maxit=200)
+    opt.run(test, maxit=500)
