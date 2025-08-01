@@ -5,7 +5,7 @@ from quantel.gnme.utils import gen_eig_sym
 from qiskit_nature.second_q.operators import FermionicOp
 from qiskit_nature.second_q.mappers import JordanWignerMapper as jw
 from scipy.sparse import csc_matrix
-from scipy.sparse.linalg import expm, expm_multiply
+from scipy.sparse.linalg import expm, expm_multiply, gmres
 from timeit import default_timer as timer
 import itertools
 
@@ -90,14 +90,14 @@ class T_UPS(Function):
     @property
     def hessian_diagonal(self):
         H_wfn_grad = self.mat_H @ self.wfn_grad
-        hess2 = 2 * np.einsum('id,id->d', self.wfn_grad, H_wfn_grad)
+        hess1 = 2 * np.einsum('id,id->d', self.wfn_grad, H_wfn_grad)
         if not self.approx_prec: 
             # hess1 = self.wfn_hess
-            hess1 = 2 * self.wfn_hess.T @ self.H_wfn
+            hess2 = 2 * self.wfn_hess.T @ self.H_wfn
             # np.einsum('i,ij,jd->d', self.wfn, self.mat_H, self.wfn_hess, optimize=True)
             return hess1 + hess2
         else: 
-            return hess2
+            return hess1
 
     @property 
     def hessian(self):
@@ -352,7 +352,7 @@ class T_UPS(Function):
 # print(hess_an)
 # quit()
 for isample in range(1):
-    test = T_UPS(include_doubles=True, approx_prec=False, use_prec=True, pp=True, oo=False)
+    test = T_UPS(include_doubles=True, approx_prec=False, use_prec=False, pp=True, oo=False)
     # test.get_initial_guess()
     # print('Initial Guess Applied')
     opt = LBFGS(with_transport=False,with_canonical=False,prec_thresh=0.1)
@@ -365,26 +365,44 @@ for isample in range(1):
     # print(test.x/np.pi)
     # continue
     eta = np.zeros((test.proj_N,test.dim+1))
-    for i in range(5):
-        eta[:,0] = test.wfn
-        eta[:,1:] = test.wfn_grad
+    for i in range(1000):
+        # eta[:,0] = test.wfn
+        # eta[:,1:] = test.wfn_grad
+        eta = test.wfn_grad.copy()
+        alpha = 1e-4
         H = eta.T @ (test.mat_H @ eta)
         S = eta.T @ eta
-        e,c = gen_eig_sym(H,S)
-        print(test.op_order)
-        print(c[:,0]/c[0,0])
-        quit()
+        A = H - test.energy * S
+        M = A + alpha * S
+        # print(H)
+        g = test.gradient.copy()
+        x = gmres(M, -0.5*g)[0]
+        # print(x)
+        # x = np.clip(x, a_min=-0.25, a_max=0.25)
+        test.take_step(x*0.1)
+        print(test.energy)
+        # print(np.linalg.norm(test.gradient,ord=np.inf))
+        if np.linalg.norm(test.gradient,ord=np.inf) < 1e-6:
+            print(f"Linear iterations: {i+1}")
+            quit()
 
-        step = np.array([np.arctan2(ci,c[0,0]) for ci in c[1:,0]])
-        print(step)
-        print(e)
-        test.save_last_step()
-        for a in np.linspace(-0.5,0.5,101):
-            test.restore_last_step()
-            test.take_step(a*step)
-            print(f"{a: 6.4f} {test.energy: 16.10f}")
-        quit()
-    quit()
+        # quit()
+        # e,c = gen_eig_sym(M,-0.5*g)
+        # print(test.op_order)
+        # print(c[:,0]/c[0,0])
+        # print(e)
+        # quit()
+
+    #     step = np.array([np.arctan2(ci,c[0,0]) for ci in c[1:,0]])
+    #     print(step)
+    #     print(e)
+    #     test.save_last_step()
+    #     for a in np.linspace(-0.5,0.5,101):
+    #         test.restore_last_step()
+    #         test.take_step(a*step)
+    #         print(f"{a: 6.4f} {test.energy: 16.10f}")
+    #     quit()
+    # quit()
 
     # tangent = test.wfn_grad
     # metric = tangent.T @ tangent
