@@ -15,7 +15,7 @@ class T_UPS(Function):
 
         Inherits from the Function abstract base class
     """
-    def __init__(self,include_doubles=False, approx_prec=False, use_prec=True, use_proj=True):
+    def __init__(self,include_doubles=False, approx_prec=False, use_prec=True, use_proj=True, pp=True, oo=True):
         # Hamiltonian variables
         self.t = 1
         self.U = 6
@@ -30,6 +30,8 @@ class T_UPS(Function):
         # Basis size of Fock Space
         self.N = 2**self.no_spin
 
+        self.perf_pair = pp
+        self.orb_opt = oo
         self.use_proj = use_proj
         self.use_prec = use_prec
         # approximate diagonal of hessian for preconditioner
@@ -48,7 +50,7 @@ class T_UPS(Function):
         print('Operator Matrices Generated')
 
         # operator order from left to right
-        self.layers = 1
+        self.layers = 3
         self.initialise_op_order() 
         print('Operator Order Generated')
 
@@ -121,9 +123,6 @@ class T_UPS(Function):
         return wfn
 
     def get_wfn_gradient(self,x):
-        start = timer()
-        x_rev = x[::-1]
-        op_order_rev = self.op_order[::-1]
         if self.use_proj:
             N = self.proj_N
         else:
@@ -231,7 +230,11 @@ class T_UPS(Function):
         wf_vac[0] = 1
 
         # create HF reference state
-        strlst = [f"+_{2*i}" for i in range(self.no_alpha)] + [f"+_{2*i+self.no_spat}" for i in range(self.no_beta)]
+        if self.perf_pair:
+            strlst = [f"+_{2*i}" for i in range(self.no_alpha)] + [f"+_{2*i+self.no_spat}" for i in range(self.no_beta)]
+        else:
+            strlst = [f"+_{i}" for i in range(self.no_alpha)] + [f"+_{i+self.no_spat}" for i in range(self.no_beta)]
+
         hf_op = FermionicOp({" ".join(strlst): 1.0}, num_spin_orbitals=self.no_spin)
         mat_hf_op = jw().map(hf_op).to_matrix().real
         self.wf_ref = mat_hf_op @ wf_vac
@@ -292,7 +295,7 @@ class T_UPS(Function):
         oo_order = []
         for i in range(0,len(self.kop_ij),2):
             oo_order.extend([i])
-        if(False):
+        if(self.orb_opt):
             self.op_order.extend(oo_order*int(self.layers/2))
 
     def get_singles_matrix(self, p, q):
@@ -348,14 +351,19 @@ class T_UPS(Function):
 # print(np.diag(hess))
 # print(hess_an)
 # quit()
-for isample in range(2):
-    test = T_UPS(include_doubles=True, approx_prec=False, use_prec=True)
-    test.get_initial_guess()
-    print('Initial Guess Applied')
+for isample in range(1):
+    test = T_UPS(include_doubles=True, approx_prec=False, use_prec=True, pp=True, oo=False)
+    # test.get_initial_guess()
+    # print('Initial Guess Applied')
     opt = LBFGS(with_transport=False,with_canonical=False,prec_thresh=0.1)
-    opt.run(test, maxit=50)
-    print(test.x/np.pi)
-    continue
+    print(f"Use preconditioner: {test.use_prec}")
+    print(f"Approximate preconditioner: {test.approx_prec}")
+    print(f"Orbital Optimised: {test.orb_opt}")
+    print(f"Perfect Pairing: {test.perf_pair}")
+
+    opt.run(test, maxit=200)
+    # print(test.x/np.pi)
+    # continue
     eta = np.zeros((test.proj_N,test.dim+1))
     for i in range(5):
         eta[:,0] = test.wfn
@@ -363,7 +371,9 @@ for isample in range(2):
         H = eta.T @ (test.mat_H @ eta)
         S = eta.T @ eta
         e,c = gen_eig_sym(H,S)
-        #print(c[:,0])
+        print(test.op_order)
+        print(c[:,0]/c[0,0])
+        quit()
 
         step = np.array([np.arctan2(ci,c[0,0]) for ci in c[1:,0]])
         print(step)
@@ -375,9 +385,10 @@ for isample in range(2):
             print(f"{a: 6.4f} {test.energy: 16.10f}")
         quit()
     quit()
-    tangent = test.wfn_grad
-    metric = tangent.T @ tangent
-    print(metric)
-    e, v = np.linalg.eigh(metric)
-    print(v[:,:3])
-    print(e)
+
+    # tangent = test.wfn_grad
+    # metric = tangent.T @ tangent
+    # print(metric)
+    # e, v = np.linalg.eigh(metric)
+    # print(v[:,:3])
+    # print(e)

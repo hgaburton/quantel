@@ -23,6 +23,7 @@ class LBFGS:
         self.control["with_canonical"] = True
         self.control["canonical_interval"] = 10
         self.control['gamma_preconditioner'] = False
+        self.control["prec_thresh"] = 0.1
 
         for key in kwargs:
             if not key in self.control.keys():
@@ -238,7 +239,7 @@ class LBFGS:
         assert(len(v_grad)==nvec+1)
 
         # Clip the preconditioner to avoid numerical issues
-        thresh=0.1
+        thresh = self.control["prec_thresh"]
         prec = np.sqrt(np.clip(prec,thresh,None))
 
         # Get sk, yk, and rho in energy weighted coordinates
