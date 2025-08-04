@@ -352,7 +352,7 @@ class T_UPS(Function):
 # print(hess_an)
 # quit()
 for isample in range(1):
-    test = T_UPS(include_doubles=True, approx_prec=False, use_prec=False, pp=True, oo=False)
+    test = T_UPS(include_doubles=True, approx_prec=False, use_prec=True, pp=True, oo=False)
     # test.get_initial_guess()
     # print('Initial Guess Applied')
     opt = LBFGS(with_transport=False,with_canonical=False,prec_thresh=0.1)
@@ -361,7 +361,7 @@ for isample in range(1):
     print(f"Orbital Optimised: {test.orb_opt}")
     print(f"Perfect Pairing: {test.perf_pair}")
 
-    opt.run(test, maxit=200)
+    # opt.run(test, maxit=100)
     # print(test.x/np.pi)
     # continue
     eta = np.zeros((test.proj_N,test.dim+1))
@@ -373,15 +373,19 @@ for isample in range(1):
         H = eta.T @ (test.mat_H @ eta)
         S = eta.T @ eta
         A = H - test.energy * S
+        alpha_diag = 0.2
+        alpha = - min(0,np.linalg.eigvalsh(A)[0]) + alpha_diag
         M = A + alpha * S
         # print(H)
         g = test.gradient.copy()
         x = gmres(M, -0.5*g)[0]
+        xscale = np.max(np.abs(x))
+        if(xscale > 0.25):
+            x *= 0.25 / xscale
         # print(x)
         # x = np.clip(x, a_min=-0.25, a_max=0.25)
-        test.take_step(x*0.1)
+        test.take_step(x)
         print(test.energy)
-        # print(np.linalg.norm(test.gradient,ord=np.inf))
         if np.linalg.norm(test.gradient,ord=np.inf) < 1e-6:
             print(f"Linear iterations: {i+1}")
             quit()
