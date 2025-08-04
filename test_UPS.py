@@ -1,6 +1,7 @@
 import numpy as np
 from quantel.opt.function import Function
 from quantel.opt.lbfgs import LBFGS
+from quantel.opt.linear import Linear
 from quantel.gnme.utils import gen_eig_sym
 from qiskit_nature.second_q.operators import FermionicOp
 from qiskit_nature.second_q.mappers import JordanWignerMapper as jw
@@ -352,50 +353,40 @@ class T_UPS(Function):
 # print(hess_an)
 # quit()
 for isample in range(1):
-    test = T_UPS(include_doubles=True, approx_prec=False, use_prec=True, pp=True, oo=False)
-    # test.get_initial_guess()
-    # print('Initial Guess Applied')
+    test = T_UPS(include_doubles=True, approx_prec=False, use_prec=False, pp=True, oo=False)
+    test.get_initial_guess()
+    print('Initial Guess Applied')
     opt = LBFGS(with_transport=False,with_canonical=False,prec_thresh=0.1)
+    lin = Linear()
     print(f"Use preconditioner: {test.use_prec}")
     print(f"Approximate preconditioner: {test.approx_prec}")
     print(f"Orbital Optimised: {test.orb_opt}")
     print(f"Perfect Pairing: {test.perf_pair}")
-
     # opt.run(test, maxit=100)
+    lin.run(test, maxit=200)
     # print(test.x/np.pi)
-    # continue
-    eta = np.zeros((test.proj_N,test.dim+1))
+    continue
     for i in range(1000):
         # eta[:,0] = test.wfn
         # eta[:,1:] = test.wfn_grad
         eta = test.wfn_grad.copy()
-        alpha = 1e-4
         H = eta.T @ (test.mat_H @ eta)
         S = eta.T @ eta
         A = H - test.energy * S
         alpha_diag = 0.2
         alpha = - min(0,np.linalg.eigvalsh(A)[0]) + alpha_diag
         M = A + alpha * S
-        # print(H)
         g = test.gradient.copy()
         x = gmres(M, -0.5*g)[0]
         xscale = np.max(np.abs(x))
         if(xscale > 0.25):
             x *= 0.25 / xscale
-        # print(x)
-        # x = np.clip(x, a_min=-0.25, a_max=0.25)
         test.take_step(x)
         print(test.energy)
         if np.linalg.norm(test.gradient,ord=np.inf) < 1e-6:
             print(f"Linear iterations: {i+1}")
             quit()
 
-        # quit()
-        # e,c = gen_eig_sym(M,-0.5*g)
-        # print(test.op_order)
-        # print(c[:,0]/c[0,0])
-        # print(e)
-        # quit()
 
     #     step = np.array([np.arctan2(ci,c[0,0]) for ci in c[1:,0]])
     #     print(step)
