@@ -353,8 +353,8 @@ class T_UPS(Function):
 # print(hess_an)
 # quit()
 for isample in range(1):
-    test = T_UPS(include_doubles=True, approx_prec=False, use_prec=False, pp=True, oo=False)
-    test.get_initial_guess()
+    test = T_UPS(include_doubles=True, approx_prec=True, use_prec=True, pp=True, oo=True)
+    # test.get_initial_guess()
     print('Initial Guess Applied')
     opt = LBFGS(with_transport=False,with_canonical=False,prec_thresh=0.1)
     lin = Linear()
@@ -363,29 +363,29 @@ for isample in range(1):
     print(f"Orbital Optimised: {test.orb_opt}")
     print(f"Perfect Pairing: {test.perf_pair}")
     # opt.run(test, maxit=100)
-    lin.run(test, maxit=200)
+    lin.run2(test, maxit=1000)
     # print(test.x/np.pi)
     continue
-    for i in range(1000):
-        # eta[:,0] = test.wfn
-        # eta[:,1:] = test.wfn_grad
-        eta = test.wfn_grad.copy()
-        H = eta.T @ (test.mat_H @ eta)
-        S = eta.T @ eta
-        A = H - test.energy * S
-        alpha_diag = 0.2
-        alpha = - min(0,np.linalg.eigvalsh(A)[0]) + alpha_diag
-        M = A + alpha * S
-        g = test.gradient.copy()
-        x = gmres(M, -0.5*g)[0]
-        xscale = np.max(np.abs(x))
-        if(xscale > 0.25):
-            x *= 0.25 / xscale
-        test.take_step(x)
-        print(test.energy)
-        if np.linalg.norm(test.gradient,ord=np.inf) < 1e-6:
-            print(f"Linear iterations: {i+1}")
-            quit()
+    # for i in range(1000):
+    #     # eta[:,0] = test.wfn
+    #     # eta[:,1:] = test.wfn_grad
+    #     eta = test.wfn_grad.copy()
+    #     H = eta.T @ (test.mat_H @ eta)
+    #     S = eta.T @ eta
+    #     A = H - test.energy * S
+    #     alpha_diag = 0.2
+    #     alpha = - min(0,np.linalg.eigvalsh(A)[0]) + alpha_diag
+    #     M = A + alpha * S
+    #     g = test.gradient.copy()
+    #     x = gmres(M, -0.5*g)[0]
+    #     xscale = np.max(np.abs(x))
+    #     if(xscale > 0.25):
+    #         x *= 0.25 / xscale
+    #     test.take_step(x)
+    #     print(test.energy)
+    #     if np.linalg.norm(test.gradient,ord=np.inf) < 1e-6:
+    #         print(f"Linear iterations: {i+1}")
+    #         quit()
 
 
     #     step = np.array([np.arctan2(ci,c[0,0]) for ci in c[1:,0]])
