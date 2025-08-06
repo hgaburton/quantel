@@ -86,12 +86,12 @@ class TrustRadius:
 
             # Get step length by solving quadratic
             a = np.dot(dl, dl)
-            c = lu * lu - self.__rtrust * self.__rtrust
+            c = np.dot(pu, pu) - self.__rtrust * self.__rtrust
             b = 2.0 * np.dot(pu, dl)
             
             # Get the step length and dogleg step
-            tau  = (- b + np.sqrt(b * b - 4.0 * a * c)) / (2.0 * a)
-            step = pu + tau * (pb - pu)
+            tau  = (- b + np.sqrt(b * b - 4.0 * a * c)) / (2.0 * a) + 1
+            step = pu + (tau-1) * dl
             comment = "Dogleg step"
 
         return step, comment

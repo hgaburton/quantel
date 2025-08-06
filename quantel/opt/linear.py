@@ -22,7 +22,7 @@ class Linear:
                 self.control[key] = kwargs[key]
         
         self.ls = LineSearch(debug=False)
-        self.tr = TrustRadius(0.5, 0.1, 1)
+        self.tr = TrustRadius(0.25, 0.01, 0.5)
 
 
     def run(self, obj, thresh=1e-6, maxit=100):
@@ -159,8 +159,9 @@ class Linear:
             else:
                 ared = e_ref - e_cur
                 pred = - (np.dot(grad,step) + 0.5 * step @ (self.B @ step))
-                # print(ared, pred)
-                accept = self.tr.accept_step(ared, pred, np.linalg.norm(step))
+                # print(ared/pred)
+                accept = self.tr.accept_step(abs(ared), abs(pred), np.linalg.norm(step))
+                # print(self.tr.rtrust)
 
             comment = ""
             if (accept):
@@ -172,13 +173,14 @@ class Linear:
                 e_ref = e_cur
 
                 # take step
-                step = self.get_linear_step(e_cur, grad, eta, mat_H, prec, adiag=conv*conv)
-                step, comment = self.tr.dogleg_step(-grad*0.01, step)
+                pb = self.get_linear_step(e_cur, grad, eta, mat_H, prec, adiag=conv*conv)
+                pu = - ((np.dot(grad,grad))/(grad.dot(self.B.dot(grad)))) * grad
+                step, comment = self.tr.dogleg_step(pu, pb)
 
-                lscale = self.control["maxstep"] / np.max(np.abs(step))
-                if(lscale < 1):
-                    step = lscale * step
-                    comment = "rescaled"
+                # lscale = self.control["maxstep"] / np.max(np.abs(step))
+                # if(lscale < 1):
+                #     step = lscale * step
+                #     comment = "rescaled"
 
                 # Need to make sure s.g < 0 to maintain positive-definite L-BFGS Hessian 
                 if(np.dot(step,grad_ref) > 0):
@@ -187,17 +189,14 @@ class Linear:
                     reset = True
 
             else:
-                if not accept:
-                    comment = "Restore step"
+                comment = "Restore step"
                 # restore last step
                 obj.restore_last_step()
 
-                step, comment = self.tr.dogleg_step(-grad, step)
-                
-                if(lscale < 1):
-                    step = lscale * step
-                    comment = "rescaled"
-                step, comment = self.tr.dogleg_step(-grad, step)
+                pb = self.get_linear_step(e_cur, grad, eta, mat_H, prec, adiag=conv*conv)
+                pu = - ((np.dot(grad,grad))/(grad.dot(self.B.dot(grad)))) * grad
+                step, comment = self.tr.dogleg_step(pu, pb)
+
 
             obj.take_step(step)
         
@@ -218,15 +217,15 @@ class Linear:
         # construct matrix A
         A = H - e_cur * S
         # get alpha from the lowest eigenvalue if it is positive definite
-        # alpha_diag = 0.2
+        adiag = 0.2
         Emin = np.linalg.eigvalsh(A)[0]
         alpha = - min(0,Emin) + adiag
-        #print(f"alpha = {alpha: 10.8f}   Emin = {Emin: 10.8f}   Emin2 = {Emin2: 10.8f}")
+        # print(f"alpha = {alpha: 10.8f}   Emin = {Emin: 10.8f}")#   Emin2 = {Emin2: 10.8f}")
         
         M = A + alpha * S
         self.B = 2 * M
         # get eigenvectors 
         gt = Pinv @ grad
-        x = gmres(M, -0.5*grad)[0]
+        x = gmres(self.B, -grad)[0]
         #x = Pinv @ xt
         return x
