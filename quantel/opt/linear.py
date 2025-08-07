@@ -13,7 +13,12 @@ class Linear:
     '''
     def __init__(self, **kwargs):
         self.control = dict()
-        self.control["maxstep"] = 0.2
+        self.control["maxstep"] = 99
+        self.control["minstep"] = 0.01
+        self.control["startrad"] = 0.25
+        self.control["maxrad"] = 1
+        self.control["minrad"] = 1e-5
+
 
         for key in kwargs:
             if not key in self.control.keys():
@@ -22,10 +27,10 @@ class Linear:
                 self.control[key] = kwargs[key]
         
         self.ls = LineSearch(debug=False)
-        self.tr = TrustRadius(0.25, 0.01, 0.5)
+        self.tr = TrustRadius(self.control["startrad"], self.control["minrad"], self.control["maxrad"])
 
 
-    def run(self, obj, thresh=1e-6, maxit=100):
+    def run(self, obj, thresh=1e-6, maxit=100, strong=False):
         '''
         Minimization using line search
         '''
@@ -63,12 +68,14 @@ class Linear:
                 reset = False
             else:
                 wolfe1 = (e_cur - e_ref) <= 1e-4 * np.dot(step,grad_ref) 
-                wolfe2 = - np.dot(step,grad) <= - 0.9 * np.dot(step,grad_ref)
+                if strong:
+                    wolfe2 = abs(np.dot(step,grad)) <= - 0.9 * np.dot(step,grad_ref)
+                else:
+                    wolfe2 = - np.dot(step,grad) <= - 0.9 * np.dot(step,grad_ref)
                 goldstein = (e_cur - e_ref) >= (1-0.1) * np.dot(step,grad_ref)
-                if(np.max(np.abs(step))>=self.control["maxstep"]):
-                    # We're on maximum step size, so we can't extrapolate
-                    #print("Overriding Wolfe2")
-                    wolfe2 = True
+                # if(np.max(np.abs(step))>=self.control["maxstep"]):
+                #     # We're on maximum step size, so we can't extrapolate
+                #     wolfe2 = True
                 if(self.ls.iteration > 10):
                     wolfe1, wolfe2 = True, True
                     goldstein = True
@@ -78,33 +85,41 @@ class Linear:
                 # save step
                 obj.save_last_step()
 
+                # get initial a_0 guess
+                if istep > 0:
+                    a_0 = min(1,2*(e_cur-e_ref)/np.dot(p,grad_ref))
+                else:
+                    a_0 = 1
+
                 # save new gradient and energy
                 grad_ref = grad.copy()
                 e_ref = e_cur
 
                 # take step
-                step = self.get_linear_step(e_cur, grad, eta, mat_H, prec, adiag=conv*conv)
-
+                p = self.get_linear_step(e_cur, grad, eta, mat_H, prec, adiag=conv*conv)
+                step = a_0 * p
                 # Need to make sure s.g < 0 to maintain positive-definite L-BFGS Hessian 
                 if(np.dot(step,grad_ref) > 0):
-                    print("  Step has positive overlap with gradient - reversing direction")
+                    # print("  Step has positive overlap with gradient - reversing direction")
                     step *= -1
+                    p *= -1
                     reset = True
+                    comment = "reversing"
 
-                lscale = self.control["maxstep"] / np.max(np.abs(step))
-                if(lscale < 1):
-                    step = lscale * step
-                    comment = "rescaled"
+                # lscale = self.control["maxstep"] / np.max(np.abs(step))
+                # if(lscale < 1):
+                #     step = lscale * step
+                #     comment = "rescaled"
 
                 # reset line search
                 x_ref = 0
                 g_ref = np.dot(step,grad) / np.linalg.norm(step)
                 self.ls.reset(e_ref,x_ref,g_ref)
             else:
-                if(not wolfe2):
-                    comment = "understep"
-                elif(not wolfe1):
+                if(not wolfe1):
                     comment = "overstep"
+                elif(not wolfe2):
+                    comment = "understep"
                 # line search parameters
                 x_cur = np.linalg.norm(step)
                 g_cur = np.dot(step,grad) / x_cur
@@ -116,6 +131,7 @@ class Linear:
                 x_next = self.ls.next_iteration(wolfe1, wolfe2, e_cur, x_cur, g_cur)
                 #print(f"x_next = {x_next: 10.6f}  x_cur = {x_cur: 10.6f}")
                 a_cur = x_next / x_cur
+                # min_a = min(a_cur, self.control["maxstep"])
                 step = a_cur * step
 
             obj.take_step(step)
@@ -123,7 +139,8 @@ class Linear:
         end_time = datetime.datetime.now()
         print(f"Time elapsed = {(end_time-start_time).total_seconds()}")
         print(f"Iterations = {istep}")
-        return converged
+        return istep, e_ref
+
 
     def run2(self, obj, thresh=1e-6, maxit=100):
         '''
@@ -153,14 +170,15 @@ class Linear:
                 converged = True
                 break
 
-            if(istep == 0 or reset):
+            if(istep == 0):
                 # Define state for first step
                 accept = True
             else:
-                ared = e_ref - e_cur
-                pred = - (np.dot(grad,step) + 0.5 * step @ (self.B @ step))
-                # print(ared/pred)
-                accept = self.tr.accept_step(abs(ared), abs(pred), np.linalg.norm(step))
+                ared = e_cur - e_ref
+                # pred1 = 0.5 * np.dot(grad,step)# + 0.5 * step.dot(self.B.dot(step)))
+                # pred2 = np.dot(grad,step) + step.dot(self.B.dot(step))
+                accept = self.tr.accept_step(ared, pred, np.linalg.norm(step))
+                # print(ared, pred, self.tr.rtrust)
                 # print(self.tr.rtrust)
 
             comment = ""
@@ -177,45 +195,49 @@ class Linear:
                 pu = - ((np.dot(grad,grad))/(grad.dot(self.B.dot(grad)))) * grad
                 step, comment = self.tr.dogleg_step(pu, pb)
 
-                # lscale = self.control["maxstep"] / np.max(np.abs(step))
-                # if(lscale < 1):
-                #     step = lscale * step
-                #     comment = "rescaled"
-
-                # Need to make sure s.g < 0 to maintain positive-definite L-BFGS Hessian 
-                if(np.dot(step,grad_ref) > 0):
-                    print("  Step has positive overlap with gradient - reversing direction")
-                    step *= -1
-                    reset = True
 
             else:
-                comment = "Restore step"
                 # restore last step
                 obj.restore_last_step()
+                e_cur = obj.energy
+                grad = obj.gradient
+                eta = obj.wfn_grad.copy()
+                prec = obj.get_preconditioner()
+                conv = np.linalg.norm(grad,ord=np.inf)
 
+                # get step
                 pb = self.get_linear_step(e_cur, grad, eta, mat_H, prec, adiag=conv*conv)
                 pu = - ((np.dot(grad,grad))/(grad.dot(self.B.dot(grad)))) * grad
                 step, comment = self.tr.dogleg_step(pu, pb)
+                comment = "Restore step"
 
+            if(np.dot(step,grad_ref) > 0):
+                # print("  Step has positive overlap with gradient - reversing direction")
+                step *= -1
+                comment = "reversing"
+
+
+            pred = (np.dot(grad,step) + step.dot(self.B.dot(step)))
 
             obj.take_step(step)
         
         end_time = datetime.datetime.now()
-        print(f"Time elapsed = {(end_time-start_time).total_seconds()}")
+        time = (end_time-start_time).total_seconds()
+        print(f"Time elapsed = {time: 10.3f}")
         print(f"Iterations = {istep}")
-        return converged
+        return istep, e_ref
         
 
     def get_linear_step(self, e_cur, grad, eta, mat_H, prec, adiag=0.1):
         # compute H and S
         Pinv = np.diag(np.power(np.sqrt(np.clip(prec,0.1,None)),-1))
-        H = eta.T @ (mat_H @ eta)
+        self.H = eta.T @ (mat_H @ eta)
         S = eta.T @ eta
         # Transform the prec basis (hope alpha is regularized)
-        Ht = Pinv @ H @ Pinv
+        Ht = Pinv @ self.H @ Pinv
         St = Pinv @ S @ Pinv
         # construct matrix A
-        A = H - e_cur * S
+        A = self.H - e_cur * S
         # get alpha from the lowest eigenvalue if it is positive definite
         adiag = 0.2
         Emin = np.linalg.eigvalsh(A)[0]
@@ -223,9 +245,9 @@ class Linear:
         # print(f"alpha = {alpha: 10.8f}   Emin = {Emin: 10.8f}")#   Emin2 = {Emin2: 10.8f}")
         
         M = A + alpha * S
-        self.B = 2 * M
+        self.B = A
         # get eigenvectors 
         gt = Pinv @ grad
-        x = gmres(self.B, -grad)[0]
+        x = gmres(M, -0.5*grad)[0]
         #x = Pinv @ xt
         return x

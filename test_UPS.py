@@ -16,7 +16,7 @@ class T_UPS(Function):
 
         Inherits from the Function abstract base class
     """
-    def __init__(self,include_doubles=False, approx_prec=False, use_prec=True, use_proj=True, pp=True, oo=True):
+    def __init__(self,include_doubles=False, approx_prec=False, use_prec=False, use_proj=True, pp=True, oo=True):
         # Hamiltonian variables
         self.t = 1
         self.U = 6
@@ -340,7 +340,7 @@ class T_UPS(Function):
 
 
 
-# np.random.seed(7)
+np.random.seed(7)
 # test = T_UPS(include_doubles=True, approx_prec=False)
 # test.get_initial_guess()
 
@@ -352,41 +352,22 @@ class T_UPS(Function):
 # print(np.diag(hess))
 # print(hess_an)
 # quit()
-for isample in range(1):
+data = np.zeros((10,2))
+opt = LBFGS(with_transport=False,with_canonical=False,prec_thresh=0.1)
+lin = Linear()
+for isample in range(10):
     test = T_UPS(include_doubles=True, approx_prec=True, use_prec=True, pp=True, oo=True)
-    # test.get_initial_guess()
-    print('Initial Guess Applied')
-    opt = LBFGS(with_transport=False,with_canonical=False,prec_thresh=0.1)
-    lin = Linear()
+    test.get_initial_guess()
+    # print('Initial Guess Applied')
     print(f"Use preconditioner: {test.use_prec}")
     print(f"Approximate preconditioner: {test.approx_prec}")
     print(f"Orbital Optimised: {test.orb_opt}")
     print(f"Perfect Pairing: {test.perf_pair}")
-    # opt.run(test, maxit=100)
-    lin.run2(test, maxit=1000)
-    # print(test.x/np.pi)
-    continue
-    # for i in range(1000):
-    #     # eta[:,0] = test.wfn
-    #     # eta[:,1:] = test.wfn_grad
-    #     eta = test.wfn_grad.copy()
-    #     H = eta.T @ (test.mat_H @ eta)
-    #     S = eta.T @ eta
-    #     A = H - test.energy * S
-    #     alpha_diag = 0.2
-    #     alpha = - min(0,np.linalg.eigvalsh(A)[0]) + alpha_diag
-    #     M = A + alpha * S
-    #     g = test.gradient.copy()
-    #     x = gmres(M, -0.5*g)[0]
-    #     xscale = np.max(np.abs(x))
-    #     if(xscale > 0.25):
-    #         x *= 0.25 / xscale
-    #     test.take_step(x)
-    #     print(test.energy)
-    #     if np.linalg.norm(test.gradient,ord=np.inf) < 1e-6:
-    #         print(f"Linear iterations: {i+1}")
-    #         quit()
-
+    # opt.run(test, maxit=1000)
+    # lin.run(test, maxit=1000)
+    iterations, energy = lin.run2(test, maxit=1000)
+    data[isample,:] = iterations, energy
+    np.savetxt("./dump/random/linear-trustradius.csv", data, delimiter=",")
 
     #     step = np.array([np.arctan2(ci,c[0,0]) for ci in c[1:,0]])
     #     print(step)
