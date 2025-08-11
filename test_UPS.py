@@ -61,6 +61,9 @@ class T_UPS(Function):
         self.initialise_ref()
         print('Wavefunction Reference Generated')
 
+        self.req_density_mat = False
+        if self.req_density_mat:
+            self.initialise_doubly_rm_matrix()
 
         # Current position
         self.x = np.zeros(self.dim)
@@ -141,45 +144,8 @@ class T_UPS(Function):
             wfn_grad[:,j] = self.kop_ij[op] @ wfn_grad[:,j]
             if not self.approx_prec:
                 wfn_grad[:,j+self.dim] = self.kop_ij[op] @ wfn_grad[:,j]
-        return wfn_grad[:,:self.dim], wfn_grad[:,self.dim:]    
+        return wfn_grad[:,:self.dim], wfn_grad[:,self.dim:]
 
-
-        
-        # bra = self.wfn.copy()
-        # ket = self.H_wfn.copy()
-        # wfn_grad_2 = np.zeros(2*self.dim)
-
-        # for j, op in enumerate(op_order_rev):
-        #     bra = expm_multiply(-self.kop_ij[op]*x_rev[j], bra)
-        #     ket = expm_multiply(-self.kop_ij[op]*x_rev[j], ket)
-            
-
-        #     wfn_grad_2[self.dim-1-j] = 2* ket.T @ (self.kop_ij[op] @ bra)
-        #     # wfn_grad[:,j] = self.kop_ij[self.op_order[j]] @ wfn_grad[:,j]
-        #     if self.approx_prec == False:
-        #         wfn_grad_2[2*self.dim-1-j] = 2* ket.T @ (self.kop_ij[op] @ (self.kop_ij[op] @ bra))
-        # end = timer()
-        # print(end-start)
-        # return wfn_grad[:,:self.dim], wfn_grad_2[:self.dim], wfn_grad_2[self.dim:]
-
-        # start = timer()
-        # for j, op in enumerate(op_order_rev):
-        #     bra_r = expm_multiply(-self.kop_ij[op]*x_rev[j], bra_r)
-        #     if j == 0:
-        #         bra_l = expm(-self.kop_ij[op]*x_rev[j]).toarray()
-        #     else:
-        #         bra_l = expm_multiply(-self.kop_ij[op]*x_rev[j], bra_l)
-            
-
-        #     wfn_grad[:,self.dim-1-j] = bra_l.T @ (self.kop_ij[op] @ bra_r)
-        #     # wfn_grad[:,j] = self.kop_ij[self.op_order[j]] @ wfn_grad[:,j]
-        #     if self.approx_prec == False:
-        #         wfn_grad[:,2*self.dim-1-j] = bra_l.T @ (self.kop_ij[op] @ (self.kop_ij[op] @ bra_r))
-        # end = timer()
-        # print(end-start)
-        # return wfn_grad[:,:self.dim], wfn_grad[:,self.dim:]   
-
-    
     def update(self):
         '''Updates the parameters'''
         self.wfn = self.get_wfn(self.x)
@@ -199,6 +165,7 @@ class T_UPS(Function):
     def hamiltonian(self):
         '''Initialises the Hamiltonian matrix for the Hubbard system'''
         H = FermionicOp({'':0},num_spin_orbitals=self.no_spin)
+
         # one body alpha
         for p in range(self.no_spat-1):
             q = p+1
@@ -328,61 +295,54 @@ class T_UPS(Function):
         # get product of the 2 combinations
         full_perms = set(itertools.product(beta_perms,alpha_perms))
         proj_indices = []
+        # convert indices from binary to decimal
         for x in full_perms:
             proj_indices.append(int(''.join(x),2))
+        # sort indices from lowest to highest
         proj_indices.sort()
 
+        # construct projector matrix and dimension of reduced space
         self.mat_proj = np.zeros((self.N, len(proj_indices)))
         for j, idx in enumerate(proj_indices):
             self.mat_proj[idx][j] = 1
         self.mat_proj = csc_matrix(self.mat_proj)
         self.proj_N = len(proj_indices)
+    
+    def initialise_doubly_rm_matrix(self):
+        self.doubly_rm_dict = {}
+        self.doubly_rm_mat = np.zeros((self.no_spat,self.no_spat, self.N, self.N))
+        for r in range(self.no_spat):
+            for s in range(self.no_spat):
+                op = FermionicOp({f"-_{s+self.no_spat} -_{r}": 1.0}, num_spin_orbitals=self.no_spin)
+                mat_op = jw().map(op).to_matrix().real
+                # mat_op = csc_matrix(mat_op)
+                # self.doubly_rm_dict[(r,s)] = mat_op
+                self.doubly_rm_mat[r,s,:,:] = mat_op
+
+    def get_density_mat_doubles(self):
+        ket = self.mat_proj @ self.wfn 
+        ket = self.doubly_rm_mat @ ket
+        density_mat = np.einsum('pqi, rsi->pqrs', ket, ket)
+        return density_mat
 
 
 
-np.random.seed(7)
-# test = T_UPS(include_doubles=True, approx_prec=False)
-# test.get_initial_guess()
 
-# print(test.x)
-# print(test.gradient)
-# print(test.get_numerical_gradient())
-# hess = test.get_numerical_hessian()
-# hess_an = test.hessian_diagonal
-# print(np.diag(hess))
-# print(hess_an)
-# quit()
-data = np.zeros((10,2))
+np.random.seed(10)
+trials = 1
+data = np.zeros((1,2))
 opt = LBFGS(with_transport=False,with_canonical=False,prec_thresh=0.1)
 lin = Linear()
-for isample in range(10):
+for isample in range(trials):
     test = T_UPS(include_doubles=True, approx_prec=True, use_prec=True, pp=True, oo=True)
-    test.get_initial_guess()
+    # test.get_initial_guess()
     # print('Initial Guess Applied')
     print(f"Use preconditioner: {test.use_prec}")
     print(f"Approximate preconditioner: {test.approx_prec}")
     print(f"Orbital Optimised: {test.orb_opt}")
     print(f"Perfect Pairing: {test.perf_pair}")
-    # opt.run(test, maxit=1000)
-    # lin.run(test, maxit=1000)
-    iterations, energy = lin.run2(test, maxit=1000)
-    data[isample,:] = iterations, energy
-    np.savetxt("./dump/random/linear-trustradius.csv", data, delimiter=",")
-
-    #     step = np.array([np.arctan2(ci,c[0,0]) for ci in c[1:,0]])
-    #     print(step)
-    #     print(e)
-    #     test.save_last_step()
-    #     for a in np.linspace(-0.5,0.5,101):
-    #         test.restore_last_step()
-    #         test.take_step(a*step)
-    #         print(f"{a: 6.4f} {test.energy: 16.10f}")
-    #     quit()
-    # quit()
-
-    # tangent = test.wfn_grad
-    # metric = tangent.T @ tangent
-    # print(metric)
-    # e, v = np.linalg.eigh(metric)
-    # print(v[:,:3])
-    # print(e)
+    lin.run_dogleg(test,maxit=1000)
+    # iterations, energy = lin.run_linesearch(test, maxit=1000)
+    # data[isample,:] = iterations, energy
+    # with open("./dump/random/l-bfgs.csv", "ab") as f:
+    #     np.savetxt(f, data, delimiter=",")

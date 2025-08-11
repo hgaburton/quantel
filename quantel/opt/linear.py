@@ -9,12 +9,15 @@ from scipy.sparse.linalg import gmres
 
 class Linear:
     '''
+    Class to implement the linear method.
     Based on J. Phys. Chem. A 2024, 128, 40, 8762–8776
+
+    There are two numerical optimisation methods:
+        - run_linesearch() : uses a line search algorithm 
+        - run_dogleg() : uses a Powell's dog leg trust region method
     '''
     def __init__(self, **kwargs):
         self.control = dict()
-        self.control["maxstep"] = 99
-        self.control["minstep"] = 0.01
         self.control["startrad"] = 0.25
         self.control["maxrad"] = 1
         self.control["minrad"] = 1e-5
@@ -30,18 +33,31 @@ class Linear:
         self.tr = TrustRadius(self.control["startrad"], self.control["minrad"], self.control["maxrad"])
 
 
-    def run(self, obj, thresh=1e-6, maxit=100, strong=False):
+    def run_linesearch(self, obj, thresh=1e-6, maxit=100, strong=False):
         '''
-        Minimization using line search
+        Minimization using line search.
+
+        thresh : float, threshold for gradient convergence
+        maxit : integer, maximum number of iterations
+        strong : bool, Enables strong Wolfe conditions if True, weak Wolfe conditions otherwise
+
+        Run the optimisation for a particular objective function obj.
+            
+            obj must have the following methods implemented:
+              + energy
+              + gradient
+              + obj.wfn_grad : tangent vectors of the wavefunction
+              + dim
+              + get_preconditioner()
+              + take_step()
         '''
         start_time = datetime.datetime.now()
         mat_H = obj.mat_H
         converged = False
         reset = False
-        a_cur = 1
-
 
         for istep in range(maxit+1):
+            # get energy, gradient, tangent vectors(eta), preconditioner and check convergence
             e_cur = obj.energy
             grad = obj.gradient
             eta = obj.wfn_grad.copy()
@@ -51,7 +67,6 @@ class Linear:
             if istep > 0:
                 print(" {: 5d} {: 16.10f}    {:8.2e}     {:8.2e}    {:10s}".format(
                       istep, e_cur, np.max(np.abs(step)), conv, comment))
-                #print(f" {istep: 5d} {ecur: 16.10f}   {ecur-eref: 8.2e}   {RMSDP: 8.2e}   {MaxDP: 8.2e}   {MaxGrad: 8.2e}")
             else:
                 print(" {: 5d} {: 16.10f}                 {:8.2e}".format(istep, e_cur, conv))
             sys.stdout.flush()
@@ -64,28 +79,25 @@ class Linear:
                 # Define state for first step
                 wolfe1 = True
                 wolfe2 = True
-                goldstein = True
                 reset = False
             else:
-                wolfe1 = (e_cur - e_ref) <= 1e-4 * np.dot(step,grad_ref) 
+                # check Wolfe conditions
+                phi = np.dot(step,grad_ref) 
+                wolfe1 = (e_cur - e_ref) <= 1e-4 * phi 
                 if strong:
-                    wolfe2 = abs(np.dot(step,grad)) <= - 0.9 * np.dot(step,grad_ref)
+                    wolfe2 = abs(np.dot(step,grad)) <= - 0.9 * phi
                 else:
-                    wolfe2 = - np.dot(step,grad) <= - 0.9 * np.dot(step,grad_ref)
-                goldstein = (e_cur - e_ref) >= (1-0.1) * np.dot(step,grad_ref)
-                # if(np.max(np.abs(step))>=self.control["maxstep"]):
-                #     # We're on maximum step size, so we can't extrapolate
-                #     wolfe2 = True
+                    wolfe2 = - np.dot(step,grad) <= - 0.9 * phi
                 if(self.ls.iteration > 10):
+                    # accept if 10 iterations have passed
                     wolfe1, wolfe2 = True, True
-                    goldstein = True
 
             comment = ""
             if (wolfe1 and wolfe2):
                 # save step
                 obj.save_last_step()
 
-                # get initial a_0 guess
+                # get initial a_0 guess from quadratic interpolation
                 if istep > 0:
                     a_0 = min(1,2*(e_cur-e_ref)/np.dot(p,grad_ref))
                 else:
@@ -97,7 +109,10 @@ class Linear:
 
                 # take step
                 p = self.get_linear_step(e_cur, grad, eta, mat_H, prec, adiag=conv*conv)
+
+                # scale p with a_0
                 step = a_0 * p
+
                 # Need to make sure s.g < 0 to maintain positive-definite L-BFGS Hessian 
                 if(np.dot(step,grad_ref) > 0):
                     # print("  Step has positive overlap with gradient - reversing direction")
@@ -105,12 +120,7 @@ class Linear:
                     p *= -1
                     reset = True
                     comment = "reversing"
-
-                # lscale = self.control["maxstep"] / np.max(np.abs(step))
-                # if(lscale < 1):
-                #     step = lscale * step
-                #     comment = "rescaled"
-
+                
                 # reset line search
                 x_ref = 0
                 g_ref = np.dot(step,grad) / np.linalg.norm(step)
@@ -129,29 +139,40 @@ class Linear:
 
                 # get next step
                 x_next = self.ls.next_iteration(wolfe1, wolfe2, e_cur, x_cur, g_cur)
-                #print(f"x_next = {x_next: 10.6f}  x_cur = {x_cur: 10.6f}")
                 a_cur = x_next / x_cur
-                # min_a = min(a_cur, self.control["maxstep"])
                 step = a_cur * step
 
             obj.take_step(step)
         
         end_time = datetime.datetime.now()
-        print(f"Time elapsed = {(end_time-start_time).total_seconds()}")
+        print(f"Time elapsed = {(end_time-start_time).total_seconds()}s")
         print(f"Iterations = {istep}")
-        return istep, e_ref
+        return converged
 
 
-    def run2(self, obj, thresh=1e-6, maxit=100):
+    def run_dogleg(self, obj, thresh=1e-6, maxit=100):
         '''
-        Minimization using trust radius dogleg method
+        Minimization using trust region dogleg method
+
+        thresh : float, threshold for gradient convergence
+        maxit : integer, maximum number of iterations
+
+        Run the optimisation for a particular objective function obj.
+            
+            obj must have the following methods implemented:
+              + energy
+              + gradient
+              + obj.wfn_grad : tangent vectors of the wavefunction
+              + dim
+              + get_preconditioner()
+              + take_step()
         '''
         start_time = datetime.datetime.now()
         mat_H = obj.mat_H
         converged = False
-        reset = False
 
         for istep in range(maxit+1):
+            # get energy, gradient, tangent vectors(eta), preconditioner and check convergence
             e_cur = obj.energy
             grad = obj.gradient
             eta = obj.wfn_grad.copy()
@@ -161,7 +182,6 @@ class Linear:
             if istep > 0:
                 print(" {: 5d} {: 16.10f}    {:8.2e}     {:8.2e}    {:10s}".format(
                       istep, e_cur, np.max(np.abs(step)), conv, comment))
-                #print(f" {istep: 5d} {ecur: 16.10f}   {ecur-eref: 8.2e}   {RMSDP: 8.2e}   {MaxDP: 8.2e}   {MaxGrad: 8.2e}")
             else:
                 print(" {: 5d} {: 16.10f}                 {:8.2e}".format(istep, e_cur, conv))
             sys.stdout.flush()
@@ -174,12 +194,9 @@ class Linear:
                 # Define state for first step
                 accept = True
             else:
+                # check step is acceptable
                 ared = e_cur - e_ref
-                # pred1 = 0.5 * np.dot(grad,step)# + 0.5 * step.dot(self.B.dot(step)))
-                # pred2 = np.dot(grad,step) + step.dot(self.B.dot(step))
                 accept = self.tr.accept_step(ared, pred, np.linalg.norm(step))
-                # print(ared, pred, self.tr.rtrust)
-                # print(self.tr.rtrust)
 
             comment = ""
             if (accept):
@@ -197,7 +214,7 @@ class Linear:
 
 
             else:
-                # restore last step
+                # restore last step and get energy, gradient, etc again.
                 obj.restore_last_step()
                 e_cur = obj.energy
                 grad = obj.gradient
@@ -216,19 +233,27 @@ class Linear:
                 step *= -1
                 comment = "reversing"
 
-
+            # get predicted energy change to 2nd order
             pred = (np.dot(grad,step) + step.dot(self.B.dot(step)))
 
             obj.take_step(step)
         
         end_time = datetime.datetime.now()
         time = (end_time-start_time).total_seconds()
-        print(f"Time elapsed = {time: 10.3f}")
+        print(f"Time elapsed = {time: 10.3f}s")
         print(f"Iterations = {istep}")
-        return istep, e_ref
+        return converged
         
 
     def get_linear_step(self, e_cur, grad, eta, mat_H, prec, adiag=0.1):
+        """ Compute the linear step, x, from solving the eignvalue equation:
+            Mx = -0.5g
+
+            M = H - e_cur * S + alpha * S
+            where alpha is the lowest eigenvalue of H - e_cur * S or 0 plus an adiag term
+            
+            Based on J. Phys. Chem. A 2024, 128, 40, 8762–8776
+        """
         # compute H and S
         Pinv = np.diag(np.power(np.sqrt(np.clip(prec,0.1,None)),-1))
         self.H = eta.T @ (mat_H @ eta)
@@ -242,8 +267,7 @@ class Linear:
         adiag = 0.2
         Emin = np.linalg.eigvalsh(A)[0]
         alpha = - min(0,Emin) + adiag
-        # print(f"alpha = {alpha: 10.8f}   Emin = {Emin: 10.8f}")#   Emin2 = {Emin2: 10.8f}")
-        
+
         M = A + alpha * S
         self.B = A
         # get eigenvectors 
