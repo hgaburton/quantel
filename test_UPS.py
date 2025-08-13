@@ -16,7 +16,7 @@ class T_UPS(Function):
 
         Inherits from the Function abstract base class
     """
-    def __init__(self,include_doubles=False, approx_prec=False, use_prec=False, use_proj=True, pp=True, oo=True):
+    def __init__(self,include_doubles=False, approx_prec=False, use_prec=False, use_proj=True, pp=True, oo=True, include_dmat=False):
         # Hamiltonian variables
         self.t = 1
         self.U = 6
@@ -61,14 +61,14 @@ class T_UPS(Function):
         self.initialise_ref()
         print('Wavefunction Reference Generated')
 
-        self.req_density_mat = False
-        if self.req_density_mat:
+        self.include_dmat = include_dmat
+        if self.include_dmat:
             self.initialise_doubly_rm_matrix()
 
         # Current position
         self.x = np.zeros(self.dim)
         self.update()
-
+        
     @property
     def dim(self):
         """Dimension of parameter vector, x"""
@@ -151,7 +151,6 @@ class T_UPS(Function):
         self.wfn = self.get_wfn(self.x)
         self.H_wfn = self.mat_H @ self.wfn
         self.wfn_grad, self.wfn_hess = self.get_wfn_gradient(self.x)
-        # self.wfn_grad, self.wfn_grad_2, self.wfn_hess = self.get_wfn_gradient(self.x)
 
     def save_last_step(self):
         """Save current position"""
@@ -309,23 +308,21 @@ class T_UPS(Function):
         self.proj_N = len(proj_indices)
     
     def initialise_doubly_rm_matrix(self):
-        self.doubly_rm_dict = {}
         self.doubly_rm_mat = np.zeros((self.no_spat,self.no_spat, self.N, self.N))
         for r in range(self.no_spat):
             for s in range(self.no_spat):
                 op = FermionicOp({f"-_{s+self.no_spat} -_{r}": 1.0}, num_spin_orbitals=self.no_spin)
+                op += FermionicOp({f"-_{s} -_{r+self.no_spat}": 1.0}, num_spin_orbitals=self.no_spin)
+                op += FermionicOp({f"-_{s+self.no_spat} -_{r+self.no_spat}": 1.0}, num_spin_orbitals=self.no_spin)
+                op += FermionicOp({f"-_{s} -_{r}": 1.0}, num_spin_orbitals=self.no_spin)
                 mat_op = jw().map(op).to_matrix().real
-                # mat_op = csc_matrix(mat_op)
-                # self.doubly_rm_dict[(r,s)] = mat_op
                 self.doubly_rm_mat[r,s,:,:] = mat_op
 
-    def get_density_mat_doubles(self):
+    def get_2e_red_density_mat(self):
         ket = self.mat_proj @ self.wfn 
         ket = self.doubly_rm_mat @ ket
         density_mat = np.einsum('pqi, rsi->pqrs', ket, ket)
         return density_mat
-
-
 
 
 np.random.seed(10)
@@ -342,6 +339,7 @@ for isample in range(trials):
     print(f"Orbital Optimised: {test.orb_opt}")
     print(f"Perfect Pairing: {test.perf_pair}")
     lin.run_dogleg(test,maxit=1000)
+    print(test.x)
     # iterations, energy = lin.run_linesearch(test, maxit=1000)
     # data[isample,:] = iterations, energy
     # with open("./dump/random/l-bfgs.csv", "ab") as f:
