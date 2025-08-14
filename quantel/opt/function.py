@@ -54,6 +54,7 @@ class Function(metaclass=ABCMeta):
     def get_numerical_gradient(self,eps=1e-3):
         """Finite difference gradient for debugging"""
         grad = np.zeros((self.dim))
+        self.save_last_step()
         for i in range(self.dim):
             x1 = np.zeros(self.dim)
             x2 = np.zeros(self.dim)
@@ -77,6 +78,10 @@ class Function(metaclass=ABCMeta):
     def get_numerical_hessian(self,eps=1e-3,diag=False):
         """Finite difference Hessian matrix for debugging"""
         Hess = np.zeros((self.dim, self.dim))
+        # Save the origin
+        self.save_last_step()
+
+        # Compute finite differences
         for i in range(self.dim):
             for j in range(i,self.dim):
                 if(diag and i!=j): continue

@@ -80,6 +80,16 @@ class GHF(Wavefunction):
         self.energy_components = dict(Nuclear=En, One_Electron=E1, Two_Electron=E2, Exchange_Correlation=0)
         return En + E1 + E2
 
+    @property 
+    def sz(self):
+        """Get the expectation value of the spin operator S^z"""
+        S = self.integrals.overlap_matrix()
+        # Get density spin component
+        Da = self.dens[:self.nbsf,:self.nbsf]
+        Db = self.dens[self.nbsf:,self.nbsf:]
+        # Compute <Sz>
+        return 0.5 * (np.trace(S @ Da) - np.trace(S @ Db))
+    
     @property
     def s2(self):
         """Get the spin of the current RHF state"""
@@ -151,8 +161,8 @@ class GHF(Wavefunction):
             for key, value in self.energy_components.items():
                 print(f" {key.replace('_',' '):>20s} = {value:14.8f} Eh")
             print(" ---------------------------------------------")
-            print(f"        <Sz> = {0:5.2f}")
-            print(f"        <S2> = {self.s2:5.2f}")
+            print(f"        <Sz> = {self.sz:5.2f}")
+            #print(f"        <S2> = {self.s2:5.2f}")
         if(verbose > 2):
             matrix_print(self.mo_coeff[:,:self.nocc], title="Occupied Orbital Coefficients")
         if(verbose > 3):
@@ -318,6 +328,7 @@ class GHF(Wavefunction):
     def restore_last_step(self):
         """Restore orbital coefficients to the previous step"""
         self.mo_coeff = self.mo_coeff_save.copy()
+        self.update()
 
     def save_last_step(self):
         """Save the current orbital coefficients"""
@@ -437,5 +448,5 @@ class GHF(Wavefunction):
             ev = np.linalg.eigvalsh(M)
         else:
             ev = np.linalg.eigvalsh(M[[0,2],:][:,[0,2]])
-        print(ev)
+            
         return self.nelec - ev[-1]

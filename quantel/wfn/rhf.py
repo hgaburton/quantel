@@ -198,8 +198,8 @@ class RHF(Wavefunction):
 
     def get_density(self):
         """Compute the 1RDM for the current state in AO basis"""
-        Cocc = self.mo_coeff[:,:self.nocc]
         self.dens = np.dot(Cocc, Cocc.T)
+        Cocc = self.mo_coeff[:,:self.nocc]
 
     def get_fock(self):
         """Compute the Fock matrix for the current state"""
@@ -306,6 +306,7 @@ class RHF(Wavefunction):
     def restore_last_step(self):
         """Restore orbital coefficients to the previous step"""
         self.mo_coeff = self.mo_coeff_save.copy()
+        self.update()
 
     def save_last_step(self):
         """Save the current orbital coefficients"""
