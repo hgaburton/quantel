@@ -16,7 +16,7 @@ class T_UPS(Function):
 
         Inherits from the Function abstract base class
     """
-    def __init__(self,include_doubles=False, approx_prec=False, use_prec=False, use_proj=True, pp=True, oo=True, include_dmat=False):
+    def __init__(self, obj=None, include_doubles=False, approx_prec=False, use_prec=False, use_proj=True, pp=True, oo=True, include_dmat=False, layers=3):
         # Hamiltonian variables
         self.t = 1
         self.U = 6
@@ -51,12 +51,15 @@ class T_UPS(Function):
         print('Operator Matrices Generated')
 
         # operator order from left to right
-        self.layers = 3
+        self.layers = layers
         self.initialise_op_order() 
         print('Operator Order Generated')
 
         # Define Hamiltonian and reference
-        self.hamiltonian()
+        if obj is None:
+            self.hamiltonian_hubbard()
+        else:
+            self.hamiltonian_mo(obj)
         print('Hamiltonian Generated')
         self.initialise_ref()
         print('Wavefunction Reference Generated')
@@ -161,7 +164,42 @@ class T_UPS(Function):
         self.x = self.xsave.copy()
         self.update()
 
-    def hamiltonian(self):
+    def hamiltonian_mo(self, obj):
+        '''Initialises the Hamiltonian matrix for given MOs'''
+        # get mo coefficients
+        Cmo = obj.mo_coeff.copy()
+
+        # get integrals
+        vnuc = obj.integrals.scalar_potential() # constant term
+        hpq  = obj.integrals.oei_ao_to_mo(Cmo,Cmo) # <p|h|q>
+        eri_pqrs = obj.integrals.tei_ao_to_mo(Cmo,Cmo,Cmo,Cmo,True,False) # <pq|rs>
+
+        # constant term
+        H = FermionicOp({'':vnuc},num_spin_orbitals=self.no_spin)
+
+        # one electron
+        for q in range(self.no_spat):
+            for p in range(self.no_spat):
+                H += FermionicOp({f"+_{p} -_{q}": hpq[p,q]}, num_spin_orbitals=self.no_spin)
+                H += FermionicOp({f"+_{p+self.no_spat} -_{q+self.no_spat}": hpq[p,q]}, num_spin_orbitals=self.no_spin)
+
+        # two electron
+        for s in range(self.no_spat):
+            for r in range(self.no_spat):
+                for q in range(self.no_spat):
+                    for p in range(self.no_spat):
+                        H += 0.5*FermionicOp({f"+_{p} +_{q+self.no_spat} -_{s+self.no_spat} -_{r}": eri_pqrs[p,q,r,s]}, num_spin_orbitals=self.no_spin)
+                        H += 0.5*FermionicOp({f"+_{p+self.no_spat} +_{q} -_{s} -_{r+self.no_spat}": eri_pqrs[p,q,r,s]}, num_spin_orbitals=self.no_spin)
+                        H += 0.5*FermionicOp({f"+_{p+self.no_spat} +_{q+self.no_spat} -_{s+self.no_spat} -_{r+self.no_spat}": eri_pqrs[p,q,r,s]}, num_spin_orbitals=self.no_spin)
+                        H += 0.5*FermionicOp({f"+_{p} +_{q} -_{s} -_{r}": eri_pqrs[p,q,r,s]}, num_spin_orbitals=self.no_spin)
+        
+        # Save as a matrix
+        self.mat_H = jw().map(H).to_matrix().real
+
+        if self.use_proj:
+            self.mat_H = csc_matrix(self.mat_proj.T @ (self.mat_H @ self.mat_proj))
+
+    def hamiltonian_hubbard(self):
         '''Initialises the Hamiltonian matrix for the Hubbard system'''
         H = FermionicOp({'':0},num_spin_orbitals=self.no_spin)
 
@@ -179,7 +217,6 @@ class T_UPS(Function):
         for q in range(self.no_spat):
             p = q + self.no_spat
             H += FermionicOp({f"+_{q} +_{p} -_{p} -_{q}": self.U}, num_spin_orbitals=self.no_spin)
-        
         # Save as a matrix
         self.mat_H = jw().map(H).to_matrix().real
         if self.use_proj:
@@ -263,7 +300,7 @@ class T_UPS(Function):
         for i in range(0,len(self.kop_ij),2):
             oo_order.extend([i])
         if(self.orb_opt):
-            self.op_order.extend(oo_order*int(self.layers/2))
+            self.op_order.extend(oo_order*int(self.no_spat/2))
 
     def get_singles_matrix(self, p, q):
         t = FermionicOp({f"+_{p} -_{q}": 1.0}, num_spin_orbitals=self.no_spin)
@@ -324,23 +361,24 @@ class T_UPS(Function):
         density_mat = np.einsum('pqi, rsi->pqrs', ket, ket)
         return density_mat
 
-
-np.random.seed(10)
-trials = 1
-data = np.zeros((1,2))
-opt = LBFGS(with_transport=False,with_canonical=False,prec_thresh=0.1)
-lin = Linear()
-for isample in range(trials):
-    test = T_UPS(include_doubles=True, approx_prec=True, use_prec=True, pp=True, oo=True)
-    # test.get_initial_guess()
-    # print('Initial Guess Applied')
-    print(f"Use preconditioner: {test.use_prec}")
-    print(f"Approximate preconditioner: {test.approx_prec}")
-    print(f"Orbital Optimised: {test.orb_opt}")
-    print(f"Perfect Pairing: {test.perf_pair}")
-    lin.run_dogleg(test,maxit=1000)
-    print(test.x)
-    # iterations, energy = lin.run_linesearch(test, maxit=1000)
-    # data[isample,:] = iterations, energy
-    # with open("./dump/random/l-bfgs.csv", "ab") as f:
-    #     np.savetxt(f, data, delimiter=",")
+if __name__ == "__main__":
+    np.random.seed(10)
+    trials = 15
+    data = np.zeros((1,2))
+    opt = LBFGS(with_transport=False,with_canonical=False,prec_thresh=0.1)
+    lin = Linear()
+    for isample in range(trials):
+        test = T_UPS(include_doubles=True, approx_prec=True, use_prec=True, pp=True, oo=True, layers=3)
+        test.get_initial_guess()
+        print('Initial Guess Applied')
+        print(f"Use preconditioner: {test.use_prec}")
+        print(f"Approximate preconditioner: {test.approx_prec}")
+        print(f"Orbital Optimised: {test.orb_opt}")
+        print(f"Perfect Pairing: {test.perf_pair}")
+        # lin.run_linesearch(test,maxit=2000)
+        # new_x = test.x[:(12+(test.layers-1)*15)]
+        # print(test.x)
+        iterations, energy = lin.run_linesearch(test, maxit=2000)
+        data[isample,:] = iterations, energy
+        with open("./dump/random/linear-linesearch.csv", "ab") as f:
+            np.savetxt(f, data, delimiter=",")
