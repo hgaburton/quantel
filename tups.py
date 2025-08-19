@@ -177,22 +177,62 @@ class T_UPS(Function):
         # constant term
         H = FermionicOp({'':vnuc},num_spin_orbitals=self.no_spin)
 
-        # one electron
-        for q in range(self.no_spat):
-            for p in range(self.no_spat):
-                H += FermionicOp({f"+_{p} -_{q}": hpq[p,q]}, num_spin_orbitals=self.no_spin)
-                H += FermionicOp({f"+_{p+self.no_spat} -_{q+self.no_spat}": hpq[p,q]}, num_spin_orbitals=self.no_spin)
+        if not self.perf_pair:
+            # one electron
+            for q in range(self.no_spat):
+                for p in range(self.no_spat):
+                    H += FermionicOp({f"+_{p} -_{q}": hpq[p,q]}, num_spin_orbitals=self.no_spin)
+                    H += FermionicOp({f"+_{p+self.no_spat} -_{q+self.no_spat}": hpq[p,q]}, num_spin_orbitals=self.no_spin)
 
-        # two electron
-        for s in range(self.no_spat):
-            for r in range(self.no_spat):
-                for q in range(self.no_spat):
-                    for p in range(self.no_spat):
-                        H += 0.5*FermionicOp({f"+_{p} +_{q+self.no_spat} -_{s+self.no_spat} -_{r}": eri_pqrs[p,q,r,s]}, num_spin_orbitals=self.no_spin)
-                        H += 0.5*FermionicOp({f"+_{p+self.no_spat} +_{q} -_{s} -_{r+self.no_spat}": eri_pqrs[p,q,r,s]}, num_spin_orbitals=self.no_spin)
-                        H += 0.5*FermionicOp({f"+_{p+self.no_spat} +_{q+self.no_spat} -_{s+self.no_spat} -_{r+self.no_spat}": eri_pqrs[p,q,r,s]}, num_spin_orbitals=self.no_spin)
-                        H += 0.5*FermionicOp({f"+_{p} +_{q} -_{s} -_{r}": eri_pqrs[p,q,r,s]}, num_spin_orbitals=self.no_spin)
-        
+            # two electron
+            for s in range(self.no_spat):
+                for r in range(self.no_spat):
+                    for q in range(self.no_spat):
+                        for p in range(self.no_spat):
+                            H += 0.5*FermionicOp({f"+_{p} +_{q+self.no_spat} -_{s+self.no_spat} -_{r}": eri_pqrs[p,q,r,s]}, num_spin_orbitals=self.no_spin)
+                            H += 0.5*FermionicOp({f"+_{p+self.no_spat} +_{q} -_{s} -_{r+self.no_spat}": eri_pqrs[p,q,r,s]}, num_spin_orbitals=self.no_spin)
+                            H += 0.5*FermionicOp({f"+_{p+self.no_spat} +_{q+self.no_spat} -_{s+self.no_spat} -_{r+self.no_spat}": eri_pqrs[p,q,r,s]}, num_spin_orbitals=self.no_spin)
+                            H += 0.5*FermionicOp({f"+_{p} +_{q} -_{s} -_{r}": eri_pqrs[p,q,r,s]}, num_spin_orbitals=self.no_spin)
+        else:
+            # one electron assume no_alpha and no_beta is equal
+            for q in range(self.no_alpha):
+                for p in range(self.no_alpha):
+                    H += FermionicOp({f"+_{2*p} -_{2*q}": hpq[p,q]}, num_spin_orbitals=self.no_spin)
+                    H += FermionicOp({f"+_{2*p+self.no_spat} -_{2*q+self.no_spat}": hpq[p,q]}, num_spin_orbitals=self.no_spin)
+                    H += FermionicOp({f"+_{2*p+1} -_{2*q+1}": hpq[p+self.no_alpha,q+self.no_alpha]}, num_spin_orbitals=self.no_spin)
+                    H += FermionicOp({f"+_{2*p+1+self.no_spat} -_{2*q+1+self.no_spat}": hpq[p+self.no_alpha,q+self.no_alpha]}, num_spin_orbitals=self.no_spin)
+                    H += FermionicOp({f"+_{2*p} -_{2*q+1}": hpq[p,q+self.no_alpha]}, num_spin_orbitals=self.no_spin)
+                    H += FermionicOp({f"+_{2*p+self.no_spat} -_{2*q+1+self.no_spat}": hpq[p,q+self.no_alpha]}, num_spin_orbitals=self.no_spin)
+                    H += FermionicOp({f"+_{2*p+1} -_{2*q}": hpq[p+self.no_alpha,q]}, num_spin_orbitals=self.no_spin)
+                    H += FermionicOp({f"+_{2*p+1+self.no_spat} -_{2*q+self.no_spat}": hpq[p+self.no_alpha,q]}, num_spin_orbitals=self.no_spin)
+            # two electron
+            for s in range(self.no_spat):
+                for r in range(self.no_spat):
+                    for q in range(self.no_spat):
+                        for p in range(self.no_spat):
+                            if s % 2 == 0:
+                                ss = int(s/2)
+                            else:
+                                ss = int((s-1)/2 + self.no_alpha)
+                            if r % 2 == 0:
+                                rr = int(r/2)
+                            else:
+                                rr = int((r-1)/2 + self.no_alpha)
+                            if q % 2 == 0:
+                                qq = int(q/2)
+                            else:
+                                qq = int((q-1)/2 + self.no_alpha)
+                            if p % 2 == 0:
+                                pp = int(p/2)
+                            else:
+                                pp = int((p-1)/2 + self.no_alpha)
+                            H += 0.5*FermionicOp({f"+_{p} +_{q+self.no_spat} -_{s+self.no_spat} -_{r}": eri_pqrs[pp,qq,rr,ss]}, num_spin_orbitals=self.no_spin)
+                            H += 0.5*FermionicOp({f"+_{p+self.no_spat} +_{q} -_{s} -_{r+self.no_spat}": eri_pqrs[pp,qq,rr,ss]}, num_spin_orbitals=self.no_spin)
+                            H += 0.5*FermionicOp({f"+_{p+self.no_spat} +_{q+self.no_spat} -_{s+self.no_spat} -_{r+self.no_spat}": eri_pqrs[pp,qq,rr,ss]}, num_spin_orbitals=self.no_spin)
+                            H += 0.5*FermionicOp({f"+_{p} +_{q} -_{s} -_{r}": eri_pqrs[pp,qq,rr,ss]}, num_spin_orbitals=self.no_spin)
+            
+
+
         # Save as a matrix
         self.mat_H = jw().map(H).to_matrix().real
 
@@ -224,7 +264,8 @@ class T_UPS(Function):
     
     def get_initial_guess(self):
         # Generate initial position
-        self.x = 2*np.pi*(np.random.rand(self.dim)-0.5)
+        # self.x = 2*np.pi*(np.random.rand(self.dim)-0.5)
+        self.x = 0.1*(np.random.rand(self.dim)-0.5)
         self.update()
 
     def initialise_ref(self):
