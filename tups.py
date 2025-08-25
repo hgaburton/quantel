@@ -17,17 +17,17 @@ class T_UPS(Function):
         Inherits from the Function abstract base class
     """
     def __init__(self, obj=None, include_doubles=False, approx_prec=False, use_prec=False, use_proj=True, pp=True, oo=True, include_dmat=False, layers=3):
-        # Hamiltonian variables
+        # Hubbard Hamiltonian variables
         self.t = 1
         self.U = 6
 
         # define number of spin and spat orbitals
-        self.no_spat = 6
+        self.no_spat = obj.nmo
         self.no_spin = self.no_spat * 2
         # Num of alpha spin
-        self.no_alpha = 3
+        self.no_alpha = obj.nalfa
         # Num of beta spin
-        self.no_beta = 3
+        self.no_beta = obj.nalfa
         # Basis size of Fock Space
         self.N = 2**self.no_spin
 
@@ -91,7 +91,6 @@ class T_UPS(Function):
     def gradient(self):
         """Get the function gradient"""
         grad = 2 * self.wfn_grad.T @ self.H_wfn
-        # grad = self.wfn_grad_2
         return grad
     
     @property
@@ -120,6 +119,7 @@ class T_UPS(Function):
     def take_step(self,step):
         """Take a step in parameter space"""
         self.x = np.mod(self.x + step + np.pi, 2*np.pi) - np.pi
+        # self.x = np.mod(self.x + step + np.pi/2, np.pi) - np.pi/2
         self.update()
     
     def get_wfn(self,x):
@@ -154,6 +154,7 @@ class T_UPS(Function):
         self.wfn = self.get_wfn(self.x)
         self.H_wfn = self.mat_H @ self.wfn
         self.wfn_grad, self.wfn_hess = self.get_wfn_gradient(self.x)
+        # print(self.x[6:12])
 
     def save_last_step(self):
         """Save current position"""
@@ -344,8 +345,8 @@ class T_UPS(Function):
             self.op_order.extend(oo_order*int(self.no_spat/2))
 
     def get_singles_matrix(self, p, q):
-        t = FermionicOp({f"+_{p} -_{q}": 1.0}, num_spin_orbitals=self.no_spin)
-        t += FermionicOp({f"+_{p+self.no_spat} -_{q+self.no_spat}": 1.0}, num_spin_orbitals=self.no_spin)
+        t = FermionicOp({f"+_{p} -_{q}": 1}, num_spin_orbitals=self.no_spin)
+        t += FermionicOp({f"+_{p+self.no_spat} -_{q+self.no_spat}": 1}, num_spin_orbitals=self.no_spin)
         k = t - t.adjoint()
         mat_k = jw().map(k).to_matrix().real
         if self.use_proj:
@@ -401,25 +402,3 @@ class T_UPS(Function):
         ket = self.doubly_rm_mat @ ket
         density_mat = np.einsum('pqi, rsi->pqrs', ket, ket)
         return density_mat
-
-if __name__ == "__main__":
-    np.random.seed(10)
-    trials = 15
-    data = np.zeros((1,2))
-    opt = LBFGS(with_transport=False,with_canonical=False,prec_thresh=0.1)
-    lin = Linear()
-    for isample in range(trials):
-        test = T_UPS(include_doubles=True, approx_prec=True, use_prec=True, pp=True, oo=True, layers=3)
-        test.get_initial_guess()
-        print('Initial Guess Applied')
-        print(f"Use preconditioner: {test.use_prec}")
-        print(f"Approximate preconditioner: {test.approx_prec}")
-        print(f"Orbital Optimised: {test.orb_opt}")
-        print(f"Perfect Pairing: {test.perf_pair}")
-        # lin.run_linesearch(test,maxit=2000)
-        # new_x = test.x[:(12+(test.layers-1)*15)]
-        # print(test.x)
-        iterations, energy = lin.run_linesearch(test, maxit=2000)
-        data[isample,:] = iterations, energy
-        with open("./dump/random/linear-linesearch.csv", "ab") as f:
-            np.savetxt(f, data, delimiter=",")
