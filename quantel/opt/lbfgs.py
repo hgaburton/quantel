@@ -48,8 +48,8 @@ class LBFGS:
         # Save initial time
         kernel_start_time = datetime.datetime.now()
 
-        if plev>0: print()
-        if plev>0: print( "  Initializing L-BFGS optimisation...")
+        if plev>1: print()
+        if plev>1: print( "  Initializing L-BFGS optimisation...")
 
         # Extract key parameters
         max_subspace = self.control["max_subspace"]
@@ -57,7 +57,7 @@ class LBFGS:
         if(dim == 0): return True
 
 
-        if plev>0:
+        if plev>1:
             print(f"    > Num. params    = {dim: 6d}")
             print(f"    > Max subspace   = {max_subspace: 6d}")
             print(f"    > Backtracking   = {self.control['backtrack_scale']: 6.3f}")
@@ -149,7 +149,7 @@ class LBFGS:
 
                 # Need to make sure s.g < 0 to maintain positive-definite L-BFGS Hessian 
                 if(np.dot(step,grad_ref) > 0):
-                    print("  Step has positive overlap with gradient - reversing direction")
+                    # print("  Step has positive overlap with gradient - reversing direction")
                     step *= -1
                     reset = True
                 
@@ -222,7 +222,7 @@ class LBFGS:
             if plev>0: print(f"  L-BFGS converged in {istep: 6d} iterations ({computation_time: 6.2f} seconds)")
         sys.stdout.flush()
 
-        return converged
+        return istep, eref
 
     def get_lbfgs_step(self,v_grad,v_step,prec):
         """ Compute the L-BFGS step from previous gradient and step vectors

@@ -78,6 +78,7 @@ class Function(metaclass=ABCMeta):
     def get_numerical_hessian(self,eps=1e-3,diag=False):
         """Finite difference Hessian matrix for debugging"""
         Hess = np.zeros((self.dim, self.dim))
+        self.save_last_step()
         for i in range(self.dim):
             for j in range(i,self.dim):
                 if(diag and i!=j): continue

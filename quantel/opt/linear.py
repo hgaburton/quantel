@@ -21,6 +21,7 @@ class Linear:
         self.control["startrad"] = 0.25
         self.control["maxrad"] = 1
         self.control["minrad"] = 1e-5
+        self.control["prec"] = False
 
 
         for key in kwargs:
@@ -33,7 +34,7 @@ class Linear:
         self.tr = TrustRadius(self.control["startrad"], self.control["minrad"], self.control["maxrad"])
 
 
-    def run_linesearch(self, obj, thresh=1e-6, maxit=100, strong=False):
+    def run_linesearch(self, obj, thresh=1e-6, maxit=100, strong=False, plev=1):
         '''
         Minimization using line search.
 
@@ -55,6 +56,9 @@ class Linear:
         mat_H = obj.mat_H
         converged = False
         reset = False
+        if plev>0: print("  ================================================================")
+        if plev>0: print("       {:^16s}    {:^8s}    {:^8s}".format("   Energy / Eh","Step Len","Max(|G_i|)"))
+        if plev>0: print("  ================================================================")
 
         for istep in range(maxit+1):
             # get energy, gradient, tangent vectors(eta), preconditioner and check convergence
@@ -102,14 +106,12 @@ class Linear:
                     a_0 = min(1,2*(e_cur-e_ref)/np.dot(p,grad_ref))
                 else:
                     a_0 = 1
-
                 # save new gradient and energy
                 grad_ref = grad.copy()
                 e_ref = e_cur
 
                 # take step
                 p = self.get_linear_step(e_cur, grad, eta, mat_H, prec, adiag=conv*conv)
-
                 # scale p with a_0
                 step = a_0 * p
 
@@ -147,10 +149,10 @@ class Linear:
         end_time = datetime.datetime.now()
         print(f"Time elapsed = {(end_time-start_time).total_seconds()}s")
         print(f"Iterations = {istep}")
-        return converged
+        return istep, e_ref
 
 
-    def run_dogleg(self, obj, thresh=1e-6, maxit=100):
+    def run_dogleg(self, obj, thresh=1e-6, maxit=100, plev=1):
         '''
         Minimization using trust region dogleg method
 
@@ -170,6 +172,10 @@ class Linear:
         start_time = datetime.datetime.now()
         mat_H = obj.mat_H
         converged = False
+
+        if plev>0: print("  ================================================================")
+        if plev>0: print("       {:^16s}    {:^8s}    {:^8s}".format("   Energy / Eh","Step Len","Max(|G_i|)"))
+        if plev>0: print("  ================================================================")
 
         for istep in range(maxit+1):
             # get energy, gradient, tangent vectors(eta), preconditioner and check convergence
@@ -242,7 +248,8 @@ class Linear:
         time = (end_time-start_time).total_seconds()
         print(f"Time elapsed = {time: 10.3f}s")
         print(f"Iterations = {istep}")
-        return converged
+        
+        return istep, e_ref
         
 
     def get_linear_step(self, e_cur, grad, eta, mat_H, prec, adiag=0.1):
@@ -255,23 +262,40 @@ class Linear:
             Based on J. Phys. Chem. A 2024, 128, 40, 8762–8776
         """
         # compute H and S
-        Pinv = np.diag(np.power(np.sqrt(np.clip(prec,0.1,None)),-1))
-        self.H = eta.T @ (mat_H @ eta)
+        H = eta.T @ (mat_H @ eta)
         S = eta.T @ eta
-        # Transform the prec basis (hope alpha is regularized)
-        Ht = Pinv @ self.H @ Pinv
-        St = Pinv @ S @ Pinv
-        # construct matrix A
-        A = self.H - e_cur * S
+        A = H - e_cur * S
+        # save Hessian estimate for dogleg method
+        self.B = A
+
+
+        if self.control["prec"]:
+            # Transform the prec basis (hope alpha is regularized)
+            Pinv = np.diag(np.power(np.sqrt(np.clip(prec,0.1,None)),-1))
+            A = Pinv @ A @ Pinv
+            # Ht = Pinv @ H @ Pinv
+            S = Pinv @ S @ Pinv
+
         # get alpha from the lowest eigenvalue if it is positive definite
         adiag = 0.2
         Emin = np.linalg.eigvalsh(A)[0]
         alpha = - min(0,Emin) + adiag
 
         M = A + alpha * S
-        self.B = A
-        # get eigenvectors 
-        gt = Pinv @ grad
-        x = gmres(M, -0.5*grad)[0]
-        #x = Pinv @ xt
+
+        e, v = np.linalg.eigh(M)
+        proj = v[:,np.argwhere(np.abs(e)>1e-7).flatten()]
+        # Mt = proj.T @ M @ proj
+        # gt = proj.T @ grad
+        # xt = np.linalg.solve(Mt,-0.5*gt)
+        # x = proj @ xt
+        # print(x)
+        
+        # get eigenvectors
+        x = gmres(M, -0.5*grad, rtol=1e-12)[0]
+        x = proj @ proj.T @ x
+        if self.control["prec"]:
+            # revert to original basis
+            gt = Pinv @ grad
+            x = Pinv @ x
         return x
