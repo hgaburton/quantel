@@ -64,5 +64,5 @@ exit
 
 vmd -dispdev none -e plot.tcl -args $1 $2 $3
 rm $1.png &> /dev/null
-povray +W600 +H600 +FN +A +C -D +UA -I$1.pov -O$1.png
+povray +W900 +H900 +FN +A +C -D +UA -I$1.pov -O$1.png
 rm plot.tcl

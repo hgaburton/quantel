@@ -234,7 +234,6 @@ class CSF(Wavefunction):
                           4 = Print energy components, spin, exchange matrices, and all orbital coefficients
                           5 = Print energy components, spin, exchange matrices, generalised Fock matrix, and all orbital coefficients 
         """
-        print("verbose = ", verbose)
         if(verbose > 0):
             print("\n ---------------------------------------------")
             print(f"         Total Energy = {self.energy:14.8f} Eh")
@@ -358,6 +357,9 @@ class CSF(Wavefunction):
         hindices = self.hess_index
         with open(tag+".solution", "w") as F:
             F.write(f"{self.energy:18.12f} {hindices[0]:5d} {hindices[1]:5d} {self.s2:12.6f} {self.spin_coupling:s}\n")
+
+        # Save the civector dump
+        self.write_cidump(tag)
         return 
 
     def write_fcidump(self, tag):
