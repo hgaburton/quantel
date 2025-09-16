@@ -95,13 +95,9 @@ class RHF(Wavefunction):
         # Compute Fock matrix in MO basis 
         Fmo = np.linalg.multi_dot([self.mo_coeff.T, self.fock, self.mo_coeff])
 
-        # Get occupied and virtual orbital coefficients
-        Cocc = self.mo_coeff[:,:no].copy()
-        Cvir = self.mo_coeff[:,no:].copy()
-
-        # Compute ao_to_mo integral transform
-        eri_abij = self.integrals.tei_ao_to_mo(Cvir,Cvir,Cocc,Cocc,True,False)
-        eri_aibj = self.integrals.tei_ao_to_mo(Cvir,Cocc,Cvir,Cocc,True,False)
+        # Get two-electron integrals if not already computed
+        if(not hasattr(self, 'eri_abij') or not hasattr(self, 'eri_aibj')):
+            self.update(with_eri=True)
 
         # Initialise Hessian matrix
         hessian = np.zeros((self.nmo,self.nmo,self.nmo,self.nmo))
@@ -113,9 +109,9 @@ class RHF(Wavefunction):
             hessian[a,:no,a,:no] -= 4 * Fmo[:no,:no]
 
         # Compute two-electron contributions
-        hessian[no:,:no,no:,:no] += 16 * np.einsum('abij->aibj', eri_abij, optimize="optimal")
-        hessian[no:,:no,no:,:no] -=  4 * np.einsum('aibj->aibj', eri_aibj, optimize="optimal")
-        hessian[no:,:no,no:,:no] -=  4 * np.einsum('abji->aibj', eri_abij, optimize="optimal")
+        hessian[no:,:no,no:,:no] += 16 * np.einsum('abij->aibj', self.eri_abij, optimize="optimal")
+        hessian[no:,:no,no:,:no] -=  4 * np.einsum('aibj->aibj', self.eri_aibj, optimize="optimal")
+        hessian[no:,:no,no:,:no] -=  4 * np.einsum('abji->aibj', self.eri_abij, optimize="optimal")
 
         # Return suitably shaped array
         return (hessian[:,:,self.rot_idx])[self.rot_idx,:]
@@ -191,10 +187,17 @@ class RHF(Wavefunction):
         """Compute the (nonorthogonal) many-body Hamiltonian coupling with another RHF wavefunction (them)"""
         raise NotImplementedError("RHF Hamiltonian not implemented")
 
-    def update(self):
+    def update(self, with_eri=True):
         """Update the 1RDM and Fock matrix for the current state"""
         self.get_density()
         self.get_fock()
+        if(with_eri):
+            # Get occupied and virtual orbital coefficients
+            Cocc = self.mo_coeff[:,:self.nocc].copy()
+            Cvir = self.mo_coeff[:,self.nocc:].copy()
+            # Compute ao_to_mo integral transform
+            self.eri_abij = self.integrals.tei_ao_to_mo(Cvir,Cvir,Cocc,Cocc,True,False)
+            self.eri_aibj = self.integrals.tei_ao_to_mo(Cvir,Cocc,Cvir,Cocc,True,False)
 
     def get_density(self):
         """Compute the 1RDM for the current state in AO basis"""
