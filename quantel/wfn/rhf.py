@@ -198,8 +198,9 @@ class RHF(Wavefunction):
 
     def get_density(self):
         """Compute the 1RDM for the current state in AO basis"""
-        self.dens = np.dot(Cocc, Cocc.T)
         Cocc = self.mo_coeff[:,:self.nocc]
+        self.dens = np.dot(Cocc, Cocc.T)
+        
 
     def get_fock(self):
         """Compute the Fock matrix for the current state"""
