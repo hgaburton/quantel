@@ -40,11 +40,11 @@ class RHF(Wavefunction):
         self.verbose   = verbose
 
         # Setup the indices for relevant orbital rotations
-        self.rot_idx   = self.uniq_var_indices() # Indices for orbital rotations
-        self.nrot      = np.sum(self.rot_idx) # Number of orbital rotations
+        self.rot_idx   = self.uniq_var_indices() 
+        self.nrot      = np.sum(self.rot_idx) 
 
         # Define the orbital energies and coefficients
-        self.mo_coeff         = None
+        self.mo_coeff  = None
         self.mo_energy = None
     
     def initialise(self, mo_guess, ci_guess=None):
@@ -152,7 +152,7 @@ class RHF(Wavefunction):
         # Canonicalise orbitals
         self.canonicalize()
  
-         # Save hdf5 file with MO coefficients, orbital energies, energy, and spin
+        # Save hdf5 file with MO coefficients, orbital energies, energy, and spin
         with h5py.File(tag+".hdf5", "w") as F:
             F.create_dataset("mo_coeff", data=self.mo_coeff)
             F.create_dataset("mo_energy", data=self.mo_energy)
@@ -198,8 +198,8 @@ class RHF(Wavefunction):
 
     def get_density(self):
         """Compute the 1RDM for the current state in AO basis"""
-        self.dens = np.dot(Cocc, Cocc.T)
         Cocc = self.mo_coeff[:,:self.nocc]
+        self.dens = np.dot(Cocc, Cocc.T)
 
     def get_fock(self):
         """Compute the Fock matrix for the current state"""
@@ -208,7 +208,9 @@ class RHF(Wavefunction):
         self.JK   = self.fock - self.integrals.oei_matrix(True)
         # Compute the exchange-correlation energy
         self.exc, self.vxc, NULL = self.integrals.build_vxc(self.dens, self.dens) if(self.with_xc) else 0,0,0
-        self.fock += self.vxc
+        self.fock += self.vxc 
+        # Vectorised format of the Fock matrix
+        self.fock_vec = self.fock.T.reshape((-1))
 
     def canonicalize(self):
         """Diagonalise the occupied and virtual blocks of the Fock matrix"""
@@ -297,11 +299,16 @@ class RHF(Wavefunction):
         self.fock = fock
         self.diagonalise_fock()
 
+    def try_fock_vec(self, fock_vec): 
+        """Wrapper for try_fock() to handle Fock vectors from DIIS"""
+        fock = fock_vec.reshape((self.nbsf,self.nbsf)).T
+        self.try_fock(fock) 
+
     def get_diis_error(self):
         """Compute the DIIS error vector and DIIS error"""
         err_vec  = np.linalg.multi_dot([self.fock, self.dens, self.integrals.overlap_matrix()])
         err_vec -= err_vec.T
-        return err_vec.ravel(), np.linalg.norm(err_vec)
+        return err_vec.ravel(), np.linalg.norm(err_vec)   
 
     def restore_last_step(self):
         """Restore orbital coefficients to the previous step"""

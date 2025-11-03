@@ -319,6 +319,11 @@ class GHF(Wavefunction):
         self.fock = fock
         self.diagonalise_fock()
 
+    def try_fock_vec(self, fock_vec): 
+        """Wrapper for try_fock() to handle Fock vectors from DIIS"""
+        fock = fock_vec.reshape((self.nbsf,self.nbsf)).T
+        self.try_fock(fock) 
+
     def get_diis_error(self):
         """Compute the DIIS error vector and DIIS error"""
         err_vec  = np.linalg.multi_dot([self.fock, self.dens, self.ghf_overlap])
