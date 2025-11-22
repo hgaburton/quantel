@@ -47,14 +47,14 @@ class ArbitraryCI:
     def get_det_index(self, occstr):
         return self.cispace.get_det_index(quantel.Determinant(occstr))
 
-    def write_cidump(self,tag,civec=None):
+    def write_cidump(self,tag,nmo,civec=None,ncore=0):
         # Write the CI vector dump
         from quantel.utils.ci_utils import write_cidump
         if civec is None:
             vec = list(zip(self.cispace.get_det_list(),self.eigvec[:,0]))
         else:
             vec = list(zip(self.cispace.get_det_list(),civec))
-        write_cidump(vec,self.ncore,self.nmo,tag+'_civec.txt')
+        write_cidump(vec,ncore,nmo,tag+'_civec.txt')
 
     def get_hamiltonian(self):
         """
@@ -72,11 +72,7 @@ class FCI(ArbitraryCI):
         """
         # Save mo_ints object
         self.mo_ints = mo_ints
-        # Number of core orbitals
-        self.ncore = mo_ints.ncore()
         # Number of correlated orbitals
-        self.nact = mo_ints.nact()
-        # Number of molecular orbitals
         self.nmo = mo_ints.nmo()
         # Number of electrons
         self.nalfa = nelec[0]
@@ -87,45 +83,12 @@ class FCI(ArbitraryCI):
             raise ValueError("Number of electrons cannot be negative.")
         if(self.nbeta < 0):
             raise ValueError("Number of electrons cannot be negative.")
-
-        # Create the CI space object
-        cispace = quantel.CIspace(mo_ints,self.nact,self.nalfa,self.nbeta)
-        cispace.initialize('FCI')
-
-        # Call the parent constructor
-        super().__init__(cispace)
-
-class CASCI(ArbitraryCI):
-    """
-    Class for solving the CAS CI problem using the Davidson algorithm.
-    """
-    def __init__(self, mo_ints, nelec, ncas):
-        """
-        Initialise a CASCI instance from cispace object.
-        """
-        # Save mo_ints object
-        self.mo_ints = mo_ints
-        # Number of core orbitals
-        self.ncore = mo_ints.ncore()
-        # Number of correlated orbitals
-        self.nact = ncas
-        # Number of molecular orbitals
-        self.nmo = mo_ints.nmo()
-        # Number of electrons
-        self.nalfa = nelec[0]
-        self.nbeta = nelec[1]
-
-        # Check the input
-        if(self.nalfa < 0):
-            raise ValueError("Number of electrons cannot be negative.")
-        if(self.nbeta < 0):
-            raise ValueError("Number of electrons cannot be negative.")
-        if(self.nalfa + self.nbeta > 2*self.nact):
+        if(self.nalfa + self.nbeta > 2*self.nmo):
             raise ValueError("Number of electrons exceeds number of active orbitals.")
 
         # Create the CI space object
-        cispace = quantel.CIspace(mo_ints,self.nact,self.nalfa,self.nbeta)
-        cispace.initialize('CASCI')
+        cispace = quantel.CIspace(mo_ints,self.nmo,self.nalfa,self.nbeta)
+        cispace.initialize('FCI')
 
         # Call the parent constructor
         super().__init__(cispace)
