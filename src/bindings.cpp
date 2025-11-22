@@ -10,6 +10,7 @@
 #include "mo_integrals.h"
 #include "excitation.h"
 #include "ci_space.h"
+#include "four_index_array.h"
 
 namespace py = pybind11;
 using namespace pybind11::literals;
@@ -222,6 +223,39 @@ PYBIND11_MODULE(_quantel, m) {
           .def("nact", &MOintegrals::nact, "Get the number of active orbitals")
           .def("ncore", &MOintegrals::ncore, "Get the number of inactive orbitals")
           ;
+          
+//          .def("H_on_vec", [](CIspace &ci, py::array_t<double> &V)
+//               {
+//                    size_t ndet = ci.ndet();
+//                    auto Vbuf = V.request();
+//                    std::vector<double> v_V((double *) Vbuf.ptr, (double *) Vbuf.ptr + Vbuf.size);
+//                    std::vector<double> sigma(ndet, 0.0);
+//                    ci.H_on_vec(v_V, sigma);
+//                    return vec_to_np_array(ndet, sigma.data());
+//               },
+
+     py::class_<FourIndexArray>(m, "FourIndexArray")
+          .def(py::init([](py::array_t<double, py::array::c_style> data,
+                           size_t dim1, size_t dim2, size_t dim3, size_t dim4,
+                           std::string sym) {
+               auto buf = data.request();
+               std::vector<double> v_data((double*)buf.ptr, (double*)buf.ptr + buf.size);
+               return new FourIndexArray(v_data, dim1, dim2, dim3, dim4, sym);
+            }), py::arg("data"), py::arg("dim1"), py::arg("dim2"), py::arg("dim3"), py::arg("dim4"), py::arg("sym") = std::string("s1"),
+            "Constructor for FourIndexArray accepting a numpy array as data")
+            .def("__call__", [](FourIndexArray &self, size_t p, size_t q, size_t r, size_t s) -> double {
+                  return self(p, q, r, s);
+            }, py::arg("p"), py::arg("q"), py::arg("r"), py::arg("s"), "Access element via obj(p,q,r,s)")
+            .def("__getitem__", [](FourIndexArray &self, py::tuple idx) -> double {
+                  if (idx.size() != 4)
+                         throw py::index_error("FourIndexArray indices must be a 4-tuple");
+                  size_t p = idx[0].cast<size_t>();
+                  size_t q = idx[1].cast<size_t>();
+                  size_t r = idx[2].cast<size_t>();
+                  size_t s = idx[3].cast<size_t>();
+                  return self(p, q, r, s);
+            }, "Access element via obj[p, q, r, s]")
+          ;
 
      py::class_<LibintInterface>(m, "LibintInterface")
           .def(py::init<const std::string, Molecule &>())
@@ -354,4 +388,5 @@ PYBIND11_MODULE(_quantel, m) {
 
 
      m.def("det_str", &det_str,"Print the determinant");
+
 }

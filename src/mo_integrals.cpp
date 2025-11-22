@@ -29,7 +29,6 @@ void MOintegrals::update_orbitals(
 
     /// Compute the inactive Fock matrix
     compute_core_potential();
-
     /// Compute scalar potential
     compute_scalar_potential();
     /// Compute one-electron integrals

@@ -94,3 +94,38 @@ class FCI(ArbitraryCI):
 
         # Call the parent constructor
         super().__init__(cispace)
+
+class CASCI(ArbitraryCI):
+    """
+    Class for solving the CAS CI problem using the Davidson algorithm.
+    """
+    def __init__(self, mo_ints, nelec, ncas):
+        """
+        Initialise a CASCI instance from cispace object.
+        """
+        # Save mo_ints object
+        self.mo_ints = mo_ints
+        # Number of core orbitals
+        self.ncore = mo_ints.ncore()
+        # Number of correlated orbitals
+        self.nact = ncas
+        # Number of molecular orbitals
+        self.nmo = mo_ints.nmo()
+        # Number of electrons
+        self.nalfa = nelec[0]
+        self.nbeta = nelec[1]
+
+        # Check the input
+        if(self.nalfa < 0):
+            raise ValueError("Number of electrons cannot be negative.")
+        if(self.nbeta < 0):
+            raise ValueError("Number of electrons cannot be negative.")
+        if(self.nalfa + self.nbeta > 2*self.nact):
+            raise ValueError("Number of electrons exceeds number of active orbitals.")
+
+        # Create the CI space object
+        cispace = quantel.CIspace(mo_ints,self.nact,self.nalfa,self.nbeta)
+        cispace.initialize('CASCI')
+
+        # Call the parent constructor
+        super().__init__(cispace)
