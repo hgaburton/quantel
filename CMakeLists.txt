@@ -64,7 +64,6 @@ pybind11_add_module(_quantel ${SOURCES} "${SOURCE_DIR}/bindings.cpp"
     "${SOURCE_DIR}/libint_interface.cpp"
     "${SOURCE_DIR}/linalg.cpp"
     "${SOURCE_DIR}/determinant.cpp"
-    "${SOURCE_DIR}/mo_integrals.cpp"
     "${SOURCE_DIR}/ci_space.cpp"
     )
 

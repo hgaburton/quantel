@@ -4,6 +4,7 @@
 #include <libint2.hpp>
 #include "molecule.h"
 #include "shell_pair.h"
+#include "mo_integrals.h"
 
 class LibintInterface {
     /// \brief LibintInterface class
@@ -112,6 +113,9 @@ public:
     /// Get a pointer to the two-electron integral array
     double *tei_array() { return m_tei.data(); }
 
+    /// Create an MO integral object 
+    MOintegrals mo_integrals(std::vector<double> &C, size_t ncore=0, size_t nactive=0);
+
     /// Get a pointer to the dipole integrals
     double *dipole_integrals() { return m_dipole.data(); }
 
@@ -123,14 +127,6 @@ public:
     /// Initialise all relevant variables
     void initialize();
 
-    /// Plot orbitals
-    void molden_orbs(std::vector<double> &C, 
-                     std::vector<double> &occ, 
-                     std::vector<double> &evals);
-
-protected:
-
- 
 private:
     /// Compute the nuclear repulsion energy
     void compute_nuclear_potential();
@@ -160,7 +156,6 @@ private:
         assert(s<m_nbsf);
         return p * m_nbsf * m_nbsf * m_nbsf +q * m_nbsf * m_nbsf + r * m_nbsf + s;
     }
-
 };
 
 #endif // LIBINT_INTERFACE_H

@@ -268,16 +268,16 @@ void CIspace::H_on_vec(const std::vector<double> &ci_vec, std::vector<double> &s
         size_t ithread = dev.thread_id();
         double *st = &sigma_t[ithread*m_ndet];
 
-        // Alfa contribution
-        double hpq_a = m_ints.oei(p,q,true);
-        if(std::abs(hpq_a) > tol)
+        double hpq = m_ints.oei(p,q);
+        if(std::abs(hpq) > tol)
+        {
+            // Alfa contribution
             for(auto &[indJ, indI, phase] : m_map_a.at({p,q}))
-                st[indI] += phase * hpq_a * ci_vec[indJ];
-        // Beta contribution
-        double hpq_b = m_ints.oei(p,q,false);
-        if(std::abs(hpq_a) > tol)
+                st[indI] += phase * hpq * ci_vec[indJ];
+            // Beta contribution
             for(auto &[indJ, indI, phase] : m_map_b.at({p,q}))
-                st[indI] += phase * hpq_b * ci_vec[indJ];        
+                st[indI] += phase * hpq * ci_vec[indJ];
+        }
     }
 
     // Two-electron part
@@ -296,34 +296,34 @@ void CIspace::H_on_vec(const std::vector<double> &ci_vec, std::vector<double> &s
         size_t ithread = dev.thread_id();
         double *st = &sigma_t[ithread*m_ndet];
         
-        // alfa-alfa
-        double vpqrs_aa = 0.25 * m_ints.tei(p,q,r,s,true,true);
-        double vrspq_aa = 0.25 * m_ints.tei(r,s,p,q,true,true);
-        if((std::abs(vpqrs_aa) > tol) and (std::abs(vrspq_aa) > tol))
+        // Get two-electron integrals <pq||rs> = <pq|rs> - <pq|sr>
+        // Note the different prefactors for same-spin and opposite-spin terms
+        double vpqrs_same = 0.25 * (m_ints.tei(p,q,r,s) - m_ints.tei(p,q,s,r));
+        double vrspq_same = 0.25 * (m_ints.tei(r,s,p,q) - m_ints.tei(s,r,p,q));
+        double vpqrs_diff = 1.0 * m_ints.tei(p,q,r,s);
+        double vrspq_diff = 1.0 * m_ints.tei(r,s,p,q);
+        // Alfa-alfa
+        if((std::abs(vpqrs_same) > tol) and (std::abs(vrspq_same) > tol))
             for(auto &[indJ, indI, phase] : m_map_aa.at({p,q,r,s}))
             {
-                st[indI] += phase * vpqrs_aa * ci_vec[indJ];
-                if(pq!=rs) st[indJ] += phase * vrspq_aa * ci_vec[indI];
+                st[indI] += phase * vpqrs_same * ci_vec[indJ];
+                if(pq!=rs) st[indJ] += phase * vrspq_same * ci_vec[indI];
             }
         
         // alfa-beta
-        double vpqrs_ab = 1.0 * m_ints.tei(p,q,r,s,true,false);
-        double vrspq_ab = 1.0 * m_ints.tei(r,s,p,q,true,false);
-        if((std::abs(vpqrs_ab) > tol) and (std::abs(vrspq_ab) > tol))
+        if((std::abs(vpqrs_diff) > tol) and (std::abs(vrspq_diff) > tol))
             for(auto &[indJ, indI, phase] : m_map_ab.at({p,q,r,s}))
             {
-                st[indI] += phase * vpqrs_ab * ci_vec[indJ];
-                if(pq!=rs) st[indJ] += phase * vrspq_ab * ci_vec[indI];
+                st[indI] += phase * vpqrs_diff * ci_vec[indJ];
+                if(pq!=rs) st[indJ] += phase * vrspq_diff * ci_vec[indI];
             }
 
         // beta-beta
-        double vpqrs_bb = 0.25 * m_ints.tei(p,q,r,s,false,false);
-        double vrspq_bb = 0.25 * m_ints.tei(r,s,p,q,false,false);
-        if((std::abs(vpqrs_bb) > tol) and (std::abs(vrspq_bb) > tol))
+        if((std::abs(vpqrs_same) > tol) and (std::abs(vrspq_same) > tol))
             for(auto &[indJ, indI, phase] : m_map_bb.at({p,q,r,s}))
             {
-                st[indI] += phase * vpqrs_bb * ci_vec[indJ];
-                if(pq!=rs) st[indJ] += phase * vrspq_bb * ci_vec[indI];
+                st[indI] += phase * vpqrs_same * ci_vec[indJ];
+                if(pq!=rs) st[indJ] += phase * vrspq_same * ci_vec[indI];
             }
     }
 
@@ -378,7 +378,7 @@ void CIspace::build_H1(std::vector<double> &H1, bool alpha)
     for(size_t p=0; p<m_nmo; p++)
     for(size_t q=p; q<m_nmo; q++)
     {
-        double hpq = m_ints.oei(p,q,alpha);
+        double hpq = m_ints.oei(p,q);
         if(std::abs(hpq) < tol) continue;
 
         for(auto &[indJ, indI, phase] : m_map.at({p,q}))
@@ -411,16 +411,16 @@ void CIspace::build_H2(std::vector<double> &H2, bool alpha1, bool alpha2)
         size_t rs = r*m_nmo + s;
         if(pq > rs) continue;
 
-        double vpqrs = scale * m_ints.tei(p,q,r,s,alpha1,alpha2);
-        double vrspq = scale * m_ints.tei(r,s,p,q,alpha1,alpha2);
+        double vpqrs = (alpha1==alpha2) ? (m_ints.tei(p,q,r,s)-m_ints.tei(p,q,s,r)) : m_ints.tei(p,q,r,s);
+        double vrspq = (alpha1==alpha2) ? (m_ints.tei(r,s,p,q)-m_ints.tei(r,s,q,p)) : m_ints.tei(r,s,p,q);
 
         if((std::abs(vpqrs) < tol) and (std::abs(vrspq) < tol)) 
             continue;
 
         for(auto &[indJ, indI, phase] : m_map.at({p,q,r,s}))
         {
-            H2[indI*m_ndet+indJ] += phase * vpqrs;
-            if(pq!=rs) H2[indJ*m_ndet+indI] += phase * vrspq;
+            H2[indI*m_ndet+indJ] += scale * phase * vpqrs;
+            if(pq!=rs) H2[indJ*m_ndet+indI] += scale * phase * vrspq;
         }
     }
 }
@@ -499,7 +499,6 @@ void CIspace::build_rdm2(
     }
 }
 
-
 void CIspace::build_Hd(std::vector<double> &Hdiag)
 {
     // Get information about the OpenMP device
@@ -519,14 +518,13 @@ void CIspace::build_Hd(std::vector<double> &Hdiag)
         double *Ht = &Hdiag_t[ithread*m_ndet];
 
         // Get one-electron alfa integral
-        double hpa = m_ints.oei(p,p,true);
+        double hpp = m_ints.oei(p,p);
+        // Alfa contribution
         for(auto &[indJ, indI, phase] : m_map_a.at({p,p}))
-            Ht[indI] += phase * hpa;
-
-        // Get one-electron integral
-        double hpb = m_ints.oei(p,p,false);
+            Ht[indI] += phase * hpp;
+        // Beta contribution
         for(auto &[indJ, indI, phase] : m_map_b.at({p,p}))
-            Ht[indI] += phase * hpb;
+            Ht[indI] += phase * hpp;
     }
 
     #pragma omp parallel for collapse(2)
@@ -538,20 +536,22 @@ void CIspace::build_Hd(std::vector<double> &Hdiag)
        double *Ht = &Hdiag_t[ithread*m_ndet];
 
         // only include number-preserving terms
-        double vpqrs_aa = 0.5 * m_ints.tei(p,q,p,q,true,true);
-        if(std::abs(vpqrs_aa) > tol) 
+        double vpqpq_same = 0.5 * (m_ints.tei(p,q,p,q) - m_ints.tei(p,q,q,p));
+        double vpqpq_diff = m_ints.tei(p,q,p,q);
+        // Same spin
+        if((std::abs(vpqpq_same) > tol))
+        {
+            // Alfa-Alfa
             for(auto &[indJ, indI, phase] : m_map_aa.at({p,q,p,q}))
-                Ht[indI] += phase * vpqrs_aa;
-
-        double vpqrs_ab = m_ints.tei(p,q,p,q,true,false);
-        if(std::abs(vpqrs_ab) > tol) 
-            for(auto &[indJ, indI, phase] : m_map_ab.at({p,q,p,q}))
-                Ht[indI] += phase * vpqrs_ab;
-
-        double vpqrs_bb = 0.5 * m_ints.tei(p,q,p,q,false,false);
-        if(std::abs(vpqrs_bb) > tol) 
+                Ht[indI] += phase * vpqpq_same;
+            // Beta-Beta
             for(auto &[indJ, indI, phase] : m_map_bb.at({p,q,p,q}))
-                Ht[indI] += phase * vpqrs_bb;
+                Ht[indI] += phase * vpqpq_same;
+        }
+        // Alfa-Beta
+        if(std::abs(vpqpq_diff) > tol) 
+            for(auto &[indJ, indI, phase] : m_map_ab.at({p,q,p,q}))
+                Ht[indI] += phase * vpqpq_diff;
     }
 
     // Collect final results
