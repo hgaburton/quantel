@@ -36,8 +36,7 @@ class ArbitraryCI:
         """
         # Set initial guess to lowest identity vectors if requested
         if(xguess is None):
-            xguess = np.eye(self.ndet, nroots)
-
+            xguess = np.eye(self.ndet, nroots) + np.random.rand(self.ndet, nroots)*0.1
         # Run the Davidson algorithm
         davidson = Davidson()
         self.eigval, self.eigvec = davidson.run(self.H_on_vec, self.Hd, nroots, 
@@ -66,7 +65,7 @@ class FCI(ArbitraryCI):
     """
     Class for solving the full CI problem using the Davidson algorithm.
     """
-    def __init__(self, mo_ints, nelec):
+    def __init__(self, mo_ints, nelec, version=1):
         """
         Initialise the FCI instance from cispace object.
         """
@@ -87,8 +86,50 @@ class FCI(ArbitraryCI):
             raise ValueError("Number of electrons exceeds number of active orbitals.")
 
         # Create the CI space object
-        cispace = quantel.CIspace(mo_ints,self.nmo,self.nalfa,self.nbeta)
+        if version == 1:
+            cispace = quantel.CIspace(mo_ints,self.nmo,self.nalfa,self.nbeta)
+        elif version == 2:
+            cispace = quantel.CIspace2(mo_ints,self.nmo,self.nalfa,self.nbeta)
+        else:
+            raise ValueError("Invalid CI space version specified.")
         cispace.initialize('FCI')
+
+        # Call the parent constructor
+        super().__init__(cispace)
+
+
+class CIS(ArbitraryCI):
+    """
+    Class for solving the CIS problem using the Davidson algorithm.
+    """
+    def __init__(self, mo_ints, nelec, version=1):
+        """
+        Initialise the CIS instance from cispace object.
+        """
+        # Save mo_ints object
+        self.mo_ints = mo_ints
+        # Number of correlated orbitals
+        self.nmo = mo_ints.nmo()
+        # Number of electrons
+        self.nalfa = nelec[0]
+        self.nbeta = nelec[1]
+
+        # Check the input
+        if(self.nalfa < 0):
+            raise ValueError("Number of electrons cannot be negative.")
+        if(self.nbeta < 0):
+            raise ValueError("Number of electrons cannot be negative.")
+        if(self.nalfa + self.nbeta > 2*self.nmo):
+            raise ValueError("Number of electrons exceeds number of orbitals.")
+
+        # Create the CI space object
+        if version == 1:
+            cispace = quantel.CIspace(mo_ints,self.nmo,self.nalfa,self.nbeta)
+        elif version == 2:
+            cispace = quantel.CIspace2(mo_ints,self.nmo,self.nalfa,self.nbeta)
+        else:
+            raise ValueError("Invalid CI space version specified.")
+        cispace.initialize('ESMF')
 
         # Call the parent constructor
         super().__init__(cispace)

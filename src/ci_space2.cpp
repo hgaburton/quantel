@@ -261,7 +261,6 @@ void CIspace2::print_vector(const std::vector<double> &ci_vec, double tol) const
     }   
 }
 
-
 void CIspace2::H_on_vec(const std::vector<double> &ci_vec, std::vector<double> &sigma)
 {
     if(!m_initialized)
@@ -389,7 +388,6 @@ void CIspace2::build_Hmat(std::vector<double> &Hmat)
     }
 } 
 
-
 void CIspace2::build_Hd(std::vector<double> &Hdiag)
 {
     // Get information about the OpenMP device
@@ -440,7 +438,6 @@ void CIspace2::build_Hd(std::vector<double> &Hdiag)
     }
 }
 
-/*
 void CIspace2::build_rdm1(
     const std::vector<double> &bra, const std::vector<double> &ket,
     std::vector<double> &rdm1, bool alpha)
@@ -457,19 +454,20 @@ void CIspace2::build_rdm1(
     // Resize output
     rdm1.resize(m_nmo*m_nmo,0.0);
 
-    // Get relevant memory map
-    auto &m_map = get_map(alpha);
-
     // Compute 1RDM
     #pragma omp parallel for collapse(2)
     for(size_t p=0; p<m_nmo; p++)
     for(size_t q=0; q<m_nmo; q++)
     {
         double &rdm_pq = rdm1[p*m_nmo+q];
-        for(auto &[indJ, indI, phase] : m_map.at({p,q}))
+        for(auto &[indJ, indI, phase] : m_ex_det.at({{p,q},alpha}))
+        {
+            if(indJ >= m_ndet or indI >= m_ndet) continue;
             rdm_pq += phase * bra[indI] * ket[indJ];
+        }
     }
 }
+
 
 void CIspace2::build_rdm2(
     const std::vector<double> &bra, const std::vector<double> &ket,
@@ -486,33 +484,76 @@ void CIspace2::build_rdm2(
     if(alpha1 < alpha2) 
         throw std::runtime_error("CIspace2::build_rdm2: Cannot compute rdm2_ba, try rdm2_ab instead");
 
+    // thread-safe memory for intermediate quantities
+    std::vector<double> rdm2_t(omp_get_max_threads()*m_nmo*m_nmo*m_nmo*m_nmo,0.0);
+    std::fill(rdm2_t.begin(), rdm2_t.end(), 0.0);
+
     // Resize output
     rdm2.resize(m_nmo*m_nmo*m_nmo*m_nmo,0.0);
 
-    // Get relevant memory map
-    auto &m_map = get_map(alpha1,alpha2);
+    // TODO: Block over K index to reduce memory usage
+    // Build memory
+    std::vector<double> VqsK1(m_nmo*m_nmo*m_ndet_aux,0.0);
+    std::vector<double> VqsK2(m_nmo*m_nmo*m_ndet_aux,0.0);
+    std::fill(VqsK1.begin(), VqsK1.end(), 0.0);
+    std::fill(VqsK2.begin(), VqsK2.end(), 0.0);
+    for(size_t q=0; q<m_nmo; q++)
+    for(size_t s=0; s<m_nmo; s++)
+    {
+        // Build VqsK = <K|Eqs|J> cJ
+        for(auto &[indJ, indK, phase] : m_ex_det.at({{q,s},alpha2}))
+        {
+            if(indJ >= m_ndet) continue;
+            VqsK1[q*m_nmo*m_ndet_aux+s*m_ndet_aux+indK] += phase * ket[indJ];
+        }
+        for(auto &[indI, indK, phase] : m_ex_det.at({{q,s},alpha1}))
+        {
+            if(indI >= m_ndet) continue;
+            VqsK2[q*m_nmo*m_ndet_aux+s*m_ndet_aux+indK] += phase * bra[indI];
+        }
+    }
 
     // Compute 2RDM
-    #pragma omp parallel for collapse(4)
+    //#pragma omp parallel for collapse(4)
     for(size_t p=0; p<m_nmo; p++)
     for(size_t r=0; r<m_nmo; r++)
     for(size_t q=0; q<m_nmo; q++)
     for(size_t s=0; s<m_nmo; s++)
     {
-        // Consider only unique pairs
-        size_t pq = p*m_nmo + q;
-        size_t rs = r*m_nmo + s;
-        if(pq > rs) continue;
-
-        double &rdm_pqrs = rdm2[p*m_nmo*m_nmo*m_nmo+q*m_nmo*m_nmo+r*m_nmo+s];
-        double &rdm_rspq = rdm2[r*m_nmo*m_nmo*m_nmo+s*m_nmo*m_nmo+p*m_nmo+q];
-
-        for(auto &[indJ, indI, phase] : m_map.at({p,q,r,s}))
+        // Get thread
+        size_t ithread = omp_get_thread_num();
+        double *rdm2_thread = &rdm2_t[ithread*m_nmo*m_nmo*m_nmo*m_nmo];
+        for(size_t indK=0; indK<m_ndet_aux; indK++)
         {
-            rdm_pqrs += phase * bra[indI] * ket[indJ];
-            if(pq!=rs) rdm_rspq += phase * bra[indJ] * ket[indI];
+            double v1 = VqsK1[q*m_nmo*m_ndet_aux+s*m_ndet_aux+indK];
+            double v2 = VqsK2[r*m_nmo*m_ndet_aux+p*m_ndet_aux+indK];
+            rdm2_thread[p*m_nmo*m_nmo*m_nmo+q*m_nmo*m_nmo+r*m_nmo+s] += v1 * v2;
         }
     }
-}
 
-        */
+    // If alpha1 == alpha2, need to account for exchange term
+    if(alpha1 == alpha2)
+    {    
+        for(size_t p=0; p<m_nmo; p++)
+        for(size_t s=0; s<m_nmo; s++)
+        {
+            // Get thread
+            size_t ithread = omp_get_thread_num();
+            double *rdm2_thread = &rdm2_t[ithread*m_nmo*m_nmo*m_nmo*m_nmo];
+            // Build VqsK = <K|Eqs|J> cJ
+            for(auto &[indJ, indI, phase] : m_ex_det.at({{p,s},alpha2}))
+            {
+                if(indJ >= m_ndet or indI >= m_ndet) continue;
+                for(size_t q=0; q<m_nmo; q++)
+                    rdm2_thread[p*m_nmo*m_nmo*m_nmo+q*m_nmo*m_nmo+q*m_nmo+s] -= 
+                        phase * bra[indI] * ket[indJ];
+            }
+        }
+    }
+    
+    // Compile results from all threads
+    for(size_t pqrs=0; pqrs<m_nmo*m_nmo*m_nmo*m_nmo; pqrs++)
+    for(size_t ithread=0; ithread<omp_get_max_threads(); ithread++)
+        rdm2[pqrs] += rdm2_t[ithread*m_nmo*m_nmo*m_nmo*m_nmo+pqrs];
+
+}

@@ -71,11 +71,11 @@ public:
     /// @param ket CI vector for ket
     /// @param rdm1 Output 1RDM
     /// @param alpha Spin of the RDM
-    //void build_rdm1(
-    //    const std::vector<double> &bra, 
-    //    const std::vector<double> &ket, 
-    //    std::vector<double> &rdm1, 
-    //    bool alpha);
+    void build_rdm1(
+        const std::vector<double> &bra, 
+        const std::vector<double> &ket, 
+        std::vector<double> &rdm1, 
+        bool alpha);
 
     /// @brief Compute 2RDM
     /// @param bra CI vector for bra
@@ -83,9 +83,9 @@ public:
     /// @param rdm2 Output 2RDM
     /// @param alpha1 Spin of electron 1
     /// @param alpha2 Spin of electron 2
-   // void build_rdm2(
-   //     const std::vector<double> &bra, const std::vector<double> &ket, 
-   //     std::vector<double> &rdm2, bool alpha1, bool alpha2);
+    void build_rdm2(
+        const std::vector<double> &bra, const std::vector<double> &ket, 
+        std::vector<double> &rdm2, bool alpha1, bool alpha2);
 
     /// @brief Get the index of a determinant
     /// @param det Determinant to get the index of
@@ -133,6 +133,8 @@ private:
     size_t m_nbeta = 0;
     /// Number of molecular orbitals
     size_t m_nmo = 0;
+    /// Max memory
+    size_t m_max_mem = 1L * 1024L * 1024L * 1024L; // 1 GB
 
     /// Diagonal of the Hamiltonian matrix
     std::vector<double> m_Hd;
@@ -157,11 +159,6 @@ private:
     void build_auxiliary_determinants();
     /// Build memory maps
     void build_memory_map();
-
-    /// Build the Hamiltonian matrix
-    //void build_H0(std::vector<double> &Hmat);
-    //void build_H1(std::vector<double> &Hmat, bool alpha);
-    //void build_H2(std::vector<double> &Hmat, bool alpha1, bool alpha2);
 
 };
 
