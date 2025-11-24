@@ -16,8 +16,25 @@ private:
     /// NOTE: Currently supports only restricted integrals
     /// One-electron MO integrals
     TwoArray m_oei;
+    /// Effective one-electron MO integrals heff_pq = hpq - 0.5 * sum_r <pr|rq>
+    TwoArray m_oei_eff;
     /// Two-electron MO integrals <pq|rs> without antisymmetrization
     FourArray m_tei;
+
+    /// \brief Initialise effective one-electron integrals
+    void initialize_h1eff() 
+    {
+        m_oei_eff.resize(m_nmo,m_nmo);
+        #pragma omp parallel for collapse(2)
+        for(size_t p=0; p<m_nmo; p++)
+        for(size_t q=0; q<m_nmo; q++)
+        {
+            m_oei_eff(p,q) = m_oei(p,q);
+            for(size_t r=0; r<m_nmo; r++)
+                m_oei_eff(p,q) -= 0.5 * m_tei(p,r,r,q);
+        }
+    }
+
 
 public:
     /// \brief Default destructor
@@ -41,6 +58,8 @@ public:
         // Check dimensions of two-electron integrals
         if(tei.dim() != std::make_tuple(m_nmo, m_nmo, m_nmo, m_nmo))
             throw std::invalid_argument("Dimensions of tei do not match number of MOs.");
+
+        initialize_h1eff();
     }
 
     /// \brief Constructor from vectors
@@ -75,6 +94,16 @@ public:
     {
         return m_oei(p,q);
     }
+
+    /// \brief Get an element of the effective one-electron Hamiltonian matrix
+    /// h_pq = hpq - 0.5 * sum_r <pr|rq>
+    /// @param p integral index for bra
+    /// @param q integral index for ket
+    double oei_eff(size_t p, size_t q) 
+    { 
+        return m_oei_eff(p,q);
+    }
+
 
     /// \brief Get an element of the two-electron integrals <pq||rs>
     /// @param p integral index

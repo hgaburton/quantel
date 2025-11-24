@@ -64,6 +64,16 @@ public:
     std::tuple<size_t, size_t, size_t, size_t> dim() const {
         return std::make_tuple(m_dim[0], m_dim[1], m_dim[2], m_dim[3]);
     }
+
+    /// Resize and initialize to zero
+    void resize(size_t dim1, size_t dim2, size_t dim3, size_t dim4) {
+        m_dim[0] = dim1;
+        m_dim[1] = dim2;
+        m_dim[2] = dim3;
+        m_dim[3] = dim4;
+        m_data.resize(dim1*dim2*dim3*dim4);
+        std::fill(m_data.begin(), m_data.end(), 0.0);
+    }
 };
 
 #endif // FOUR_ARRAY_H

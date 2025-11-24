@@ -44,21 +44,29 @@ public:
 
     /// Access element (modifiable)
     double& operator()(size_t p, size_t q) {
-        if(p>=m_dim[0]) throw std::out_of_range("Index 0 out of range");
-        if(q>=m_dim[1]) throw std::out_of_range("Index 1 out of range");
+        if(p>=m_dim[0]) throw std::out_of_range("TwoArray: Index 0 out of range");
+        if(q>=m_dim[1]) throw std::out_of_range("TwoArray: Index 1 out of range");
         return m_data[index(p,q)];        
     }
 
     /// Access element (const)
     const double& operator()(size_t p, size_t q) const {
-        if(p>=m_dim[0]) throw std::out_of_range("Index 0 out of range");
-        if(q>=m_dim[1]) throw std::out_of_range("Index 1 out of range");
+        if(p>=m_dim[0]) throw std::out_of_range("TwoArray: Index 0 out of range");
+        if(q>=m_dim[1]) throw std::out_of_range("TwoArray: Index 1 out of range");
         return m_data[index(p,q)];
     }
 
     /// Get dimensions
     std::tuple<size_t, size_t> dim() const {
         return std::make_tuple(m_dim[0], m_dim[1]);
+    }
+
+    /// Resize and initialize to zero
+    void resize(size_t dim1, size_t dim2) {
+        m_dim[0] = dim1;
+        m_dim[1] = dim2;
+        m_data.resize(dim1*dim2);
+        std::fill(m_data.begin(), m_data.end(), 0.0);
     }
 };
 

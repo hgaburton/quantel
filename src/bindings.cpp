@@ -10,6 +10,7 @@
 #include "mo_integrals.h"
 #include "excitation.h"
 #include "ci_space.h"
+#include "ci_space2.h"
 #include "four_array.h"
 #include "two_array.h"
 
@@ -106,8 +107,6 @@ PYBIND11_MODULE(_quantel, m) {
           .def("print", &CIspace::print, "Print the CI space")
           .def("print_vector", &CIspace::print_vector, "Print a CI vector")
           .def("ndet", &CIspace::ndet, "Get the number of determinants")
-          .def("ndeta", &CIspace::ndeta, "Get the number of alpha determinants")
-          .def("ndetb", &CIspace::ndetb, "Get the number of beta determinants")
           .def("nalfa", &CIspace::nalfa, "Get the number of high-spin electrons")
           .def("nbeta", &CIspace::nbeta, "Get the number of low-spin electrons")
           .def("nmo", &CIspace::nmo, "Get the number of molecular orbitals")
@@ -197,6 +196,107 @@ PYBIND11_MODULE(_quantel, m) {
                },
                "Build the two-particle reduced density matrix");      
 
+     py::class_<CIspace2>(m, "CIspace2")
+          .def(py::init<MOintegrals &,size_t,size_t,size_t>(), "Constructor with number of electrons and orbitals")
+          .def("initialize", [](CIspace2 &self, std::string citype, std::vector<std::string> detlist)
+               {
+                    self.initialize(citype, detlist);
+               },py::arg("citype"), py::arg("detlist") = std::vector<std::string>(),
+               "Initialize the CI space")
+          .def("print", &CIspace2::print, "Print the CI space")
+          .def("print_vector", &CIspace2::print_vector, "Print a CI vector")
+          .def("ndet", &CIspace2::ndet, "Get the number of determinants")
+          .def("nalfa", &CIspace2::nalfa, "Get the number of high-spin electrons")
+          .def("nbeta", &CIspace2::nbeta, "Get the number of low-spin electrons")
+          .def("nmo", &CIspace2::nmo, "Get the number of molecular orbitals")
+          .def("get_det_index", &CIspace2::get_det_index, "Get the index of a determinant")
+          .def("get_det_list", &CIspace2::get_det_list, "Get the list of determinants")
+          .def("H_on_vec", [](CIspace2 &ci, py::array_t<double> &V)
+               {
+                    size_t ndet = ci.ndet();
+                    auto Vbuf = V.request();
+                    std::vector<double> v_V((double *) Vbuf.ptr, (double *) Vbuf.ptr + Vbuf.size);
+                    std::vector<double> sigma(ndet, 0.0);
+                    ci.H_on_vec(v_V, sigma);
+                    return vec_to_np_array(ndet, sigma.data());
+               },
+               "Compute the one-electron part of the sigma vector")
+          .def("build_Hmat", [](CIspace2 &ci) 
+               {
+                    size_t ndet = ci.ndet();
+                    std::vector<double> Hmat(ndet*ndet,0.0);
+                    ci.build_Hmat(Hmat);
+                    return vec_to_np_array(ndet,ndet,Hmat.data());
+               },
+               "Build the Hamiltonian matrix")
+          .def("build_Hd", [](CIspace2 &ci) 
+               {
+                    size_t ndet = ci.ndet();
+                    std::vector<double> Hdiag(ndet,0.0);
+                    ci.build_Hd(Hdiag);
+                    return vec_to_np_array(ndet,Hdiag.data());
+               },
+               "Build the Hamiltonian matrix")
+          //.def("trdm1", [](
+          //     CIspace2 &ci, py::array_t<double> &bra, py::array_t<double> &ket, 
+          //     bool alpha)
+          //     {
+          //          size_t nmo = ci.nmo();
+          //          auto bra_buf = bra.request();
+          //          auto ket_buf = ket.request();
+          //          std::vector<double> v_bra(
+          //               (double *) bra_buf.ptr, (double *) bra_buf.ptr + bra_buf.size);
+          //          std::vector<double> v_ket(
+          //               (double *) ket_buf.ptr, (double *) ket_buf.ptr + ket_buf.size);
+          //          std::vector<double> rdm1(nmo*nmo,0.0);
+          //          ci.build_rdm1(v_bra,v_ket,rdm1,alpha);
+          //          return vec_to_np_array(nmo,nmo,rdm1.data());
+          //     },
+          //     "Build the one-particle transition reduced density matrix")
+          /*.def("trdm2", [](
+               CIspace2 &ci, py::array_t<double> &bra, py::array_t<double> &ket, 
+               bool alpha1, bool alpha2)
+               {
+                    size_t nmo = ci.nmo();
+                    auto bra_buf = bra.request();
+                    auto ket_buf = ket.request();
+                    std::vector<double> v_bra(
+                         (double *) bra_buf.ptr, (double *) bra_buf.ptr + bra_buf.size);
+                    std::vector<double> v_ket(
+                         (double *) ket_buf.ptr, (double *) ket_buf.ptr + ket_buf.size);
+                    std::vector<double> rdm2(nmo*nmo*nmo*nmo,0.0);
+                    ci.build_rdm2(v_bra,v_ket,rdm2,alpha1,alpha2);
+                    return vec_to_np_array(nmo,nmo,nmo,nmo,rdm2.data());
+               },
+               "Build the two-particle transition reduced density matrix")
+          .def("rdm1", [](
+               CIspace2 &ci, py::array_t<double> &ket, bool alpha)
+               {
+                    size_t nmo = ci.nmo();
+                    auto ket_buf = ket.request();
+                    std::vector<double> v_ket(
+                         (double *) ket_buf.ptr, (double *) ket_buf.ptr + ket_buf.size);
+                    std::vector<double> rdm1(nmo*nmo,0.0);
+                    ci.build_rdm1(v_ket,v_ket,rdm1,alpha);
+                    return vec_to_np_array(nmo,nmo,rdm1.data());
+               },
+               "Build the one-particle reduced density matrix")
+          .def("rdm2", [](
+               CIspace2 &ci, py::array_t<double> &ket, 
+               bool alpha1, bool alpha2)
+               {
+                    size_t nmo = ci.nmo();
+                    auto ket_buf = ket.request();
+                    std::vector<double> v_ket(
+                         (double *) ket_buf.ptr, (double *) ket_buf.ptr + ket_buf.size);
+                    std::vector<double> rdm2(nmo*nmo*nmo*nmo,0.0);
+                    ci.build_rdm2(v_ket,v_ket,rdm2,alpha1,alpha2);
+                    return vec_to_np_array(nmo,nmo,nmo,nmo,rdm2.data());
+               },
+               "Build the two-particle reduced density matrix")
+          */
+               ;      
+
      py::class_<MOintegrals>(m, "MOintegrals")
           .def(py::init<double,TwoArray &,FourArray &,size_t,double>(),
                py::arg("scalar_potential"),py::arg("oei"), py::arg("tei"), py::arg("nmo"), 
@@ -228,6 +328,8 @@ PYBIND11_MODULE(_quantel, m) {
           .def("scalar_potential", &MOintegrals::scalar_potential, "Get the value of the scalar potential")
           .def("oei", &MOintegrals::oei, py::arg("p"), py::arg("q"),
                "Get an element of the one-electron Hamiltonian matrix")
+          .def("oei_eff", &MOintegrals::oei_eff, py::arg("p"), py::arg("q"),
+               "Get an element of the effective 1e Hamiltonian matrix h_pq = hpq - 0.5 * sum_r <pr|rq>")
           .def("tei", &MOintegrals::tei, py::arg("p"), py::arg("q"), py::arg("r"), py::arg("s"),
                "Get an element of the two-electron integrals <pq||rs>")
           .def("oei_matrix", &MOintegrals::oei_matrix, "Get a pointer to the one-electron Hamiltonian matrix")

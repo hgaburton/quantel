@@ -104,7 +104,7 @@ void CIspace::build_custom_determinants(std::vector<std::string> detlist)
 void CIspace::build_memory_map1()
 {
     // Populate m_map with connected determinants
-    #pragma omp parallel for collapse(2)
+    //#pragma omp parallel for collapse(2)
     for(size_t p=0; p<m_nmo; p++)
     for(size_t q=0; q<m_nmo; q++)
     {
@@ -160,7 +160,7 @@ void CIspace::build_memory_map1()
 void CIspace::build_memory_map2()
 {
     // Populate m_map with connected determinants
-    #pragma omp parallel for collapse(4)
+    //#pragma omp parallel for collapse(4)
     for(size_t p=0; p<m_nmo; p++)
     for(size_t q=0; q<m_nmo; q++)
     for(size_t r=0; r<m_nmo; r++)
@@ -260,7 +260,7 @@ void CIspace::H_on_vec(const std::vector<double> &ci_vec, std::vector<double> &s
     std::fill(sigma_t.begin(), sigma_t.end(), 0.0);
     
     // One-electron part
-    #pragma omp parallel for collapse(2)
+    //#pragma omp parallel for collapse(2)
     for(size_t p=0; p<m_nmo; p++)
     for(size_t q=0; q<m_nmo; q++)
     {
@@ -281,7 +281,7 @@ void CIspace::H_on_vec(const std::vector<double> &ci_vec, std::vector<double> &s
     }
 
     // Two-electron part
-    #pragma omp parallel for collapse(4)
+    //#pragma omp parallel for collapse(4)
     for(size_t p=0; p<m_nmo; p++)
     for(size_t r=0; r<m_nmo; r++)
     for(size_t q=0; q<m_nmo; q++)
@@ -303,7 +303,7 @@ void CIspace::H_on_vec(const std::vector<double> &ci_vec, std::vector<double> &s
         double vpqrs_diff = 1.0 * m_ints.tei(p,q,r,s);
         double vrspq_diff = 1.0 * m_ints.tei(r,s,p,q);
         // Alfa-alfa
-        if((std::abs(vpqrs_same) > tol) and (std::abs(vrspq_same) > tol))
+        if(true) //(std::abs(vpqrs_same) > tol) or (std::abs(vrspq_same) > tol))
             for(auto &[indJ, indI, phase] : m_map_aa.at({p,q,r,s}))
             {
                 st[indI] += phase * vpqrs_same * ci_vec[indJ];
@@ -311,7 +311,7 @@ void CIspace::H_on_vec(const std::vector<double> &ci_vec, std::vector<double> &s
             }
         
         // alfa-beta
-        if((std::abs(vpqrs_diff) > tol) and (std::abs(vrspq_diff) > tol))
+        if(true) //(std::abs(vpqrs_diff) > tol) and (std::abs(vrspq_diff) > tol))
             for(auto &[indJ, indI, phase] : m_map_ab.at({p,q,r,s}))
             {
                 st[indI] += phase * vpqrs_diff * ci_vec[indJ];
@@ -319,7 +319,7 @@ void CIspace::H_on_vec(const std::vector<double> &ci_vec, std::vector<double> &s
             }
 
         // beta-beta
-        if((std::abs(vpqrs_same) > tol) and (std::abs(vrspq_same) > tol))
+        if(true) //(std::abs(vpqrs_same) > tol) and (std::abs(vrspq_same) > tol))
             for(auto &[indJ, indI, phase] : m_map_bb.at({p,q,r,s}))
             {
                 st[indI] += phase * vpqrs_same * ci_vec[indJ];
@@ -363,7 +363,7 @@ void CIspace::build_H0(std::vector<double> &H0)
 {
     // Diagonal scalar part
     double v_scalar = m_ints.scalar_potential();
-    #pragma omp parallel for
+    //#pragma omp parallel for
     for(size_t I=0; I<m_ndet; I++)
         H0[I*m_ndet+I] += v_scalar;
 }
