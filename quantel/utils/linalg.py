@@ -213,3 +213,25 @@ def matrix_print(M, title=None, ncols=6, offset=0):
             for val in row:
                 print(f"{val:^14.8f} ",end="")
             print()
+
+def pseudo_inverse(M, thresh=1e-10):
+    '''
+    Construct the pseudo-inverse of a square matrix
+
+    Parameters:
+        M (ndarray): The input matrix to be inverted
+        thresh (float, optional): The threshold for singular values. Defaults to 1e-10.
+
+    Returns:
+        ndarray: The pseudo-inverse matrix
+    '''
+    if(M.shape[0] != M.shape[1]):
+        raise ValueError("Pseudo-inverse only implemented for square matrices")
+    if(np.linalg.norm(np.conj(M.T) - M) > 1e-14):
+        raise ValueError("Pseudo-inverse only implemented for symmetric/hermitian matrices")
+    s, U = np.linalg.eigh(M)
+    s_inv = np.zeros_like(s)
+    for i in range(len(s)):
+        if abs(s[i]) > thresh:
+            s_inv[i] = 1 / s[i]
+    return U @ np.diag(s_inv) @ np.conj(U).T

@@ -1,6 +1,7 @@
 import itertools
 import numpy as np
 from quantel.utils.guga import e_ijji
+from quantel.utils.linalg import pseudo_inverse
 
 def get_coupling_coefficient(Tn, Pn, tn, pn):
     """ Computes the coupling coefficient C_{tn, pn}^{Tn, Pn}
@@ -168,7 +169,7 @@ def get_shells(ncore, spin_coupling):
     if(len(spin_coupling)>0):
         # Get indices for each shell
         active_shells = np.cumsum([0 if i==0 else spin_coupling[i-1]!=spin_coupling[i] 
-                                for i in range(len(spin_coupling ))])
+                                for i in range(len(spin_coupling))])
         for i in range(active_shells[-1]+1):
             shell_indices.append((ncore+np.argwhere(active_shells==i).ravel()).tolist())
     return core_indices, shell_indices
@@ -247,3 +248,118 @@ def csf_reorder_orbitals(integrals, exchange_matrix, cinit, pop_method='becke'):
     # Save initial guess and return
     copt = cinit[:,order].copy()
     return copt
+
+def csf_det_list(spin_coupling):
+    """ Get the list of open-shell determinants for a given CSF pattern
+            :param spin_coupling:
+            :return:
+    """
+    # Check CSF vector is valid
+    n = len(spin_coupling)
+    if(n==0):
+        return [""]
+
+    if(spin_coupling[0]!='+'):
+        raise RuntimeError("Invalid spin coupling pattern")
+    
+    na = np.sum([s=='+' for s in spin_coupling])
+    det_list = []
+    for occa in itertools.combinations(range(n),na):
+        # Set occupation vector
+        occ = np.zeros(n)
+        occ[list(occa)] = 1
+        # Get determinant string
+        det = ''.join(['a' if oi==1 else 'b' for oi in occ])
+        det_list.append(det)
+    return det_list
+
+def get_uhf_coupling(occstr):
+    """ Get the UHF/UKS exchange coupling matrix for a given occupation string
+            :param occstr:
+            :return:
+    """
+    nopen = len(occstr)
+    Kmat = np.zeros((nopen,nopen))
+    for p,pchar in enumerate(occstr):
+        for q, qchar in enumerate(occstr):
+            if(pchar==qchar):
+                Kmat[p,q] = -1
+    return Kmat
+
+def get_ensemble_expansion(spin_coupling):
+    """ Get the ensemble expansion of energy in terms of UHF/UKS determinant energies
+        We achieve this by matching the exchange matrices of CSF and ensemble
+
+            :param spin_coupling:
+            :return: list of (determinant string, coefficient) tuples
+    """
+    # Get length of spin coupling pattern
+    nopen = len(spin_coupling)
+    ncore = 0 
+    # Get indices of shells
+    shells = get_shells(ncore,spin_coupling)[1]
+    # Get number of shells
+    nshell = len(shells)
+    # Define function to vectorize shell matrices
+    vector_inds = (np.insert(np.tril_indices(nshell,k=-1)[0],0,0),
+                      np.insert(np.tril_indices(nshell,k=-1)[1],0,0))
+    vec = lambda M : M[vector_inds]
+    # Get Beta vector
+    v_beta = vec(get_shell_exchange(ncore,shells,spin_coupling))
+
+    # Now we construct the determinants with at most 2 shell flips
+    # Here, we denote only the spin per shell
+    dets = []
+    if(nshell==4 or nshell<=2):
+
+        for it in itertools.combinations(range(0,nshell),r=1):
+            spins = np.zeros(nshell)
+            # Flip the spin of a shell
+            spins[it[0]]=1
+            # Make sure first shell is always alpha
+            if(spins[0] == 1): spins = 1 - spins
+            # Get string format
+            spin_str = ''.join(['a' if s==0 else 'b' for s in spins])
+            # Add to dets if not present
+            if(not spin_str in [d[0] for d in dets]): 
+                dets.append((spin_str, vec(get_uhf_coupling(spin_str))))
+    else:
+        spin_str = 'a'*nshell
+        dets.append((spin_str, vec(get_uhf_coupling(spin_str))))
+
+    for it in itertools.combinations(range(0,nshell),r=2):
+        spins = np.zeros(nshell)
+        # Flip the spins of two shells
+        spins[it[0]]=1
+        spins[it[1]]=1
+        # Make sure first shell is always alpha
+        if(spins[0] == 1): spins = 1 - spins
+        # Get string format
+        spin_str = ''.join(['a' if s==0 else 'b' for s in spins])
+        # Add to dets if not present
+        if(not spin_str in [d[0] for d in dets]): 
+            dets.append((spin_str, vec(get_uhf_coupling(spin_str))))
+    # Sort lexicographically for clarity
+    dets.sort()
+
+    # We now have a basis to expand our exchange matrix in. 
+    # We need to buld the metric tensor and solve for the expansion coefficients
+    nbasis = len(dets)
+    metric = np.zeros((nbasis,nbasis))
+    for i in range(nbasis):
+        for j in range(nbasis):
+            metric[i,j] = np.dot(dets[i][1], dets[j][1])
+    # Build pseudo-inverse
+    X = np.linalg.pinv(metric)
+
+    # Form the projection of target exchange matrix
+    bvec = np.array([np.dot(dets[i][1],v_beta) for i in range(nbasis)])
+    coeffs = X @ bvec
+
+    # Form the expansion and return
+    expansion = [(idet[0],coeff) for idet, coeff in zip(dets, coeffs)]
+    #print("Exchange matrix expansion coefficients:")
+    #for detI, cI in expansion:
+    #    print(f"{detI}: {cI: 8.4f}")
+
+    return expansion
