@@ -244,6 +244,32 @@ class PySCFIntegrals:
             return mo_eri - mo_eri.transpose(0,1,3,2)
         else:
             return mo_eri
+        
+    def cache_xc_kernel(self, mo_coeff, mo_occ, spin):
+        """ Cache the exchange-correlation kernel for given densities
+            Args:
+                dma : ndarray
+                    The alpha density matrix
+                dmb : ndarray
+                    The beta density matrix
+        """
+        return self.ni.cache_xc_kernel(self.mol, self.grid, self.xc, mo_coeff, mo_occ, spin)
+    
+    def uks_fxc(self, dm1, rho0, vxc, fxc):
+        """ Compute the fxc kernel for first-order density dm1 with precomputed rho0, vxc, fxc.
+            Args:
+                dm1 : 2 x ndarray
+                    The first-order density matrix [dm1a,dm1b]
+                rho0 : ndarray
+                    The zeroth-order density on the grid (used to define the kernel)
+                vxc : ndarray
+                    The exchange-correlation potential on the grid
+                fxc : ndarray
+                    The exchange-correlation kernel on the grid
+            Returns:
+                ndarray : The fxc contribution to the Fock matrix as [alpha,beta]
+        """
+        return self.ni.nr_uks_fxc(self.mol,self.grid,self.xc,None,dm1,0,hermi=0,rho0=rho0,vxc=vxc,fxc=fxc)
 
 class PySCF_MO_Integrals:
     """Wrapper class to call integral functions from PySCF"""

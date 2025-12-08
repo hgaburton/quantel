@@ -3,7 +3,7 @@
 # This is code for a CSF, which can be formed in a variety of ways.
 import numpy as np
 import scipy, quantel, h5py
-from quantel.utils.csf_utils import get_csf_vector, get_ensemble_expansion
+from quantel.utils.csf_utils import get_csf_vector, get_ensemble_expansion, get_det_occupation
 from quantel.utils.linalg import orthogonalise, stable_eigh, matrix_print
 from quantel.gnme.csf_noci import csf_coupling, csf_coupling_slater_condon
 from .csf import CSF
@@ -147,7 +147,11 @@ class ROKS(CSF):
 
 
     def get_vxc(self):
-        """Compute xc-potential"""
+        """ Compute xc-potential from sum of contributions from each determinant in the ensemble
+            Returns:
+                exc      : exchange-correlation energy
+                vxc_shell: list of xc-potential contributions per shell
+        """
         # Initialise overall variables
         exc = 0.0
         vxc_shell = np.zeros((self.nshell+1,self.nbsf,self.nbsf))
@@ -183,6 +187,33 @@ class ROKS(CSF):
                     vxc_shell[1+Ishell] += coeff * (vxca_det if (spinI=='a') else vxcb_det)
 
         return exc, vxc_shell
+
+    def get_fxc_diag(self):
+        """ Compute the fxc contribution to diagonal of the Hessian"""
+        # Initialise fxc contribution
+        Qpq = np.zeros((self.nmo,self.nmo))
+
+        # Loop over determinants in the ensemble
+        for detL, cL in self.ensemble_dets:
+            # Build alfa and beta density matrices for this determinant
+            occa, occb = get_det_occupation(detL, self.shell_indices, self.ncore, self.nmo)
+            # Store the xc kernel for this determinant
+            rho0, vxc, fxc = self.integrals.cache_xc_kernel([self.mo_coeff,self.mo_coeff],(occa,occb),spin=1)
+            # Loop over contributions per orbital pair
+            for p in range(self.nmo):
+                for q in range(p):
+                    # Skip if occupations are the same
+                    if((occa[p]==occa[q]) and (occb[p]==occb[q])):
+                       continue
+                    # Build the first-order density matrix for this orbital pair
+                    # These are weighted by the occupation difference
+                    Dpq = np.outer(self.mo_coeff[:,p], self.mo_coeff[:,q])
+                    dm1 = np.array([Dpq*(occa[p]-occa[q]), Dpq*(occb[p]-occb[q])])
+                    # Compute the contracted kernel with first-order density
+                    val = self.integrals.uks_fxc(dm1,rho0,vxc,fxc)
+                    # Compute contribution to Hessian diagonal
+                    Qpq[p,q] += 4*cL*np.einsum('spq,spq',dm1,val)
+        return Qpq
 
 
     def update_integrals(self):
@@ -303,6 +334,8 @@ class ROKS(CSF):
             Ki = self.mo_coeff.T @ self.vIpqqp[1+i] @ self.mo_coeff
             Ipqpq[i] = np.diag(Ji)
             Ipqqp[i] = np.diag(Ki)
+
+        # Add exchange-correlation contribtu
         return F, Ipqpq, Ipqqp
 
 
@@ -356,14 +389,14 @@ class ROKS(CSF):
 
     def get_preconditioner(self):
         """Compute approximate diagonal of Hessian"""
-        # Initialise approximate preconditioner
-        Q = np.zeros((self.nmo,self.nmo))
+         # Initialise approximate preconditioner with xc contribution
+        Q = self.get_fxc_diag()
 
         # Include dominate generalised Fock matrix terms
         for p in range(self.nmo):
             for q in range(p):
-                Q[p,q] = 2 * ( (self.gen_fock_diag[p,q] - self.gen_fock_diag[q,q]) 
-                             + (self.gen_fock_diag[q,p] - self.gen_fock_diag[p,p]) )
+                Q[p,q] += 2 * ( (self.gen_fock_diag[p,q] - self.gen_fock_diag[q,q]) 
+                              + (self.gen_fock_diag[q,p] - self.gen_fock_diag[p,p]) )
 
         # Compute two-electron corrections involving active orbitals
         Acoeff = self.Ipqqp
@@ -388,8 +421,7 @@ class ROKS(CSF):
                 for p in range(self.nocc,self.nmo):
                     Q[p,q] -= 2 * (self.mo_occ[p] + self.mo_occ[q]) * Bcoeff[q-self.ncore,p]
 
-        return Q[self.rot_idx]
-        return np.abs(Q[self.rot_idx])
+        return np.abs([self.rot_idx])
 
     def koopmans(self):
         """

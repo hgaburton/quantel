@@ -6,9 +6,9 @@ from quantel.wfn.csf import CSF
 from quantel.wfn.cisolver import CustomCI
 from quantel.opt.lbfgs import LBFGS
 
-molxyz = "formaldehyde.xyz"
-molxyz = "h6.xyz"
-molxyz = "h3.xyz"
+molxyz = "h2o.xyz"
+#molxyz = "h6.xyz"
+#molxyz = "h3.xyz"
 
 # Test RHF object with a range of optimisers
 print("Test CSF object with a range of optimisers")
@@ -19,26 +19,24 @@ for driver in ["pyscf"]:
     print(f" Testing '{driver}' integral method")
     print("===============================================")
     # Setup molecule and integrals
-    mol  = PySCFMolecule(molxyz, "6-31g", "angstrom",spin=1)
-    ints = PySCFIntegrals(mol,xc='0.5*HF')
+    mol  = PySCFMolecule(molxyz, "3-21g", "angstrom",spin=0)
+    ints = PySCFIntegrals(mol,xc='b3lyp')
     hf_ints = PySCFIntegrals(mol)
 
     # Check against CSF
-    wfn = CSF(hf_ints, '+')
-    wfn.get_orbital_guess(method="core",reorder=False)
-    wfn.print(verbose=1)
-
-    wfn = ROKS(ints, '+')
+    wfn = ROKS(ints, '+-++')
     wfn.get_orbital_guess(method="core",reorder=False)
     wfn.print()
     print(wfn.gradient)
     print(wfn.get_numerical_gradient())
-    hess = np.diag(wfn.get_numerical_hessian())
+    hess = np.zeros((wfn.nmo,wfn.nmo))
+    hess[wfn.rot_idx] = np.diag(wfn.get_numerical_hessian(diag=True))
+    print("Preconditioner:")
+    prec = np.zeros((wfn.nmo,wfn.nmo))
+    prec[wfn.rot_idx] = wfn.get_preconditioner()
+    print(prec)
     print("Numerical Hessian:")
     print(hess)
-    print("Preconditioner:")
-    print(wfn.get_preconditioner())
-    quit()
     
     wfn.print(verbose=1)
     LBFGS().run(wfn)

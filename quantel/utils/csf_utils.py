@@ -174,6 +174,25 @@ def get_shells(ncore, spin_coupling):
             shell_indices.append((ncore+np.argwhere(active_shells==i).ravel()).tolist())
     return core_indices, shell_indices
 
+def get_det_occupation(shell_spin, shell_indices, ncore, nmo):
+    """ Get the occupation vector from a specified shell spin pattern
+            :param shell_spin:      Spin pattern per shell 
+            :param shell_indices:   Indices of orbitals per shell
+            :param ncore:           Number of core orbitals
+            :param nmo:             Total number of molecular orbitals
+            :return: occa, occb
+    """
+    # Initialise occupation vectors
+    occa, occb = np.zeros(nmo), np.zeros(nmo)
+    # Core orbitals
+    occa[:ncore] = 1
+    occb[:ncore] = 1
+    # Open-shell orbitals
+    for i, shell in enumerate(shell_indices):
+        occa[shell] = 1 if (shell_spin[i] == 'a') else 0
+        occb[shell] = 0 if (shell_spin[i] == 'a') else 1
+    return occa, occb
+
 def optimise_order(K, X):
     """
     Discrete (local) optimisation of the open-shell orbital ordering through orbital swaps. 
