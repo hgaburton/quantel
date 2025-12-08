@@ -8,7 +8,7 @@ from pyscf import fci
 
 class PySCFMolecule(pyscf.gto.Mole):
     """Wrapper class to call molecule functions from PySCF"""
-    def __init__(self,_atom,_basis,_unit,_charge=0,_spin=0):
+    def __init__(self,_atom,_basis,_unit,charge=0,spin=0):
         """Initialise the PySCF molecule
                 _atom  : str
                     The path to the atom file
@@ -23,7 +23,7 @@ class PySCFMolecule(pyscf.gto.Mole):
         """
         # Get spin from 2nd line of atom file
         # Initialise underlying PySCF molecule
-        super().__init__(atom=_atom,basis=_basis,unit=_unit,spin=_spin,charge=_charge)
+        super().__init__(atom=_atom,basis=_basis,unit=_unit,spin=spin,charge=charge)
         self.atom = _atom
         self.unit = _unit
         self.build()
@@ -74,6 +74,14 @@ class PySCFIntegrals:
             self.grid = pyscf.dft.gen_grid.Grids(self.mol)
             # Initialise numerical integration
             self.ni = pyscf.dft.numint.NumInt()
+            # Get range-separation and hybrid coefficients
+            self.omega, self.alpha, self.hybrid_K = self.ni.rsh_and_hybrid_coeff(self.xc)
+        else:
+            self.grid = None
+            self.ni = None
+            self.omega = 0.0
+            self.alpha = 0.0
+            self.hybrid_K = 1.0
         
     def molecule(self):
         """Return the molecule object"""
@@ -130,23 +138,39 @@ class PySCFIntegrals:
         vJ, vK = pyscf.scf.hf.get_jk(self.mol, dm)
         return self.oei + 2 * vJ - vK
     
-    def build_multiple_JK(self,vdJ,vdK,nj,nk):
+    def build_multiple_JK(self,vdJ,vdK):
         """ Build Coulomb and Exchange matrices for multiple sets of densities
             Args:
                 vdJ : ndarray
                     The Coulomb matrices
                 vdK : ndarray
                     The Exchange matrices
-                nj  : int
-                    The number of Coulomb densities
-                nk  : int
-                    The number of exchange densities
             Returns:
                 ndarray : The Coulomb matrix
                 ndarray : The Exchange matrix
         """
-        vJ, vK = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=0)
-        return vJ[0], vK[1]
+        if(self.xc is None):
+            vJ, vK = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=1)
+            return vJ[0], vK[1], vK[1]
+        
+        if(not self.ni.libxc.is_hybrid_xc(self.xc)):
+            vJ, vK = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=1)
+            vKfunc = np.zeros_like(vK)
+        else:
+
+            vJ, vK = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=1)
+            if(self.omega == 0):
+                vKfunc = vK * self.hybrid_K
+            elif self.alpha == 0: # LR=0, only SR exchange
+                _, vKfunc = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=1, omega=-self.omega, with_j=False)
+                vKfunc *= self.hybrid_K
+            elif self.hybrid_K == 0: # SR=0, only LR exchange
+                _, vKfunc = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=1, omega=self.omega, with_j=False)
+                vKfunc *= (self.alpha)
+            else: # SR and LR different ratios
+                _, vKlr = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=1, omega=self.omega, with_j=False)
+                vKfunc = vKfunc * self.hybrid_K + (self.alpha - self.hybrid_K) * vKlr
+        return vJ[0], vK[1], vKfunc[1]
     
     def build_JK(self,dm):
         """ Build the Coulomb and Exchange matrices
@@ -157,10 +181,11 @@ class PySCFIntegrals:
                 ndarray : The Coulomb matrix
                 ndarray : The Exchange matrix
         """
-        vJ, vK = pyscf.scf.hf.get_jk(self.mol, dm)
+#        if not self.ni.libxc.is_hybrid_xc(self.xc):
+        vJ, vK = self.build_multiple_JK(dm,dm)
         return 2 * vJ - vK
     
-    def build_vxc(self,dma,dmb):
+    def build_vxc(self,dms):
         """ Build the exchange-correlation potential
             Args:
                 dma : ndarray
@@ -172,8 +197,8 @@ class PySCFIntegrals:
                 ndarray : The alpha exchange-correlation potential
                 ndarray : The beta exchange-correlation potential   
         """
-        n, exc, vxc = self.ni.nr_uks(self.mol, self.grid, self.xc, (dma,dmb))
-        return exc, vxc[0], vxc[1]
+        _, exc, vxc = self.ni.nr_uks(self.mol, self.grid, self.xc, dms)
+        return exc, vxc
     
     def oei_ao_to_mo(self, C1, C2, spin=None):
         """ Transform the one-electron integrals from AO to MO basis
@@ -243,7 +268,7 @@ class PySCF_MO_Integrals:
     
     def nact(self):
         """Return the number of active orbitals"""
-        return self.nact
+        return self.m_nact
     
     def scalar_potential(self):
         """Return the nuclear repulsion energy"""

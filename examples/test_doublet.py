@@ -1,7 +1,7 @@
 import quantel
 import numpy as np
 from quantel.wfn.rhf import RHF
-from quantel.wfn.cisolver import FCI, CIS
+from quantel.wfn.cisolver import FCI, CIS, CustomCI
 from quantel.opt.lbfgs import LBFGS
 import datetime
 
@@ -10,12 +10,9 @@ np.random.seed(7)
 
 # Initialise molecular structure (square H4)
 R = 3
-mol = quantel.Molecule([["H",0.0,0.0,0.0*R],
-                        ["H",0.0,1.0,1.0*R],
-                        ["H",0.0,0.0,2.0*R],
-                        ["H",0.0,1.0,3.0*R],
-                        ["H",0.0,0.0,4.0*R],
-                        ["H",0.0,1.0,5.0*R]
+mol = quantel.Molecule([["H",1.0*R,0.0,0.0],
+                        ["H",0.0,1.0*R,0.0],
+                        ["H",0.0,0.0,1.0*R]
                        ],"bohr")
 print("Molecule:")
 mol.print()
@@ -25,8 +22,97 @@ ints = quantel.LibintInterface("6-31g", mol)
 
 # Initialise RHF object from integrals
 wfn = RHF(ints)
-wfn.get_orbital_guess()
+wfn.get_orbital_guess(method='gwh')
 
+# Get orbital coefficients
+C = wfn.mo_coeff.copy()
+print("MO coefficients")
+print(C)
+
+# Setup MO ints
+oei = ints.oei_ao_to_mo(C,C,True)
+tei = ints.tei_ao_to_mo(C,C,C,C,True,False)
+mo_ints = quantel.MOintegrals(ints.scalar_potential(),oei,tei,ints.nmo())
+nelec = (mol.nalfa()+2, mol.nbeta()+2)
+nelec = (5,4)
+
+print("<pi|qi>")
+print(tei[:,0,:,0])
+print("<pi|iq>")
+print(tei[:,0,0,:])
+
+fci1 = CustomCI(mo_ints, ["2222a0","22220a"], nelec)
+fci1.cispace.print()
+e,x = fci1.solve(nroots=2)
+
+th = 0.4
+x = np.array([np.cos(th), np.sin(th)])
+x = np.array([1,-1])
+x = x / np.linalg.norm(x)
+
+
+fci1.cispace.print_vector(x,1e-6)
+rdm1a = fci1.cispace.rdm1(x,True)
+rdm1b = fci1.cispace.rdm1(x,False)
+rdm1 = rdm1a + rdm1b
+print(rdm1)
+rdm2aa = fci1.cispace.rdm2(x,True,True)
+rdm2ab = fci1.cispace.rdm2(x,True,False)
+rdm2ba = rdm2ab.transpose(1,0,3,2)
+rdm2bb = fci1.cispace.rdm2(x,False,False)
+rdm2 = rdm2aa + rdm2ab + rdm2ba + rdm2bb 
+for p in range(ints.nmo()):
+    for q in range(ints.nmo()):
+        for r in range(ints.nmo()):
+            for s in range(ints.nmo()):
+                if(abs(rdm2[p,q,r,s]) > 1e-6): 
+                    print(f"rdm2[{p},{q},{r},{s}] = {rdm2[p,q,r,s]: 8.1f}   eri[{p},{q},{r},{s}] = {tei[p,q,r,s]: 16.10f}")
+
+print(oei)
+
+
+# Now make an approximation
+nmo = ints.nmo()
+rdm1new = np.diag(np.diag(rdm1))
+rdm2new = np.zeros((nmo,nmo,nmo,nmo))
+for p in range(nmo):
+    for q in range(nmo):
+        rdm2new[p,q,p,q] = rdm2[p,q,p,q]
+        rdm2new[p,q,q,p] = rdm2[p,q,q,p] 
+a = np.einsum('pqpq->pq',rdm2new)
+b = np.einsum('pqqp->pq',rdm2new)
+print(rdm1new)
+print(a)
+print(b)
+
+print("Full generalized Fock matrix")
+F1 = np.einsum('pr,rq->pq',rdm1,oei) + np.einsum('prst,stqr->pq',rdm2,tei)
+print(F1)
+print(2 * (F1 - F1.T))
+print("Alt generalized Fock matrix")
+F2 = np.einsum('pr,rq->pq',rdm1new,oei) + np.einsum('prst,stqr->pq',rdm2new,tei)
+print(F2)
+print(2 * (F2 - F2.T))
+
+# Build ensemble densities
+rdm1 = np.zeros((nmo,nmo))
+rdm2 = np.zeros((nmo,nmo,nmo,nmo))
+for x in np.eye(fci1.cispace.ndet()):
+    print(x)
+    rdm1a = fci1.cispace.rdm1(x,True)
+    rdm1b = fci1.cispace.rdm1(x,False)
+    rdm2aa = fci1.cispace.rdm2(x,True,True)
+    rdm2ab = fci1.cispace.rdm2(x,True,False)
+    rdm2ba = rdm2ab.transpose(1,0,3,2)
+    rdm2bb = fci1.cispace.rdm2(x,False,False)
+    rdm1 += (rdm1a + rdm1b) / fci1.cispace.ndet()
+    rdm2 += (rdm2aa + rdm2ab + rdm2ba + rdm2bb) / fci1.cispace.ndet()
+
+print("Ensemble generalized Fock matrix")
+F1 = np.einsum('pr,rq->pq',rdm1,oei) + np.einsum('prst,stqr->pq',rdm2,tei)
+print(F1)
+print(2 * (F1 - F1.T))
+quit()
 # Find the RHF minimum
 LBFGS().run(wfn)
 

@@ -293,6 +293,8 @@ def get_ensemble_expansion(spin_coupling):
             :param spin_coupling:
             :return: list of (determinant string, coefficient) tuples
     """
+    if(len(spin_coupling)==0 or spin_coupling=='cs'):
+        return []
     # Get length of spin coupling pattern
     nopen = len(spin_coupling)
     ncore = 0 
@@ -311,7 +313,6 @@ def get_ensemble_expansion(spin_coupling):
     # Here, we denote only the spin per shell
     dets = []
     if(nshell==4 or nshell<=2):
-
         for it in itertools.combinations(range(0,nshell),r=1):
             spins = np.zeros(nshell)
             # Flip the spin of a shell
@@ -361,5 +362,4 @@ def get_ensemble_expansion(spin_coupling):
     #print("Exchange matrix expansion coefficients:")
     #for detI, cI in expansion:
     #    print(f"{detI}: {cI: 8.4f}")
-
     return expansion

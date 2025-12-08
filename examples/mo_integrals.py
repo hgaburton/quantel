@@ -43,6 +43,7 @@ print(wfn.fock)
 C = wfn.mo_coeff.copy()
 print("Initialise mo_ints object")
 mo_ints = quantel.MOintegrals(C,C,ints)
+mo_ints2 = ints.mo_integrals(C,0,ints.nmo())
 
 h_ao = ints.oei_matrix(True)
 start = time.time()

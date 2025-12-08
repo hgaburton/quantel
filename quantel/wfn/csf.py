@@ -273,7 +273,7 @@ class CSF(Wavefunction):
     def hess_on_vec(self, vec):
         return self.hessian @ vec
 
-    def get_rdm12(self):
+    def get_rdm12(self,only_occ=True):
         """ Compute the 1- and 2-electron reduced matrices from the shell coupling in occupied space
             returns: 
                 dm1: 1-electron reduced density matrix
@@ -282,12 +282,20 @@ class CSF(Wavefunction):
         # Numbers 
         nocc = self.nocc
         ncore = self.ncore
+        nmo = self.nmo
 
         # 1-RDM
-        dm1 = np.diag(self.mo_occ[:nocc])
+        if only_occ:
+            dm1 = np.diag(self.mo_occ[:nocc])
+        else:
+            dm1 = np.diag(self.mo_occ)
 
         # 2-RDM
-        dm2 = np.zeros((nocc,nocc,nocc,nocc))
+        if only_occ:
+            dm2 = np.zeros((nocc,nocc,nocc,nocc))
+        else:
+            dm2 = np.zeros((nmo,nmo,nmo,nmo))
+
         for p in range(ncore):
             for q in range(ncore):
                 if(p==q):
@@ -447,12 +455,6 @@ class CSF(Wavefunction):
         """ Compute the Hamiltonian coupling between two CSF objects
         """
         return csf_coupling_slater_condon(self, them, self.integrals)
-        n2 = self.nbsf * self.nbsf
-        hcore = self.integrals.oei_matrix(True)
-        eri   = self.integrals.tei_array().reshape((n2,n2))
-        ovlp  = self.integrals.overlap_matrix()
-        enuc  = self.integrals.scalar_potential()
-        return csf_coupling(self, them, ovlp, hcore, eri, enuc)
     
 
     def get_orbital_guess(self, method="gwh",avas_ao_labels=None,reorder=True):
@@ -567,7 +569,7 @@ class CSF(Wavefunction):
                 Ipqqp: Diagonal elements of K matrix
         '''
         # Build the integrals
-        self.vJ, self.vK = self.integrals.build_multiple_JK(vd,vd,self.nopen+1,self.nopen+1)
+        self.vJ, self.vIpqqp, self.vK = self.integrals.build_multiple_JK(vd,vd)
 
         # Get the total J matrix
         J = np.einsum('kpq->pq',self.vJ)
@@ -583,7 +585,7 @@ class CSF(Wavefunction):
 
 
     def get_generalised_fock(self):
-        """ Compute the generalised Fock matrix in AO basis"""
+        """ Compute the generalised Fock matrix in MO basis"""
         # Initialise memory
         F = np.zeros((self.nmo, self.nmo)) 
 
@@ -784,6 +786,14 @@ class CSF(Wavefunction):
         occip = np.diag(np.einsum('ip,i,iq->pq',v,self.mo_occ[:self.nocc],v))   
         return e, cip, occip
 
+    def get_active_itegrals(self):
+        """
+        Get active space one- and two-electron integrals in MO basis
+        """
+        Cact = self.mo_coeff[:,self.ncore:self.nocc]
+        h1e_act = np.linalg.multi_dot([Cact.T, self.integrals.oei_matrix(True), Cact])
+        tei_act = self.integrals.tei_ao_to_mo(Cact,Cact,Cact,Cact,True,False)
+        return h1e_act, tei_act
 
     def canonicalize(self):
         """

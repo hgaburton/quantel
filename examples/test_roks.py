@@ -1,28 +1,73 @@
 import quantel
 import numpy as np
 from quantel.ints.pyscf_integrals import PySCFMolecule, PySCFIntegrals, PySCF_MO_Integrals
+from quantel.wfn.roks import ROKS
 from quantel.wfn.csf import CSF
 from quantel.wfn.cisolver import CustomCI
+from quantel.opt.lbfgs import LBFGS
 
 molxyz = "formaldehyde.xyz"
+molxyz = "h6.xyz"
+molxyz = "h3.xyz"
 
 # Test RHF object with a range of optimisers
 print("Test CSF object with a range of optimisers")
+np.set_printoptions(linewidth=100000,precision=6,suppress=True)
 
 for driver in ["pyscf"]:
     print("\n===============================================")
     print(f" Testing '{driver}' integral method")
     print("===============================================")
     # Setup molecule and integrals
-    if(driver == "libint"):
-        mol  = quantel.Molecule(molxyz, "angstrom")
-        ints = quantel.LibintInterface("6-31g", mol) 
-    elif(driver == "pyscf"):
-        mol  = PySCFMolecule(molxyz, "6-31g", "angstrom")
-        ints = PySCFIntegrals(mol)#,xc='lda,')
+    mol  = PySCFMolecule(molxyz, "6-31g", "angstrom",spin=1)
+    ints = PySCFIntegrals(mol,xc='0.5*HF')
+    hf_ints = PySCFIntegrals(mol)
+
+    # Check against CSF
+    wfn = CSF(hf_ints, '+')
+    wfn.get_orbital_guess(method="core",reorder=False)
+    wfn.print(verbose=1)
+
+    wfn = ROKS(ints, '+')
+    wfn.get_orbital_guess(method="core",reorder=False)
+    wfn.print()
+    print(wfn.gradient)
+    print(wfn.get_numerical_gradient())
+    hess = np.diag(wfn.get_numerical_hessian())
+    print("Numerical Hessian:")
+    print(hess)
+    print("Preconditioner:")
+    print(wfn.get_preconditioner())
+    quit()
+    
+    wfn.print(verbose=1)
+    LBFGS().run(wfn)
+
+
+    quit()
 
     # Initialise CSF object for an open-shell singlet state
-    wfn = CSF(ints, '+-+-')
+    wfn = ROKS(ints, '+-+-')
+    wfn.get_orbital_guess(method="core",reorder=False)
+    np.random.seed(1)
+    wfn.take_step(np.random.randn(wfn.nrot))
+
+    wfn.print(verbose=1000)
+    print(wfn.energy)
+    print(wfn.energy_components)
+
+
+    wfn.print()
+    hs_coeff = wfn.mo_coeff.copy()
+
+    for sc in ['++++++','+-+-+-','+++---','++-+--']:
+        print("Spin coupling:", sc)
+        wfn = ROKS(ints, sc)
+        wfn.initialise(hs_coeff)
+        wfn.take_step(np.random.randn(wfn.nrot))
+        LBFGS().run(wfn)
+        wfn.print()
+    quit()
 
     # Setup optimiser
     for guess in ("gwh", "core"):

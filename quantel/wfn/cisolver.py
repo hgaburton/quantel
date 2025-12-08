@@ -133,3 +133,35 @@ class CIS(ArbitraryCI):
 
         # Call the parent constructor
         super().__init__(cispace)
+
+class CustomCI(ArbitraryCI):
+    """
+    Class for solving a custom CI problem using the Davidson algorithm.
+    """
+    def __init__(self, mo_ints, det_list, nelec):
+        """
+        Initialise the CustomCI instance from cispace object.
+        """
+        # Save mo_ints object
+        self.mo_ints = mo_ints
+        # Number of correlated orbitals
+        self.nmo = mo_ints.nmo()
+        # Number of electrons
+        self.nalfa = nelec[0]
+        self.nbeta = nelec[1]
+
+        # Check the input
+        if(self.nalfa < 0):
+            raise ValueError("Number of electrons cannot be negative.")
+        if(self.nbeta < 0):
+            raise ValueError("Number of electrons cannot be negative.")
+        if(self.nalfa + self.nbeta > 2*self.nmo):
+            raise ValueError("Number of electrons exceeds number of orbitals.")
+
+        # Create the CI space object
+        cispace = quantel.CIspace(mo_ints, self.nmo, self.nalfa, self.nbeta)
+        cispace.initialize('CUSTOM', det_list)
+
+
+        # Call the parent constructor
+        super().__init__(cispace)
