@@ -142,7 +142,6 @@ class ROKS(CSF):
         # Return approximation to H @ sk
         return (g1 - g0) / eps
 
-
     def hess_on_vec(self, vec):
         return self.hessian @ vec
 
@@ -359,7 +358,6 @@ class ROKS(CSF):
 
         # Build Ypqrs
         Y = np.zeros((nmo,nmo,nmo,nmo))
-        print(self.Kscale)
         self.Kscale = 0.0
         # Y_imjn
         Y[:ncore,:,:ncore,:] += 8 * np.einsum('mnij->imjn',ppoo[:,:,:ncore,:ncore]) 
@@ -387,7 +385,7 @@ class ROKS(CSF):
                             Y[v,:,w,:] = Y[w,:,v,:].T
         return Y
 
-    def get_preconditioner(self,abs=True):
+    def get_preconditioner(self):
         """Compute approximate diagonal of Hessian"""
          # Initialise approximate preconditioner with xc contribution
         Q = np.zeros((self.nmo,self.nmo)) 
@@ -423,7 +421,7 @@ class ROKS(CSF):
                 for p in range(self.nocc,self.nmo):
                     Q[p,q] -= 2 * (self.mo_occ[p] + self.mo_occ[q]) * Bcoeff[q-self.ncore,p]
 
-        return np.abs(Q[self.rot_idx]) if abs else Q[self.rot_idx]
+        return np.abs(Q[self.rot_idx])
 
     def koopmans(self):
         """

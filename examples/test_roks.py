@@ -20,8 +20,8 @@ for driver in ["pyscf"]:
     print(f" Testing '{driver}' integral method")
     print("===============================================")
     # Setup molecule and integrals
-    mol  = PySCFMolecule(molxyz, "3-21g", "angstrom",spin=1)
-    ints = PySCFIntegrals(mol,xc='pbe')
+    mol  = PySCFMolecule(molxyz, "cc-pvdz", "angstrom",spin=1)
+    ints = PySCFIntegrals(mol,xc='tpss')
     hf_ints = PySCFIntegrals(mol)
 
     # Check against CSF
@@ -31,13 +31,13 @@ for driver in ["pyscf"]:
     # Perform excitation
     cguess = wfn.mo_coeff.copy()
     # HOMO/SOMO
-    #cguess[:,[wfn.ncore-1,wfn.ncore]] = cguess[:,[wfn.ncore,wfn.ncore-1]]
+    cguess[:,[wfn.ncore-1,wfn.ncore]] = cguess[:,[wfn.ncore,wfn.ncore-1]]
     # SOMO/LUMO
-    cguess[:,[wfn.ncore+1,wfn.ncore]] = cguess[:,[wfn.ncore,wfn.ncore+1]]
+    #cguess[:,[wfn.ncore+1,wfn.ncore]] = cguess[:,[wfn.ncore,wfn.ncore+1]]
     wfn.initialise(cguess)
     # Analytic Hessian would probably be much faster for CSF/ROKS
     # Or at least analytic Hessian on vector
-    GMF().run(wfn,index=2)
+    GMF().run(wfn,index=1,maxit=10000)
     quit()
     cguess = wfn.mo_coeff.copy()
     # Order as HOMO/LUMO/SOMO

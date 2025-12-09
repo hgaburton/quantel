@@ -57,12 +57,10 @@ class GMF:
         maxstep = self.control["maxstep"]
 
         # Initialise reference energy
-        eref = obj.energy
-        dim = obj.dim
         grad = obj.gradient
         prec = obj.get_preconditioner(abs=False)
-        eigval, evec = Davidson(nreset=50).run(obj.approx_hess_on_vec,prec,index,tol=1e-4,plev=0)
-        gmod, evec = self.get_gmf_gradient(obj,grad,index,eigval[:index],evec[:,:index])
+        eigval, evec = Davidson(nreset=50).run(obj.approx_hess_on_vec,prec,index+1,tol=1e-4,plev=0)
+        gmod = self.get_gmf_gradient(obj,grad,index,eigval[:index],evec[:,:index])
 
         if plev>0:
             print(f"    > Num. MOs     = {obj.nmo: 6d}")
@@ -141,12 +139,12 @@ class GMF:
                     evec[:,i] = obj.transform_vector(evec[:,i], step, X)
 
             # Compute n lowest eigenvalues
-            prec = obj.get_preconditioner(abs=False)
-            eigval, evec = Davidson(nreset=50).run(obj.approx_hess_on_vec,prec,index,xguess=evec,tol=1e-4,plev=1)
+            prec = obj.get_preconditioner(abs=True)
+            eigval, evec = Davidson(nreset=50).run(obj.approx_hess_on_vec,prec,index+1,xguess=evec,tol=1e-4,plev=1)
 
             # Compute new GMF gradient (need to parallel transport Hessian eigenvector)
             grad = obj.gradient
-            gmod, evec = self.get_gmf_gradient(obj,grad,index,eigval[:index],evec[:,:index])
+            gmod = self.get_gmf_gradient(obj,grad,index,eigval[:index],evec[:,:index])
             v_gmod.append(gmod.copy())
 
             # Remove oldest vectors if subspace is saturated
@@ -186,7 +184,7 @@ class GMF:
                 if(e[i] >= 0):
                     gmod = gmod - x[:,i] * np.dot(x[:,i], grad)
 
-        return gmod, x
+        return gmod
     
 
     def get_lbfgs_step(self,v_grad,v_step):
