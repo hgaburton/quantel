@@ -20,7 +20,6 @@ if __name__ == "__main__":
     new_arr = array.array()
     print("Error for TwoArray = ", np.linalg.norm(new_arr - arr))
     
-    
     # Test FourArray
     np.random.seed(7)
     arr = np.random.rand(d,d,d,d)
