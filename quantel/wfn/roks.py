@@ -35,6 +35,7 @@ class ROKS(CSF):
         self.ensemble_dets = get_ensemble_expansion(spin_coupling)
         # And store information about our XC functional
 
+    
     def initialise(self, mo_guess, spin_coupling=None, mat_ci=None, integrals=True):
         """ Initialise the CSF object with a set of MO coefficients"""
         if(spin_coupling is None):
@@ -145,7 +146,6 @@ class ROKS(CSF):
     def hess_on_vec(self, vec):
         return self.hessian @ vec
 
-
     def get_vxc(self):
         """ Compute xc-potential from sum of contributions from each determinant in the ensemble
             Returns:
@@ -250,7 +250,7 @@ class ROKS(CSF):
 
     def copy(self,integrals=True):
         """Return a copy of the current object"""
-        newcsf = CSF(self.integrals, self.spin_coupling, verbose=self.verbose)
+        newcsf = ROKS(self.integrals, self.spin_coupling, verbose=self.verbose)
         newcsf.initialise(self.mo_coeff,spin_coupling=self.spin_coupling,integrals=integrals)
         return newcsf
 
@@ -387,10 +387,12 @@ class ROKS(CSF):
                             Y[v,:,w,:] = Y[w,:,v,:].T
         return Y
 
-    def get_preconditioner(self):
+    def get_preconditioner(self,abs=True):
         """Compute approximate diagonal of Hessian"""
          # Initialise approximate preconditioner with xc contribution
-        Q = self.get_fxc_diag()
+        Q = np.zeros((self.nmo,self.nmo)) 
+        if(False):
+            Q += self.get_fxc_diag()
 
         # Include dominate generalised Fock matrix terms
         for p in range(self.nmo):
@@ -421,7 +423,7 @@ class ROKS(CSF):
                 for p in range(self.nocc,self.nmo):
                     Q[p,q] -= 2 * (self.mo_occ[p] + self.mo_occ[q]) * Bcoeff[q-self.ncore,p]
 
-        return np.abs([self.rot_idx])
+        return np.abs(Q[self.rot_idx]) if abs else Q[self.rot_idx]
 
     def koopmans(self):
         """

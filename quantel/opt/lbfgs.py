@@ -23,6 +23,7 @@ class LBFGS:
         self.control["with_canonical"] = True
         self.control["canonical_interval"] = 10
         self.control['gamma_preconditioner'] = False
+        self.control['preconditioner_interval'] = 10
 
         for key in kwargs:
             if not key in self.control.keys():
@@ -143,7 +144,9 @@ class LBFGS:
                 v_grad.append(grad.copy())
 
                 # Get L-BFGS quasi-Newton step
-                prec = obj.get_preconditioner()
+                if(np.mod(istep,self.control["preconditioner_interval"])==0):
+                    print("  Updating preconditioner", istep, np.mod(istep,self.control["preconditioner_interval"]))
+                    prec = obj.get_preconditioner()
                 step = self.get_lbfgs_step(v_grad,v_step,prec)
                 qn_count += 1
 
