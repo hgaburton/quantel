@@ -147,31 +147,33 @@ class PySCFIntegrals:
                     The Exchange matrices
             Returns:
                 ndarray : The Coulomb matrix
-                ndarray : The Exchange matrix
+                ndarray : The pure Exchange matrix
+                ndarray : The scaled Exchange matrix for xc functional
         """
         if(self.xc is None):
-            vJ, vK = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=1)
+            vJ, vK = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=0)
             return vJ[0], vK[1], vK[1]
         
         if(not self.ni.libxc.is_hybrid_xc(self.xc)):
-            vJ, vK = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=1)
+            vJ, vK = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=0)
             vKfunc = np.zeros_like(vK)
         else:
 
-            vJ, vK = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=1)
+            vJ, vK = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=0)
             if(self.omega == 0):
                 vKfunc = vK * self.hybrid_K
             elif self.alpha == 0: # LR=0, only SR exchange
-                _, vKfunc = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=1, omega=-self.omega, with_j=False)
+                _, vKfunc = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=0, omega=-self.omega, with_j=False)
                 vKfunc *= self.hybrid_K
             elif self.hybrid_K == 0: # SR=0, only LR exchange
-                _, vKfunc = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=1, omega=self.omega, with_j=False)
+                _, vKfunc = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=0, omega=self.omega, with_j=False)
                 vKfunc *= (self.alpha)
             else: # SR and LR different ratios
-                _, vKlr = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=1, omega=self.omega, with_j=False)
+                _, vKlr = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=0, omega=self.omega, with_j=False)
                 vKfunc = vKfunc * self.hybrid_K + (self.alpha - self.hybrid_K) * vKlr
         return vJ[0], vK[1], vKfunc[1]
     
+
     def build_JK(self,dm):
         """ Build the Coulomb and Exchange matrices
             Args:

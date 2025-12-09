@@ -83,7 +83,7 @@ class DIIS:
         coeffs = np.linalg.solve(B, rhs)
         
         # Get the new Fock matrix
-        fock = np.zeros((self.nbsf, self.nbsf))
+        fock = np.zeros_like(self.fock_list[0])
         for i in range(nerr):
             fock += coeffs[i] * self.fock_list[i]
         return fock

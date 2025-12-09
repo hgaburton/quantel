@@ -26,6 +26,8 @@ class GHF(Wavefunction):
         """
         self.integrals = integrals
         self.nelec     = integrals.molecule().nalfa() + integrals.molecule().nbeta()
+        if(self.integrals.xc is not None):
+            raise NotImplementedError("GHF not compatible with exchange-correlation functional")
 
         # Get number of basis functions and linearly independent orbitals
         self.nbsf      = integrals.nbsf()
@@ -74,8 +76,6 @@ class GHF(Wavefunction):
         E1 += np.einsum('pq,pq', self.integrals.oei_matrix(False), Db, optimize="optimal")
         # Two-electron energy
         E2 = 0.5 * np.einsum('pq,pq', self.JK, self.dens, optimize="optimal")
-        # Exchange correlation
-        #Exc = self.exc
         # Save components
         self.energy_components = dict(Nuclear=En, One_Electron=E1, Two_Electron=E2, Exchange_Correlation=0)
         return En + E1 + E2
@@ -234,7 +234,7 @@ class GHF(Wavefunction):
     def get_fock(self):
         """Compute the Fock matrix for the current state"""
         # Get JK integrals
-        self.vJ, self.vK = self.integrals.build_multiple_JK(self.vd,self.vd,3,3)
+        self.vJ, _, self.vK = self.integrals.build_multiple_JK(self.vd,self.vd)
         # Construct the Coulomb matrix
         self.J = np.zeros((2*self.nbsf, 2*self.nbsf))
         self.J[:self.nbsf,:self.nbsf] = self.vJ[0] + self.vJ[2]
