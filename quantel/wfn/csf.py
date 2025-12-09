@@ -52,14 +52,9 @@ class CSF(Wavefunction):
         self.nbsf       = integrals.nbsf()
         self.nmo        = integrals.nmo()
         # Read integral dependent factors
-        if(type(integrals) is PySCFIntegrals):
-            self.with_xc = (integrals.xc is not None)
-            self.Kscale  = integrals.kscale 
-            self.with_pyscf = True
-        else:
-            self.with_xc = False
-            self.Kscale  = 1.0
-
+        if(integrals.xc is not None):
+            raise NotImplementedError("CSF is not compatible with DFT exchange-correlation function")
+        
         self.setup_spin_coupling(spin_coupling)
     
     def sanity_check(self):
@@ -155,13 +150,10 @@ class CSF(Wavefunction):
         for w in range(self.nshell):
             EK += 0.5 * np.einsum('pq,qp',self.K[1+w], 
                         np.einsum('v,vpq->pq',self.beta[w],self.dk[1:]) - 0.5 * self.dk[0])
-        # xc-potential energy
-        Exc = self.exc
         # Save components
-        self.energy_components = dict(Nuclear=En, One_Electron=E1, Coulomb=EJ, 
-                                      ROHF_Exchange=EK, Exchange_Correlation=Exc)
-        return En + E1 + EJ + EK + Exc
-
+        self.energy_components = dict(Nuclear=En, One_Electron=E1, Coulomb=EJ, ROHF_Exchange=EK)
+        return En + E1 + EJ + EK
+    
     @property
     def sz(self):
         """<S_z> value of the current wave function"""
@@ -319,31 +311,11 @@ class CSF(Wavefunction):
                             dm2[w,v,w,v] = 1 
                             dm2[w,v,v,w] = self.beta[W,V]
         return dm1, dm2
-    
-    def get_vxc(self):
-        """Compute xc-potential"""
-        # Compute alfa and beta density matrices
-        dm_tmp = np.einsum('kpq->pq',self.dk[1:])
-        rho_a, rho_b = 0.5 * self.dk[0], 0.5 * self.dk[0]
-        if(self.nopen > 0):
-            rho_a += (0.5 + self.sz / self.nopen) * dm_tmp
-            rho_b += (0.5 - self.sz / self.nopen) * dm_tmp
-        # Compute the XC potential
-        exc, vxca, vxcb = self.integrals.build_vxc(rho_a, rho_b)
-        # Compute the total and polarisation potentials
-        vxc = 0.5 * (vxca + vxcb)
-        if(self.nopen > 0): 
-            vxc_pol = (self.sz / self.nopen) * (vxca - vxcb)
-        else: 
-            vxc_pol = 0 * (vxca - vxcb)
-        return exc, vxc, vxc_pol
 
     def update_integrals(self):
         """ Update the integrals with current set of orbital coefficients"""
         # Update density matrices (AO basis)
         self.dj, self.dk, self.vd = self.get_density_matrices()
-        # Compute xc-potential
-        self.exc, self.vxc, self.vxc_pol = self.get_vxc() if(self.with_xc) else (0,0,0)
         # Update JK matrices (AO basis) 
         self.J, self.K = self.get_JK_matrices(self.vd)
         # Get Fock matrix (AO basis)
@@ -579,8 +551,6 @@ class CSF(Wavefunction):
         for Ishell in range(self.nshell):
             shell = [1+i-self.ncore for i in self.shell_indices[Ishell]]
             K[Ishell+1] += np.einsum('vpq->pq',self.vK[shell])
-        # Rescale exchange matrices as appropriate
-        K *= self.Kscale
         return J, K
 
 
@@ -594,8 +564,6 @@ class CSF(Wavefunction):
         # Core contribution
         Fcore_ao = 2 * (self.integrals.oei_matrix(True) + self.J 
                       - 0.5 * np.sum(self.K[i] for i in range(self.nshell+1)))
-        # XC potential contribution
-        Fcore_ao += 2 * self.vxc
         # AO-to-MO transformation
         Fcore_mo = np.linalg.multi_dot([self.mo_coeff.T, Fcore_ao, self.mo_coeff])
         for i in range(self.ncore):
@@ -610,8 +578,6 @@ class CSF(Wavefunction):
             Fw_ao = self.integrals.oei_matrix(True) + self.J - 0.5 * self.K[0]
             # Different shell exchange
             Fw_ao += np.einsum('v,vpq->pq',self.beta[W],self.K[1:])
-            # XC potential contribution
-            Fw_ao += self.vxc + self.vxc_pol
             # AO-to-MO transformation
             Fw_mo = np.linalg.multi_dot([self.mo_coeff.T, Fw_ao, self.mo_coeff])
             for w in shell:
@@ -651,15 +617,15 @@ class CSF(Wavefunction):
         Y = np.zeros((nmo,nmo,nmo,nmo))
         # Y_imjn
         Y[:ncore,:,:ncore,:] += 8 * np.einsum('mnij->imjn',ppoo[:,:,:ncore,:ncore]) 
-        Y[:ncore,:,:ncore,:] -= 2 * self.Kscale * np.einsum('mnji->imjn',ppoo[:,:,:ncore,:ncore])
-        Y[:ncore,:,:ncore,:] -= 2 * self.Kscale * np.einsum('mjni->imjn',popo[:,:ncore,:,:ncore])
+        Y[:ncore,:,:ncore,:] -= 2 * np.einsum('mnji->imjn',ppoo[:,:,:ncore,:ncore])
+        Y[:ncore,:,:ncore,:] -= 2 * np.einsum('mjni->imjn',popo[:,:ncore,:,:ncore])
         for i in range(ncore):
             Y[i,:,i,:] += 2 * Jmn - Kmn
 
         # Y_imwn
         Y[:ncore,:,ncore:nocc,:] = (4 * ppoo[:,:,:ncore,ncore:nocc].transpose(2,0,3,1)
-                                      - self.Kscale * ppoo[:,:,ncore:nocc,:ncore].transpose(3,0,2,1)
-                                      - self.Kscale * popo[:,ncore:nocc,:,:ncore].transpose(3,0,1,2))
+                                      - ppoo[:,:,ncore:nocc,:ncore].transpose(3,0,2,1)
+                                      - popo[:,ncore:nocc,:,:ncore].transpose(3,0,1,2))
         Y[ncore:nocc,:,:ncore,:] = Y[:ncore,:,ncore:nocc,:].transpose(2,3,0,1)
 
         # Y_wmvn
@@ -668,7 +634,7 @@ class CSF(Wavefunction):
             for V in range(W,self.nshell):
                 for w in self.shell_indices[W]:
                     for v in self.shell_indices[V]:
-                        Y[w,:,v,:] = 2 * ppoo[:,:,w,v] + self.Kscale * self.beta[W,V] * (ppoo[:,:,v,w] + popo[:,v,:,w])
+                        Y[w,:,v,:] = 2 * ppoo[:,:,w,v] + self.beta[W,V] * (ppoo[:,:,v,w] + popo[:,v,:,w])
                         if(w==v):
                             Y[w,:,w,:] = Y[w,:,w,:] + Jmn - 0.5 * vKmn[0] + wKmn
                         else:
@@ -694,7 +660,7 @@ class CSF(Wavefunction):
             for p in range(q+1,self.nmo):
                 Q[p,q] += 4 * (self.mo_occ[p]-self.mo_occ[q])**2 * Acoeff[q-self.ncore,p]
 
-        Bcoeff = self.Kscale * (self.Ipqpq + self.Ipqqp)
+        Bcoeff = self.Ipqpq + self.Ipqqp
         for W in range(self.nshell):
             for q in self.shell_indices[W]:
                 # Core-Active

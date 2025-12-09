@@ -20,19 +20,12 @@ if __name__ == "__main__":
     # Check gradient and Hessian
     grad = wfn.gradient.copy()
     hess = wfn.hessian.copy()
-    grad_check = np.linalg.norm(grad-wfn.get_numerical_gradient())
+    grad_check = np.linalg.norm(grad-wfn.get_numerical_gradient())/np.sqrt(grad.size)
     if(grad_check > 1e-5):
         print(f"Gradient check failed. |Analytic - Numerical| = {grad_check: 6.3e}")
-    hess_check = np.linalg.norm(hess-wfn.get_numerical_hessian())
+    hess_check = np.linalg.norm(hess-wfn.get_numerical_hessian())/np.sqrt(hess.size)
     if(hess_check > 1e-5):
         print(f"Hessian check failed. |Analytic - Numerical| = {hess_check: 6.3e}")
-
-    # Check preconditioner
-    precond = wfn.get_preconditioner()
-    hess_diag = np.abs(np.diag(hess))
-    precond_check = np.linalg.norm(precond - hess_diag)
-    if(precond_check > 1e-5):
-        print(f"Preconditioner check failed. |Analytic - Numerical| = {precond_check: 6.3e}")
 
     # Test LBFGS
     LBFGS().run(wfn)

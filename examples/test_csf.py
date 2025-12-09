@@ -1,28 +1,28 @@
-import quantel
 import numpy as np
-from quantel.ints.pyscf_integrals import PySCFMolecule, PySCFIntegrals, PySCF_MO_Integrals
+from quantel.ints.pyscf_integrals import PySCFMolecule, PySCFIntegrals
 from quantel.wfn.csf import CSF
-from quantel.wfn.cisolver import CustomCI
 
-molxyz = "formaldehyde.xyz"
-
-# Test RHF object with a range of optimisers
-print("Test CSF object with a range of optimisers")
-
-for driver in ["pyscf"]:
+if __name__ == "__main__":
     print("\n===============================================")
-    print(f" Testing '{driver}' integral method")
+    print(f" Testing CSF optimisation method")
     print("===============================================")
     # Setup molecule and integrals
-    if(driver == "libint"):
-        mol  = quantel.Molecule(molxyz, "angstrom")
-        ints = quantel.LibintInterface("6-31g", mol) 
-    elif(driver == "pyscf"):
-        mol  = PySCFMolecule(molxyz, "6-31g", "angstrom")
-        ints = PySCFIntegrals(mol)#,xc='lda,')
+    mol  = PySCFMolecule("formaldehyde.xyz", "sto-3g", "angstrom")
+    ints = PySCFIntegrals(mol)
 
     # Initialise CSF object for an open-shell singlet state
     wfn = CSF(ints, '+-+-')
+    wfn.get_orbital_guess(method="gwh")
+
+    # Check gradient and Hessian
+    grad = wfn.gradient.copy()
+    hess = wfn.hessian.copy()
+    grad_check = np.linalg.norm(grad-wfn.get_numerical_gradient())/np.sqrt(grad.size)
+    if(grad_check > 1e-5):
+        print(f"Gradient check failed. |Analytic - Numerical| = {grad_check: 6.3e}")
+    hess_check = np.linalg.norm(hess-wfn.get_numerical_hessian())/np.sqrt(hess.size)
+    if(hess_check > 1e-5):
+        print(f"Hessian check failed. |Analytic - Numerical| = {hess_check: 6.3e}")
 
     # Setup optimiser
     for guess in ("gwh", "core"):
@@ -30,25 +30,10 @@ for driver in ["pyscf"]:
         print(f" Testing '{guess}' initial guess method")
         print("************************************************")
         from quantel.opt.lbfgs import LBFGS
-        wfn.get_orbital_guess(method="gwh")
+        wfn.get_orbital_guess(method=guess)
         LBFGS().run(wfn)
         
         # Test canonicalisation 
         wfn.canonicalize()
         # Test Hessian index
         wfn.get_davidson_hessian_index()
-
-    mo_ints = PySCF_MO_Integrals(ints) 
-    mo_ints.update_orbitals(wfn.mo_coeff, wfn.ncore, wfn.nopen)
-    Vc = mo_ints.scalar_potential()
-    oei = mo_ints.oei_matrix(True)
-    tei = mo_ints.tei_array(True,False)
-    nmo = mo_ints.nact()
-
-    ci_ints = quantel.MOintegrals(Vc,oei,tei,nmo)
-    det_list = quantel.utils.csf_utils.csf_det_list(wfn.spin_coupling)
-    ci = CustomCI(ci_ints, det_list, (1,1))
-    e,x = ci.solve(10)
-    print(np.sum(e))
-
-
