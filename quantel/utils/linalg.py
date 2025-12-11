@@ -235,3 +235,16 @@ def pseudo_inverse(M, thresh=1e-10):
         if abs(s[i]) > thresh:
             s_inv[i] = 1 / s[i]
     return U @ np.diag(s_inv) @ np.conj(U).T
+
+def utri_idx(p,q,n):
+    '''
+    Get the index in a vectorised upper-triangular matrix for element (p,q)
+
+    Parameters:
+        p (int): Row index
+        q (int): Column index
+        n (int): Size of the square matrix
+    Returns:
+        int: Index in the vectorised upper-triangular matrix
+    '''
+    return p*n-p*(p+1)//2+q

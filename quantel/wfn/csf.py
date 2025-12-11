@@ -51,10 +51,7 @@ class CSF(Wavefunction):
         # Get number of basis functions and linearly independent orbitals
         self.nbsf       = integrals.nbsf()
         self.nmo        = integrals.nmo()
-        # Read integral dependent factors
-        if(integrals.xc is not None):
-            raise NotImplementedError("CSF is not compatible with DFT exchange-correlation function")
-        
+        # Initialise spin coupling 
         self.setup_spin_coupling(spin_coupling)
     
     def sanity_check(self):
@@ -122,7 +119,6 @@ class CSF(Wavefunction):
         self.rot_idx    = self.uniq_var_indices(self.frozen)
         self.invariant  = self.invariant_indices()
         self.nrot       = np.sum(self.rot_idx)
-
         # Initialise integrals
         if (integrals): self.update_integrals()
 
@@ -334,7 +330,10 @@ class CSF(Wavefunction):
             F.create_dataset("s2", data=self.s2)
         
         # Save numpy txt file with energy and Hessian index
-        hindices = self.hess_index
+        if hasattr(self, 'hess_index'):
+            hindices = self.hess_index
+        else:
+            hindices = (0,0)
         with open(tag+".solution", "w") as F:
             F.write(f"{self.energy:18.12f} {hindices[0]:5d} {hindices[1]:5d} {self.s2:12.6f} {self.spin_coupling:s}\n")
 
@@ -434,7 +433,7 @@ class CSF(Wavefunction):
         # Get the guess for the molecular orbital coefficients
         Cguess = orbital_guess(self.integrals,method,avas_ao_labels=avas_ao_labels,rohf_ms=0.5*self.nopen)
         # Optimise the order of the CSF orbitals and return
-        if(reorder and (not self.spin_coupling is '')):
+        if(reorder and (self.spin_coupling != '')):
             Cguess[:,self.ncore:self.nocc] = csf_reorder_orbitals(self.integrals,self.exchange_matrix,
                                                                   np.copy(Cguess[:,self.ncore:self.nocc]))
 
@@ -540,8 +539,24 @@ class CSF(Wavefunction):
                 Ipqpq: Diagonal elements of J matrix
                 Ipqqp: Diagonal elements of K matrix
         '''
-        # Build the integrals
-        self.vJ, self.vIpqqp, self.vK = self.integrals.build_multiple_JK(vd,vd)
+        # Build the integrals with incremental JK build
+        if hasattr(self, "vd_last"):
+            # Compute difference density
+            _vd = vd - self.vd_last
+            # Compute difference J, K, and Ipqqp
+            _vJ, _vIpqqp, _vK = self.integrals.build_multiple_JK(_vd,_vd,hermi=1)
+            # Compute incremental update to J and K
+            self.vJ = self.vJ_last + _vJ
+            self.vK = self.vK_last + _vK
+            self.vIpqqp = self.vIpqqp_last + _vIpqqp
+        else:
+            self.vJ, self.vIpqqp, self.vK = self.integrals.build_multiple_JK(vd,vd,hermi=1)
+
+        # Save last elements
+        self.vd_last = self.vd.copy()
+        self.vJ_last = self.vJ.copy()
+        self.vK_last = self.vK.copy()
+        self.vIpqqp_last = self.vIpqqp.copy()
 
         # Get the total J matrix
         J = np.einsum('kpq->pq',self.vJ)

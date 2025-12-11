@@ -60,6 +60,16 @@ class ArbitraryCI:
         Get the Hamiltonian matrix of the CI problem.
         """
         return self.cispace.build_Hmat()
+    
+    def get_s2(self,vec):
+        """
+        Compute the <S^2> expectation value for a given CI vector.
+        """
+        sz = 0.5 * (self.cispace.nalfa() - self.cispace.nbeta())
+        s2 = sz * (sz - 1) + self.cispace.nalfa()
+        rdm2ab = self.cispace.rdm2(vec,True,False)
+        s2 -= np.einsum('pqqp', rdm2ab)
+        return s2
 
 class FCI(ArbitraryCI):
     """

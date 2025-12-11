@@ -31,16 +31,14 @@ class ROKS(CSF):
         """
         # Call the parent constructor
         super().__init__(integrals, spin_coupling, verbose)
-        # We also want to compute the ROKS ensemble coefficients
-        self.ensemble_dets = get_ensemble_expansion(spin_coupling)
-        # And store information about our XC functional
-
     
     def initialise(self, mo_guess, spin_coupling=None, mat_ci=None, integrals=True):
         """ Initialise the CSF object with a set of MO coefficients"""
         if(spin_coupling is None):
             spin_coupling = self.spin_coupling
         self.setup_spin_coupling(spin_coupling)
+        # We also want to compute the ROKS ensemble coefficients
+        self.ensemble_dets = get_ensemble_expansion(spin_coupling)
 
         # Orthogonalise the MO coefficients
         mo_guess      = orthogonalise(mo_guess, self.integrals.overlap_matrix())        
@@ -272,7 +270,7 @@ class ROKS(CSF):
         # Get the guess for the molecular orbital coefficients
         Cguess = orbital_guess(self.integrals,method,avas_ao_labels=avas_ao_labels,rohf_ms=0.5*self.nopen)
         # Optimise the order of the CSF orbitals and return
-        if(reorder and (not self.spin_coupling is '')):
+        if(reorder and (self.spin_coupling != '')):
             Cguess[:,self.ncore:self.nocc] = csf_reorder_orbitals(self.integrals,self.exchange_matrix,
                                                                   np.copy(Cguess[:,self.ncore:self.nocc]))
 
@@ -388,9 +386,7 @@ class ROKS(CSF):
     def get_preconditioner(self):
         """Compute approximate diagonal of Hessian"""
          # Initialise approximate preconditioner with xc contribution
-        Q = np.zeros((self.nmo,self.nmo)) 
-        if(False):
-            Q += self.get_fxc_diag()
+        Q = np.zeros((self.nmo,self.nmo)) #self.get_fxc_diag()
 
         # Include dominate generalised Fock matrix terms
         for p in range(self.nmo):
