@@ -10,7 +10,7 @@ if __name__ == "__main__":
     # Setup molecule and integrals
     mol  = PySCFMolecule("formaldehyde.xyz", "aug-cc-pvdz", "angstrom")
     ints = PySCFIntegrals(mol)
-    df_ints = PySCFIntegrals(mol,auxbasis="ccpvdz-jk-fit")
+    df_ints = PySCFIntegrals(mol,with_df=True)
 
     # Initialise CSF object for an open-shell singlet state
     wfn = RHF(ints)
@@ -28,10 +28,8 @@ if __name__ == "__main__":
     print("Density-fitted JK build time: ",(t1-t0).total_seconds())
     print(JK)
 
-    vJ = ints.build_multiple_J([dm,dm],hermi=1)
-    print(vJ)
+    vJ = ints.build_multiple_JK([dm,dm],[dm,dm],hermi=1)
     vJ_df = df_ints.build_multiple_J([dm,dm],hermi=1)
-    print(vJ_df)
     quit()
 
     # Check gradient and Hessian

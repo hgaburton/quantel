@@ -2,7 +2,7 @@
 
 from quantel.utils.linalg import orthogonalisation_matrix, utri_idx
 import pyscf
-from pyscf.df import DF
+from pyscf.df import DF, make_auxbasis
 from pyscf.scf.hf import SCF
 import numpy as np
 import scipy.special
@@ -55,7 +55,7 @@ class PySCFMolecule(pyscf.gto.Mole):
 class PySCFIntegrals:
     """Wrapper class to call integral functions from PySCF"""
     #"MGGA_C_TPSS"
-    def __init__(self,mol,xc=None,kscale=1.0,auxbasis=None):
+    def __init__(self,mol,xc=None,kscale=1.0,with_df=False,auxbasis=None):
         """ Initialise the PySCF interface from PySCF molecule
                 mol : PySCFMolecule
                     The PySCF molecule object
@@ -86,10 +86,11 @@ class PySCFIntegrals:
             self.hybrid_K = 1.0
         
         # Add support for density fitting
-        self.with_df = False
-        if(auxbasis is not None):
-            self.with_df = True
+        self.with_df = with_df
+        if(self.with_df):
             self.df = DF(self.mol)
+            self.df.auxbasis = make_auxbasis(self.mol)
+            print(self.df.auxbasis)
             self.df.build()
             self.get_jk = self.df.get_jk
         else:
