@@ -2,6 +2,8 @@
 
 from quantel.utils.linalg import orthogonalisation_matrix, utri_idx
 import pyscf
+from pyscf.df import DF
+from pyscf.scf.hf import SCF
 import numpy as np
 import scipy.special
 from pyscf import fci
@@ -53,7 +55,7 @@ class PySCFMolecule(pyscf.gto.Mole):
 class PySCFIntegrals:
     """Wrapper class to call integral functions from PySCF"""
     #"MGGA_C_TPSS"
-    def __init__(self,mol,xc=None,kscale=1.0):
+    def __init__(self,mol,xc=None,kscale=1.0,auxbasis=None):
         """ Initialise the PySCF interface from PySCF molecule
                 mol : PySCFMolecule
                     The PySCF molecule object
@@ -82,6 +84,17 @@ class PySCFIntegrals:
             self.omega = 0.0
             self.alpha = 0.0
             self.hybrid_K = 1.0
+        
+        # Add support for density fitting
+        self.with_df = False
+        if(auxbasis is not None):
+            self.with_df = True
+            self.df = DF(self.mol)
+            self.df.build()
+            self.get_jk = self.df.get_jk
+        else:
+            self.scf = SCF(self.mol)
+            self.get_jk = self.scf.get_jk
         
     def molecule(self):
         """Return the molecule object"""
@@ -137,7 +150,7 @@ class PySCFIntegrals:
         """
         vJ, vK = pyscf.scf.hf.get_jk(self.mol, dm)
         return self.oei + 2 * vJ - vK
-    
+
     def build_multiple_J(self,vdJ,hermi=0):
         """ Build Coulomb matrices for multiple sets of densities
             Args:
@@ -146,7 +159,7 @@ class PySCFIntegrals:
             Returns:
                 ndarray : The Coulomb matrix
         """
-        vJ,_ = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdJ), hermi=hermi, with_k=False)
+        vJ, _ = self.get_jk(dm=(vdJ,vdJ), hermi=hermi, with_k=False)
         return vJ[0]
     
     def build_multiple_JK(self,vdJ,vdK,hermi=0):
@@ -162,25 +175,25 @@ class PySCFIntegrals:
                 ndarray : The scaled Exchange matrix for xc functional
         """
         if(self.xc is None):
-            vJ, vK = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=hermi)
+            vJ, vK = self.get_jk(dm=(vdJ,vdK), hermi=hermi)
             return vJ[0], vK[1], vK[1]
         
         if(not self.ni.libxc.is_hybrid_xc(self.xc)):
-            vJ, vK = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=hermi)
+            vJ, vK = self.get_jk(dm=(vdJ,vdK), hermi=hermi)
             vKfunc = np.zeros_like(vK)
         else:
 
-            vJ, vK = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=hermi)
+            vJ, vK = self.get_jk(dm=(vdJ,vdK), hermi=hermi)
             if(self.omega == 0):
                 vKfunc = vK * self.hybrid_K
             elif self.alpha == 0: # LR=0, only SR exchange
-                _, vKfunc = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=hermi, omega=-self.omega, with_j=False)
+                _, vKfunc = self.get_jk(dm=(vdJ,vdK), hermi=hermi, omega=-self.omega, with_j=False)
                 vKfunc *= self.hybrid_K
             elif self.hybrid_K == 0: # SR=0, only LR exchange
-                _, vKfunc = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=hermi, omega=self.omega, with_j=False)
+                _, vKfunc = self.get_jk(dm=(vdJ,vdK), hermi=hermi, omega=self.omega, with_j=False)
                 vKfunc *= (self.alpha)
             else: # SR and LR different ratios
-                _, vKlr = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=hermi, omega=self.omega, with_j=False)
+                _, vKlr = self.get_jk(dm=(vdJ,vdK), hermi=hermi, omega=self.omega, with_j=False)
                 vKfunc = vKfunc * self.hybrid_K + (self.alpha - self.hybrid_K) * vKlr
         return vJ[0], vK[1], vKfunc[1]
     
@@ -194,8 +207,7 @@ class PySCFIntegrals:
                 ndarray : The Coulomb matrix
                 ndarray : The Exchange matrix
         """
-#        if not self.ni.libxc.is_hybrid_xc(self.xc):
-        vJ, vK = pyscf.scf.hf.get_jk(self.mol, dm, hermi=hermi)
+        vJ, vK = self.get_jk(dm=dm, hermi=hermi)
         return 2 * vJ - vK
     
     def build_vxc(self,dms):
