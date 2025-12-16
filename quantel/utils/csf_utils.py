@@ -3,6 +3,20 @@ import numpy as np
 from quantel.utils.guga import e_ijji
 from quantel.utils.linalg import pseudo_inverse
 
+def verify_spin_coupling(spin_coupling):
+    """ Verify that a given spin coupling pattern is valid
+            :param spin_coupling:
+            :return:
+    """
+    n = len(spin_coupling)
+    if(n==0):
+        return True
+    
+    spin_incr = np.cumsum([1 if s=='+' else -1 for s in spin_coupling])
+    if(np.any(spin_incr < 0)):
+        raise RuntimeError(f"Invalid spin coupling pattern [{spin_coupling}]: intermediate spin negative")
+
+
 def get_coupling_coefficient(Tn, Pn, tn, pn):
     """ Computes the coupling coefficient C_{tn, pn}^{Tn, Pn}
             :param Tn:

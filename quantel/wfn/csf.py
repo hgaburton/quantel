@@ -3,7 +3,7 @@
 # This is code for a CSF, which can be formed in a variety of ways.
 import numpy as np
 import scipy, quantel, h5py
-from quantel.utils.csf_utils import get_shells, get_shell_exchange, get_csf_vector
+from quantel.utils.csf_utils import verify_spin_coupling, get_shells, get_shell_exchange, get_csf_vector
 from quantel.utils.linalg import orthogonalise, stable_eigh, matrix_print
 from quantel.gnme.csf_noci import csf_coupling, csf_coupling_slater_condon
 from .wavefunction import Wavefunction
@@ -75,6 +75,8 @@ class CSF(Wavefunction):
         if(spin_coupling == 'cs'):
             spin_coupling = ''
 
+        # Verify
+        verify_spin_coupling(spin_coupling)
         # Get active space definition
         self.nopen   = len(spin_coupling)
         self.cas_nalfa  = sum(int(s=='+') for s in spin_coupling)

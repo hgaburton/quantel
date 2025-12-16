@@ -177,8 +177,7 @@ class ROKS(CSF):
                 exc += coeff * exc_det
 
                 # Core contribution
-                if(self.ncore > 0):
-                    vxc_shell[0] += coeff * (vxca_det + vxcb_det)
+                vxc_shell[0] += coeff * (vxca_det + vxcb_det)
                 # Open-shell contributions
                 for Ishell, spinI in enumerate(det_str):
                     vxc_shell[1+Ishell] += coeff * (vxca_det if (spinI=='a') else vxcb_det)
@@ -221,8 +220,8 @@ class ROKS(CSF):
         self.exc, self.vxc = self.get_vxc()
         # Update JK matrices (AO basis) 
         self.J, self.K = self.get_JK_matrices(self.vd)
-        # Get Fock matrix (AO basis)
-        self.fock = self.integrals.oei_matrix(True) + self.J - 0.5 * np.einsum('mpq->pq',self.K)
+        # Get Fock matrix (AO basis). This includes spin-averaged xc-potential
+        self.fock = self.integrals.oei_matrix(True) + self.J - 0.5 * np.einsum('mpq->pq',self.K) + self.vxc[0]
         # Get generalized Fock matrices
         self.gen_fock, self.Ipqpq, self.Ipqqp = self.get_generalised_fock()
         return 
@@ -292,7 +291,7 @@ class ROKS(CSF):
     def get_generalised_fock(self):
         """ Compute the generalised Fock matrix in MO basis"""
         # Initialise memory
-        F = np.zeros((self.nmo, self.nmo)) 
+        F = np.zeros((self.nmo, self.nmo))
 
         # Memory for diagonal elements
         self.gen_fock_diag = np.zeros((self.nmo,self.nmo))
@@ -459,7 +458,8 @@ class ROKS(CSF):
         Q = np.zeros((self.nmo,self.nmo))
 
         # Get core transformation using generalised Fock matrix
-        foo = self.gen_fock[self.core_indices,:][:,self.core_indices]
+        # Include factor of 0.5 for doubly-occupied orbitals
+        foo = 0.5 * self.gen_fock[self.core_indices,:][:,self.core_indices]
         self.mo_energy[:self.ncore], Qoo = stable_eigh(foo)
         for i, ii in enumerate(self.core_indices):
             for j, jj in enumerate(self.core_indices):
@@ -476,13 +476,12 @@ class ROKS(CSF):
         # Virtual transformation
         # Here we use the standard Fock matrix
         fvv = np.linalg.multi_dot([self.mo_coeff[:,self.nocc:].T, self.fock, self.mo_coeff[:,self.nocc:]])
-        self.mo_energy[self.nocc:], Qvv = stable_eigh(fvv)
-        Q[self.nocc:,self.nocc:] = Qvv
+        self.mo_energy[self.nocc:], Q[self.nocc:,self.nocc:] = stable_eigh(fvv)
 
         # Apply transformation
         if(np.linalg.det(Q) < 0): Q[:,0] *= -1
         self.mo_coeff = self.mo_coeff @ Q
         
-        # Update generalised Fock matrix and diagonal approximations
-        self.gen_fock, self.Ipqpq, self.Ipqqp = self.get_generalised_fock()
+        # Update integrals
+        self.update_integrals()
         return Q
