@@ -16,7 +16,7 @@ import argparse, numpy, time
 from datetime import datetime, timedelta
 from quantel import Molecule, LibintInterface
 from quantel.io.config import Config
-from quantel.drivers import random_search, from_file, from_orca, ci_guess, standard_guess, ev_linesearch, analyse, noci#, overlap, analyse
+from quantel.drivers import random_search, from_file, ci_guess, standard_guess, ev_linesearch, analyse, noci
 from cProfile import Profile
 from pstats import SortKey, Stats
 from quantel.ints.pyscf_integrals import PySCFMolecule, PySCFIntegrals
@@ -66,7 +66,7 @@ def main():
             f.readline()
             tmp = f.readline().split()
             charge = int(tmp[0])
-            spin = int(tmp[1])-1
+            spin   = int(tmp[1])-1
         mol  = PySCFMolecule(config["molecule"]["atom"],
                             config["molecule"]["basis"],
                             config["molecule"]["unit"],
@@ -105,6 +105,8 @@ def main():
     if config["jobcontrol"]["analyse"]:
         analyse(ints, config)
     if config["jobcontrol"]["noci"]:
+        if(config["jobcontrol"]["xc_functional"] is not None):
+            raise ValueError("NOCI is not currently compatible with DFT wavefunctions")
         noci(wfnlist, **config["jobcontrol"]["noci_job"])
     elif config["jobcontrol"]["ovlp_mat"]:
         overlap(wfnlist)

@@ -211,8 +211,8 @@ class RHF(Wavefunction):
         self.fock = self.integrals.build_fock(self.dens)
         self.JK   = self.fock - self.integrals.oei_matrix(True)
         # Compute the exchange-correlation energy
-        self.exc, self.vxc, NULL = self.integrals.build_vxc(self.dens, self.dens) if(self.with_xc) else 0,0,0
-        self.fock += self.vxc
+        self.exc, self.vxc = self.integrals.build_vxc(self.dens)
+        self.fock += self.vxc[0]
 
     def canonicalize(self):
         """Diagonalise the occupied and virtual blocks of the Fock matrix"""

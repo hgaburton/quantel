@@ -199,6 +199,8 @@ class PySCFIntegrals:
             else: # SR and LR different ratios
                 _, vKlr = self.get_jk(dm=(vdJ,vdK), hermi=hermi, omega=self.omega, with_j=False)
                 vKfunc = vK * self.hybrid_K + (self.alpha - self.hybrid_K) * vKlr
+        else:
+            vKfunc *= 0
 
         if Kxc:
             return vJ[0], vK[1], vKfunc[1]
@@ -230,8 +232,9 @@ class PySCFIntegrals:
                 ndarray : The alpha exchange-correlation potential
                 ndarray : The beta exchange-correlation potential   
         """
-        _, exc, vxc = self.ni.nr_uks(self.mol, self.grid, self.xc, dms)
-        return exc, vxc
+        if(self.xc is None):
+            return 0, (np.zeros_like(dms[0]), np.zeros_like(dms[1]))
+        return self.ni.nr_uks(self.mol, self.grid, self.xc, dms)[1:]
     
     def oei_ao_to_mo(self, C1, C2, spin=None):
         """ Transform the one-electron integrals from AO to MO basis
