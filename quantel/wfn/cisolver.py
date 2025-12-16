@@ -4,6 +4,7 @@
 import numpy as np
 import quantel
 from quantel.opt.davidson import Davidson
+from quantel.ints.pyscf_integrals import PySCF_MO_Integrals
 
 class ArbitraryCI:
     """
@@ -79,13 +80,18 @@ class FCI(ArbitraryCI):
         """
         Initialise the FCI instance from cispace object.
         """
-        # Save mo_ints object
-        self.mo_ints = mo_ints
+        # Convert integral object if needed
+        if isinstance(mo_ints, PySCF_MO_Integrals):
+            self.mo_ints = mo_ints.get_quantel_ints()
+        else:
+            self.mo_ints = mo_ints
         # Number of correlated orbitals
         self.nmo = mo_ints.nmo()
         # Number of electrons
         self.nalfa = nelec[0]
         self.nbeta = nelec[1]
+
+
 
         # Check the input
         if(self.nalfa < 0):
@@ -97,9 +103,9 @@ class FCI(ArbitraryCI):
 
         # Create the CI space object
         if version == 1:
-            cispace = quantel.CIspace(mo_ints,self.nmo,self.nalfa,self.nbeta)
+            cispace = quantel.CIspace(self.mo_ints,self.nmo,self.nalfa,self.nbeta)
         elif version == 2:
-            cispace = quantel.CIspace2(mo_ints,self.nmo,self.nalfa,self.nbeta)
+            cispace = quantel.CIspace2(self.mo_ints,self.nmo,self.nalfa,self.nbeta)
         else:
             raise ValueError("Invalid CI space version specified.")
         cispace.initialize('FCI')
@@ -116,8 +122,11 @@ class CIS(ArbitraryCI):
         """
         Initialise the CIS instance from cispace object.
         """
-        # Save mo_ints object
-        self.mo_ints = mo_ints
+        # Convert integral object if needed
+        if isinstance(mo_ints, PySCF_MO_Integrals):
+            self.mo_ints = mo_ints.get_quantel_ints()
+        else:
+            self.mo_ints = mo_ints
         # Number of correlated orbitals
         self.nmo = mo_ints.nmo()
         # Number of electrons
@@ -134,9 +143,9 @@ class CIS(ArbitraryCI):
 
         # Create the CI space object
         if version == 1:
-            cispace = quantel.CIspace(mo_ints,self.nmo,self.nalfa,self.nbeta)
+            cispace = quantel.CIspace(self.mo_ints,self.nmo,self.nalfa,self.nbeta)
         elif version == 2:
-            cispace = quantel.CIspace2(mo_ints,self.nmo,self.nalfa,self.nbeta)
+            cispace = quantel.CIspace2(self.mo_ints,self.nmo,self.nalfa,self.nbeta)
         else:
             raise ValueError("Invalid CI space version specified.")
         cispace.initialize('ESMF')
@@ -152,8 +161,11 @@ class CustomCI(ArbitraryCI):
         """
         Initialise the CustomCI instance from cispace object.
         """
-        # Save mo_ints object
-        self.mo_ints = mo_ints
+        # Convert integral object if needed
+        if isinstance(mo_ints, PySCF_MO_Integrals):
+            self.mo_ints = mo_ints.get_quantel_ints()
+        else:
+            self.mo_ints = mo_ints
         # Number of correlated orbitals
         self.nmo = mo_ints.nmo()
         # Number of electrons
@@ -169,7 +181,7 @@ class CustomCI(ArbitraryCI):
             raise ValueError("Number of electrons exceeds number of orbitals.")
 
         # Create the CI space object
-        cispace = quantel.CIspace(mo_ints, self.nmo, self.nalfa, self.nbeta)
+        cispace = quantel.CIspace(self.mo_ints, self.nmo, self.nalfa, self.nbeta)
         cispace.initialize('CUSTOM', det_list)
 
 

@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
 from quantel.utils.linalg import orthogonalisation_matrix, utri_idx
+from quantel import MOintegrals
 import pyscf
 from pyscf.df import DF, make_auxbasis
 from pyscf.scf.hf import SCF
@@ -329,7 +330,7 @@ class PySCF_MO_Integrals:
     
     def scalar_potential(self):
         """Return the nuclear repulsion energy"""
-        return self.m_V
+        return self.Vc
     
     def oei_matrix(self, alfa1):
         """ Return the one-electron integrals in MO basis
@@ -430,7 +431,7 @@ class PySCF_MO_Integrals:
             tei = tei - tei.transpose(0,1,3,2)
         return tei
 
-    def update_orbitals(self, C, ncore, nactive):
+    def update_orbitals(self, C, ncore, nactive, with_JK=False):
         """ Update the active orbitals and integrals
             Args:
                 C : ndarray
@@ -450,9 +451,27 @@ class PySCF_MO_Integrals:
         self.Vc += self.compute_scalar_potential()
         self.oei_a  = self.compute_oei(self.m_Cact,True) + self.Vc_oei
         self.oei_b  = self.compute_oei(self.m_Cact,False) + self.Vc_oei
-        self.tei_aa = self.compute_tei(self.m_Cact,True,True)
-        self.tei_ab = self.compute_tei(self.m_Cact,True,False)
-        self.tei_bb = self.compute_tei(self.m_Cact,False,False)
+        if(with_JK):
+            self.tei_aa = self.compute_tei_from_JK(self.m_Cact,antisym=True)
+            self.tei_ab = self.compute_tei_from_JK(self.m_Cact,antisym=False)
+            self.tei_bb = self.compute_tei_from_JK(self.m_Cact,antisym=True)
+        else:
+            self.tei_aa = self.compute_tei(self.m_Cact,True,True)
+            self.tei_ab = self.compute_tei(self.m_Cact,True,False)
+            self.tei_bb = self.compute_tei(self.m_Cact,False,False)
+            
+    def get_quantel_ints(self):
+        """ Convert to quantel MOintegrals object
+            Returns:
+                MOintegrals : The quantel MOintegrals object
+        """
+        if not hasattr(self, 'Vc'):
+            raise ValueError("Molecular integrals have not been computed yet")
+        if not hasattr(self, 'oei_a'):
+            raise ValueError("Molecular integrals have not been computed yet")
+        if not hasattr(self, 'tei_ab'):
+            raise ValueError("Molecular integrals have not been computed yet")
+        return MOintegrals(self.Vc, self.oei_a, self.tei_ab, self.m_nact)
 
 class PySCF_CIspace:
     """Class to compute the CI space for a given molecule"""

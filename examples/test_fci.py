@@ -1,127 +1,31 @@
 import quantel
 import numpy as np
+from quantel.ints.pyscf_integrals import PySCF_MO_Integrals, PySCFIntegrals, PySCFMolecule, PySCF_CIspace
 from quantel.wfn.rhf import RHF
-from quantel.wfn.cisolver import FCI, CIS
-from quantel.opt.lbfgs import LBFGS
+from quantel.wfn.cisolver import FCI
+from quantel.opt.diis import DIIS
 import datetime
 
-np.set_printoptions(linewidth=10000,precision=6,suppress=True,edgeitems=5)
-np.random.seed(7)
+if __name__ == "__main__":
+    # Setup molecule
+    mol = PySCFMolecule("h6.xyz", "sto-3g", "angstrom",spin=0,charge=0)
+    ints = PySCFIntegrals(mol)
 
-# Initialise molecular structure (square H4)
-R = 3
-mol = quantel.Molecule([["H",0.0,0.0,0.0*R],
-                        ["H",0.0,1.0,1.0*R],
-                        ["H",0.0,0.0,2.0*R],
-                        ["H",0.0,1.0,3.0*R],
-                        ["H",0.0,0.0,4.0*R],
-                        ["H",0.0,1.0,5.0*R]
-                       ],"bohr")
-print("Molecule:")
-mol.print()
+    # Run RHF to get MO coefficients
+    wfn = RHF(ints)
+    wfn.get_orbital_guess(method="gwh")
+    DIIS().run(wfn)
 
-# Initialise interface to Libint2
-ints = quantel.LibintInterface("6-31g", mol)
+    # Build the integrals
+    Ccore = wfn.mo_coeff[:,0:0]
+    Cact = wfn.mo_coeff[:,0:ints.nmo()]
+    mo_ints = PySCF_MO_Integrals(ints)
+    mo_ints.update_orbitals(wfn.mo_coeff,0,ints.nmo())
 
-# Initialise RHF object from integrals
-wfn = RHF(ints)
-wfn.get_orbital_guess()
-
-# Find the RHF minimum
-LBFGS().run(wfn)
-
-# Build the integrals
-C = wfn.mo_coeff.copy()
-oei = ints.oei_ao_to_mo(C,C,True)
-tei = ints.tei_ao_to_mo(C,C,C,C,True,False)
-
-# Setup the MO integral space
-mo_ints = quantel.MOintegrals(ints.scalar_potential(),oei,tei,ints.nmo())
-nelec = (mol.nalfa(), mol.nbeta())
-print(nelec)
-
-tstart = datetime.datetime.now()
-print(" Building CI space and Hamiltonian...")
-fci1 = CIS(mo_ints, nelec, version=1)
-tmid = datetime.datetime.now()
-print("Time to initialize FCI (version 1): ", (tmid - tstart).total_seconds())
-fci2 = CIS(mo_ints, nelec, version=2)
-tend = datetime.datetime.now()
-print("Time to initialize FCI (version 2): ", (tend - tmid).total_seconds())
-
-vtest = np.random.rand(fci1.ndet)
-tstart = datetime.datetime.now()
-ham1 = fci1.cispace.build_Hmat()
-tmid = datetime.datetime.now()
-print("Time to build H (version 1): ", (tmid - tstart).total_seconds())
-ham2 = fci2.cispace.build_Hmat()
-tend = datetime.datetime.now()
-print("Time to build H (version 2): ", (tend - tmid).total_seconds())
-print("Hamiltonian difference norm: ", np.linalg.norm(ham1 - ham2))
-print(ham1)
-print(ham2)
-# Show where they differ
-diff = np.abs(ham1 - ham2)
-for i in range(ham1.shape[0]):
-    for j in range(ham1.shape[1]):
-        if(diff[i,j] > 1e-8):
-            print(f"Difference at ({i},{j}): {ham1[i,j]} vs {ham2[i,j]}")
-
-tstart = datetime.datetime.now()
-hv1 = fci1.cispace.H_on_vec(vtest)
-tend = datetime.datetime.now()
-print("Time to apply H (version 1): ", (tend - tstart).total_seconds())
-hv2 = fci2.cispace.H_on_vec(vtest)
-tend2 = datetime.datetime.now()
-print("Time to apply H (version 2): ", (tend2 - tend).total_seconds())
-print("H application difference norm: ", np.linalg.norm(hv1 - hv2))
-print(hv1)
-print(hv2)
-print(ham1 @ vtest)
-
-
-# test build of Hd
-tstart = datetime.datetime.now()
-Hd1 = fci1.cispace.build_Hd()
-tmid = datetime.datetime.now()
-print("Time to build Hd (version 1): ", (tmid - tstart).total_seconds())
-Hd2 = fci2.cispace.build_Hd()
-tend = datetime.datetime.now()
-print("Time to build Hd (version 2): ", (tend - tmid).total_seconds())
-print("Hd difference norm: ", np.linalg.norm(Hd1 - Hd2))
-print(Hd1)
-print(Hd2)
-print(np.diag(ham2))
-
-# Solve first problem
-nroots = 5
-e,x = fci1.solve(nroots,verbose=5)
-print(e)
-x1 = np.copy(x[:,3])
-print(x1)
-# Solve second problem
-e,x = fci2.solve(nroots,verbose=5)
-print(e)
-x2 = np.copy(x[:,3])
-print(x2)
-print("Exact energies")
-print(np.linalg.eigh(ham2)[0])
-# Compare the results
-tstart = datetime.datetime.now()
-rdm1 = fci1.cispace.rdm2(x1,True,True)
-#rdm1 = fci1.cispace.rdm1(x1,True)
-tend = datetime.datetime.now()
-print("Time to build RDM (version 1): ", (tend - tstart).total_seconds())
-rdm2 = fci2.cispace.rdm2(x2,True,True)
-#rdm2 = fci2.cispace.rdm1(x2,True)
-tend2 = datetime.datetime.now()
-print("Time to build RDM (version 2): ", (tend2 - tstart).total_seconds())
-print(" RDM difference norm: ", np.linalg.norm(rdm1 - rdm2))
-# show differences
-for i in range(rdm1.shape[0]):
-    for j in range(rdm1.shape[1]):
-        for k in range(rdm1.shape[2]):
-            for l in range(rdm1.shape[3]):
-                if(np.abs(rdm1[i,j,k,l] - rdm2[i,j,k,l]) > 1e-8):
-                    print(f"Difference at ({i},{j},{k},{l}): {rdm1[i,j,k,l]} vs {rdm2[i,j,k,l]}")
-quit()
+    # Setup and solve FCI
+    ci = FCI(mo_ints, (mol.nalfa(), mol.nbeta()), version=1)
+    x, eci = ci.solve(3,verbose=5)
+    
+    # Verify solution
+    if abs(-2.84719213 - x[0]) > 1e-6:
+        raise ValueError("FCI energy does not match reference value")
