@@ -1,10 +1,7 @@
-import quantel
-import numpy as np
-from quantel.ints.pyscf_integrals import PySCF_MO_Integrals, PySCFIntegrals, PySCFMolecule, PySCF_CIspace
+from quantel.ints.pyscf_integrals import PySCF_MO_Integrals, PySCFIntegrals, PySCFMolecule
 from quantel.wfn.rhf import RHF
 from quantel.wfn.cisolver import FCI
 from quantel.opt.diis import DIIS
-import datetime
 
 if __name__ == "__main__":
     # Setup molecule
