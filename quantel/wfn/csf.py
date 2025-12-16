@@ -544,13 +544,13 @@ class CSF(Wavefunction):
             # Compute difference density
             _vd = vd - self.vd_last
             # Compute difference J, K, and Ipqqp
-            _vJ, _vIpqqp, _vK = self.integrals.build_multiple_JK(_vd,_vd,hermi=1)
+            _vJ, _vIpqqp, _vK = self.integrals.build_multiple_JK(_vd,_vd,hermi=1,Kxc=True)
             # Compute incremental update to J and K
             self.vJ = self.vJ_last + _vJ
             self.vK = self.vK_last + _vK
             self.vIpqqp = self.vIpqqp_last + _vIpqqp
         else:
-            self.vJ, self.vIpqqp, self.vK = self.integrals.build_multiple_JK(vd,vd,hermi=1)
+            self.vJ, self.vIpqqp, self.vK = self.integrals.build_multiple_JK(vd,vd,hermi=1,Kxc=True)
 
         # Save last elements
         self.vd_last = self.vd.copy()

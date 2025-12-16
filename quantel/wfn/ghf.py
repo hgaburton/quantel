@@ -234,7 +234,7 @@ class GHF(Wavefunction):
     def get_fock(self):
         """Compute the Fock matrix for the current state"""
         # Get JK integrals
-        self.vJ, _, self.vK = self.integrals.build_multiple_JK(self.vd,self.vd)
+        self.vJ, self.vK = self.integrals.build_multiple_JK(self.vd,self.vd,Kxc=False)
         # Construct the Coulomb matrix
         self.J = np.zeros((2*self.nbsf, 2*self.nbsf))
         self.J[:self.nbsf,:self.nbsf] = self.vJ[0] + self.vJ[2]

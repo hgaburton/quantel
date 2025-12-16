@@ -1,5 +1,7 @@
 import quantel
 import numpy as np
+from quantel.ints.pyscf_integrals import PySCFIntegrals, PySCFMolecule
+from quantel.opt.lbfgs import LBFGS
 from quantel.wfn.rhf import RHF
 from quantel.opt.eigenvector_following import EigenFollow
 
@@ -8,15 +10,9 @@ np.random.seed(7)
 
 # Initialise molecular structure (square H4)
 R = 2.0 * 1.8897259886
-mol = quantel.Molecule([["H",0.0,0.0,0.0*R],
-                        ["H",0.0,0.0,1.0*R],
-                        ["B",0.0,0.0,2.0*R],
-                        ["H",0.0,0.0,3.0*R],
-                        ["H",0.0,0.0,4.0*R],
-                        ["H",0.0,0.0,5.0*R],
-                        ["H",0.0,0.0,6.0*R],
-                        ["H",0.0,0.0,7.0*R]])
-print(mol.natom())
+mol  = PySCFMolecule("formaldehyde.xyz", "3-21g", "angstrom",spin=0,charge=0)
+ints = PySCFIntegrals(mol)
+
 no = mol.nalfa()
 ncore = 1
 nact = 6
@@ -24,14 +20,13 @@ ne = no - ncore
 mol.print()
 
 # Initialise interface to Libint2
-ints = quantel.LibintInterface("sto-3g",mol)
 
 # Initialise RHF object from integrals
 wfn = RHF(ints)
 wfn.get_orbital_guess()
 
 # Run eigenvector-following to target a minimum
-EigenFollow().run(wfn, index=0)
+LBFGS().run(wfn)
 
 # Get number of MOs and coefficients
 nmo = ints.nmo()

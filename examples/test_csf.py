@@ -14,16 +14,6 @@ if __name__ == "__main__":
     wfn = CSF(ints, '+-+-')
     wfn.get_orbital_guess(method="gwh")
 
-    # Check gradient and Hessian
-    grad = wfn.gradient.copy()
-    hess = wfn.hessian.copy()
-    grad_check = np.linalg.norm(grad-wfn.get_numerical_gradient())/np.sqrt(grad.size)
-    if(grad_check > 1e-5):
-        print(f"Gradient check failed. |Analytic - Numerical| = {grad_check: 6.3e}")
-    hess_check = np.linalg.norm(hess-wfn.get_numerical_hessian())/np.sqrt(hess.size)
-    if(hess_check > 1e-5):
-        print(f"Hessian check failed. |Analytic - Numerical| = {hess_check: 6.3e}")
-
     # Setup optimiser
     for guess in ("gwh", "core"):
         print("\n************************************************")

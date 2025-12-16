@@ -90,13 +90,16 @@ class PySCFIntegrals:
         if(self.with_df):
             self.df = DF(self.mol)
             self.df.auxbasis = make_auxbasis(self.mol)
-            print(self.df.auxbasis)
             self.df.build()
             self.get_jk = self.df.get_jk
         else:
             self.scf = SCF(self.mol)
             self.get_jk = self.scf.get_jk
-        
+    
+    def __str__(self):
+        """Return a string representation of the integral object"""
+        return f"<quantel.ints.pyscf_integrals.PySCFIntegrals: nbsf={self.nbsf()}, xc={self.xc}, with_df={self.with_df}>"
+    
     def molecule(self):
         """Return the molecule object"""
         return self.mol
@@ -163,28 +166,27 @@ class PySCFIntegrals:
         vJ, _ = self.get_jk(dm=(vdJ,vdJ), hermi=hermi, with_k=False)
         return vJ[0]
     
-    def build_multiple_JK(self,vdJ,vdK,hermi=0):
+    def build_multiple_JK(self,vdJ,vdK,hermi=0,Kxc=False):
         """ Build Coulomb and Exchange matrices for multiple sets of densities
             Args:
                 vdJ : ndarray
                     The Coulomb matrices
                 vdK : ndarray
                     The Exchange matrices
+                hermi : int
+                    0 if dm is not Hermitian, 1 if it is.
+                Kxc : bool
+                    Return the scaled exchange matrix for the xc functional if true
             Returns:
                 ndarray : The Coulomb matrix
                 ndarray : The pure Exchange matrix
                 ndarray : The scaled Exchange matrix for xc functional
         """
-        if(self.xc is None):
-            vJ, vK = self.get_jk(dm=(vdJ,vdK), hermi=hermi)
-            return vJ[0], vK[1], vK[1]
-        
-        if(not self.ni.libxc.is_hybrid_xc(self.xc)):
-            vJ, vK = self.get_jk(dm=(vdJ,vdK), hermi=hermi)
-            vKfunc = np.zeros_like(vK)
-        else:
-
-            vJ, vK = self.get_jk(dm=(vdJ,vdK), hermi=hermi)
+        vJ, vK = self.get_jk(dm=(vdJ,vdK), hermi=hermi)
+        vKfunc = vK
+        if (self.xc is None):
+            pass
+        elif self.ni.libxc.is_hybrid_xc(self.xc):
             if(self.omega == 0):
                 vKfunc = vK * self.hybrid_K
             elif self.alpha == 0: # LR=0, only SR exchange
@@ -195,9 +197,13 @@ class PySCFIntegrals:
                 vKfunc *= (self.alpha)
             else: # SR and LR different ratios
                 _, vKlr = self.get_jk(dm=(vdJ,vdK), hermi=hermi, omega=self.omega, with_j=False)
-                vKfunc = vKfunc * self.hybrid_K + (self.alpha - self.hybrid_K) * vKlr
-        return vJ[0], vK[1], vKfunc[1]
-    
+                vKfunc = vK * self.hybrid_K + (self.alpha - self.hybrid_K) * vKlr
+
+        if Kxc:
+            return vJ[0], vK[1], vKfunc[1]
+        else:
+            return vJ[0], vK[1]
+
 
     def build_JK(self,dm,hermi=0):
         """ Build the Coulomb and Exchange matrices

@@ -70,7 +70,7 @@ def main():
         mol  = PySCFMolecule(config["molecule"]["atom"],
                             config["molecule"]["basis"],
                             config["molecule"]["unit"],
-                            _charge=charge,_spin=spin)
+                            charge=charge,spin=spin)
         ints = PySCFIntegrals(mol,xc=config["jobcontrol"]["xc_functional"],
                                   kscale=config["jobcontrol"]["kscale"])
     elif(config["jobcontrol"]["integrals"]=='libint'):
