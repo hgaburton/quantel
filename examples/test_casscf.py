@@ -18,12 +18,8 @@ for driver in ("libint", "pyscf"):
     print(f" Testing '{driver}' integral method")
     print("===============================================")
     # Setup molecule and integrals
-    if(driver == "libint"):
-        mol  = quantel.Molecule(molxyz, "angstrom")
-        ints = quantel.LibintInterface("6-31g", mol) 
-    elif(driver == "pyscf"):
-        mol  = PySCFMolecule(molxyz, "6-31g", "angstrom")
-        ints = PySCFIntegrals(mol)
+    mol  = PySCFMolecule(molxyz, "6-31g", "angstrom")
+    ints = PySCFIntegrals(mol)
 
     wfn = SS_CASSCF(ints,(6,(3,3)))
 
@@ -32,4 +28,4 @@ for driver in ("libint", "pyscf"):
     wfn.initialise(mo_guess,ci_guess)
 
     from quantel.opt.lbfgs import LBFGS
-    LBFGS(with_transport=False,with_canonical=False).run(wfn)
+    LBFGS(with_canonical=False).run(wfn)
