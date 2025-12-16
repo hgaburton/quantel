@@ -189,3 +189,20 @@ class Function(metaclass=ABCMeta):
         diff = anl - num
         print(diff)
         return np.linalg.norm(diff) / diff.size < tol
+
+    def get_preconditioner(self):
+        """Get diagonal preconditioner for Hessian"""
+        return np.ones(self.dim)
+    
+    def transform_vector(self, v, step, X):
+        """Transform vector v according to current position and step size
+        
+        Args:
+            v : Input vector
+            step : Step vector
+            X : Transformation matrix
+
+        Returns:
+            Transformed vector
+        """
+        return v

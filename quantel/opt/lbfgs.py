@@ -61,6 +61,7 @@ class LBFGS:
             print(f"    > Num. MOs       = {obj.nmo: 6d}")
             print(f"    > Num. params    = {dim: 6d}")
             print(f"    > Max subspace   = {max_subspace: 6d}")
+            print(f"    > Max step size   = {self.control['maxstep']: 6.3f}")
             print(f"    > Backtracking   = {self.control['backtrack_scale']: 6.3f}")
             print(f"    > Parallel tr.   = {self.control['with_transport']}")
             print(f"    > Pseudo-canon.  = {self.control['with_canonical']}")
@@ -77,7 +78,6 @@ class LBFGS:
 
         zero_step = np.zeros(obj.dim)
         converged = False
-        n_rescale = 0
         qn_count = 0
         reset = False
         for istep in range(maxit+1):
