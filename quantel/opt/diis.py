@@ -1,21 +1,18 @@
 import numpy as np
 import datetime, sys
+import copy
 
-# Code to implement the DIIS algorithm for (so far only works for RHF) SCF convergence
-""" Requires implementation of
-        - get_fock()
-        - get_diis_error()
-        - try_fock_vec()
-"""
+# Code to implement the DIIS algorithm for SCF convergence
 class DIIS:
-    def __init__(self):
-        self.err_vecs = [] # there will be two error vectors for our alpha and beta equations 
-        self.fock_vecs = []# similarly there will be two fock matrices
+    def __init__(self,occupation_selector="Aufbau"):
+        self.err_vecs = []  
+        self.fock_vecs = []
+        self.occupation_selector = occupation_selector
     
     def run(self, obj, thresh=1e-6, maxit=100, index=0, plev=1, max_vec=6):
         """Run the DIIS optimisation"""
         self.nbsf = obj.nbsf
-        self.max_vec = max_vec #max_vec = 6 is this telling us how far back we should interpolate our fock matrix?
+        self.max_vec = max_vec 
 
         kernel_start_time = datetime.datetime.now()
         if plev>0: print()
@@ -28,13 +25,17 @@ class DIIS:
         if plev>0: print("  ==========================================")
         converged = False
 
+        #Save initial MO coefficients for IMOM 
+        obj.get_fock()
+        init_C = obj.mo_coeff.copy()
+        
         for istep in range(maxit+1):
             # Get Fock matrix
-            obj.get_fock()  
-
+            obj.get_fock()   
+            # Save MO coefficients  
+            prev_C = obj.mo_coeff.copy()
             # Get error vector
             errvec, err = obj.get_diis_error()  
-
             # Print status
             if plev > 0:
                 print(" {: 5d} {: 16.10f}    {:8.2e}".format(istep, obj.energy, err))
@@ -57,8 +58,19 @@ class DIIS:
             if len(self.err_vecs) >= 1:
                 new_fock_vec = self.diis_extrapolate()  
                 obj.try_fock_vec(new_fock_vec) 
+  
+                # Perform orbital selection
+                if self.occupation_selector.lower() == "aufbau": 
+                    pass 
 
+                elif self.occupation_selector.lower() == "mom":     
+                    obj.mom_update(prev_C) 
 
+                elif self.occupation_selector.lower() == "imom":     
+                    obj.mom_update(init_C)
+ 
+                else:
+                    raise NotImplementedError(f"Occupation selector {self.occupation_selector} not implemented") 
 
         if plev>0: print("  ==========================================")
         kernel_end_time = datetime.datetime.now() # Save end time
@@ -71,7 +83,7 @@ class DIIS:
         return converged
 
 
-    def diis_extrapolate(self): # should be dealt with entirely using fock vectors. 
+    def diis_extrapolate(self):  
         """Perform DIIS extrapolation to get the next Fock matrix"""
         # Get number of error vectors
         nerr = len(self.err_vecs)
@@ -94,5 +106,5 @@ class DIIS:
         # Get the new Fock vector
         fock_vec  = np.zeros((self.fock_vecs[0].shape))
         for i in range(nerr):
-            fock_vec += coeffs[i] * self.fock_vecs[i] 
+            fock_vec += coeffs[i] * self.fock_vecs[i]
         return fock_vec

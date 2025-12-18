@@ -1,7 +1,9 @@
 import scipy.linalg
+import h5py
 import numpy as np 
 import quantel
 from .wavefunction import Wavefunction
+from pyscf.tools import cubegen 
 
 class SpinChannel:
     """UHF helper class to contain spin-specific wavefunction properties."""
@@ -38,9 +40,9 @@ class UHF(Wavefunction):
         self.nbsf = integrals.nbsf()
         self.nmo = integrals.nmo()
         self.with_xc = (type(integrals) is not quantel.lib._quantel.LibintInterface)
-        if(self.with_xc): self.with_xc = (integrals.xc is not None) 
-        
-        #Set up our Hierarchical structure 
+        if(self.with_xc): self.with_xc = (integrals.xc is not None)
+
+        #Set up hierarchical structure 
         self.alfa = SpinChannel()
         self.beta = SpinChannel()
         
@@ -67,12 +69,17 @@ class UHF(Wavefunction):
         self.beta.mo_coeff = orthogonalise(mo_guess, self.integrals.overlap_matrix())
         # Update the density and Fock matrices
         self.update()
-    
+
     @property
     def dim(self):
         """Get the number of degrees of freedom"""
         return self.nrot
-    
+
+    @property
+    def mo_coeff(self):
+        """ Get list of MO coeffs"""
+        return [self.alfa.mo_coeff, self.beta.mo_coeff]
+
     @property 
     def energy(self): 
         # Nuclear potential 
@@ -140,8 +147,8 @@ class UHF(Wavefunction):
         #
         eri_ab_rqsp = self.integrals.tei_ao_to_mo(Cvir_a,Cocc_b,Cocc_a,Cvir_b,True,False)
         eri_ba_rqsp = self.integrals.tei_ao_to_mo(Cvir_b,Cocc_a,Cocc_b,Cvir_a,True,False)
-        # Initialise Hessian matrix
-        ## Each index runs over alpha orbitals then betas 
+        
+        # Construct Hessian matrix
         hessian = np.zeros((2*self.nmo,2*self.nmo,2*self.nmo,2*self.nmo))
         # Compute Fock contributions
         for i in range(no_a):
@@ -198,6 +205,26 @@ class UHF(Wavefunction):
             matrix_print(self.alfa.fock, title="Alpha Fock Matrix (AO basis)")
             matrix_print(self.beta.fock, title="Beta Fock Matrix (AO basis)")
         print()
+    
+    def save_to_disk(self,tag):
+        """Save object to disk with prefix 'tag'"""
+        # Canonicalise orbitals
+        self.canonicalize()
+ 
+        # Save hdf5 file with MO coefficients, orbital energies, energy, and spin
+        with h5py.File(tag+".hdf5", "w") as F:
+            F.create_dataset("alpha mo_coeff", data=self.alfa.mo_coeff)
+            F.create_dataset("beta mo_coeff" , data=self.beta.mo_coeff)
+            F.create_dataset("alpha mo_energy", data=self.alfa.mo_energy)
+            F.create_dataset("beta mo_energy" , data=self.beta.mo_energy)
+            F.create_dataset("energy", data=self.energy)
+            F.create_dataset("s2", data=self.s2)    
+        print("Are we going through here?", flush=True) 
+        # Save numpy txt file with energy and Hessian indices
+        hindices = self.get_hessian_index()
+        with open(tag+".solution", "w") as F:
+            F.write(f"{self.energy:18.12f} {hindices[0]:5d} {hindices[1]:5d} {self.s2:12.6f}\n")
+
 
     def update(self): 
         self.get_density()
@@ -212,7 +239,7 @@ class UHF(Wavefunction):
     def get_fock(self): 
         """ Construct the two alpha and beta Fock matrices for the current iteration """
         # Define an array of AO density matrices 
-        vdK = np.zeros((2,self.nbsf, self.nbsf)) 
+        vdK = np.zeros((2,self.nbsf, self.nbsf))
         vdK[0,:,:]= self.alfa.dens
         vdK[1,:,:]= self.beta.dens
         # Compute arrays of J and K matrices
@@ -232,9 +259,6 @@ class UHF(Wavefunction):
         self.fock_vec = np.concatenate(( self.alfa.fock.T.reshape((-1)) , self.beta.fock.T.reshape((-1))  ))
 
     def canonicalize(self):
-        """Diagonalise the occupied and virtual blocks of the Fock matrices
-            - updates the MO coeffiecients with the canonical MOs 
-            - returns our transformation matrices for each Fock matrix"""
         Qs = []
         for spin in [self.alfa, self.beta]:
             # Initialise orbital energies
@@ -303,7 +327,7 @@ class UHF(Wavefunction):
             spin.mo_energy, Ct = np.linalg.eigh(Ft)
             # Transform back to the original basis
             spin.mo_coeff = np.dot(X, Ct)
-        # Update density and Fock matrices
+        # Update densities and Fock matrices
         self.update()
 
     def transform_vector(self, vec, step, X=None): 
@@ -312,10 +336,9 @@ class UHF(Wavefunction):
         kappa = np.zeros((2*self.nmo, 2*self.nmo))
         kappa[self.rot_idx] = vec 
         kappa = kappa - kappa.T  
-        # Only horizontal transformations leave unchanged - What does this mean 
         if not X is None:   
             kappa = kappa @ X 
-            kappa = X.T @ kappa 
+            kappa = X.T @ kappa  
         return kappa[self.rot_idx]       
 
     def try_fock(self, fock_alpha, fock_beta): 
@@ -345,7 +368,7 @@ class UHF(Wavefunction):
         return err_vec, err 
 
     def restore_last_step(self): 
-        """ Restore orbital coefficients to the previous step"""
+        """Restore orbital coefficients to the previous step"""
         self.alfa.mo_coeff = self.alfa.mo_coeff_save.copy()
         self.beta.mo_coeff = self.beta.mo_coeff_save.copy()
         self.update()
@@ -389,7 +412,7 @@ class UHF(Wavefunction):
         mask_beta[self.beta.nocc:,:self.beta.nocc] = True 
         return mask_alfa, mask_beta 
     
-    def get_orbital_guess(self, method="gwh", asymmetric=False):
+    def get_orbital_guess(self, method="gwh",asymmetric=False):
         """ Get a guess for the molecular orbital coefficients 
             Asymmetric initial guess can be generated via HOMO-LUMO mixing"""
         # Get one-electron integrals and overlap matrix 
@@ -420,6 +443,7 @@ class UHF(Wavefunction):
         
         # Get orbital coefficients by diagonalising Fock matrix
         self.diagonalise_fock()
+
         # Compute an asymmetric initial guess
         if asymmetric:
             k = 0.1
@@ -434,38 +458,30 @@ class UHF(Wavefunction):
             mo_coeff[:, self.beta.nocc] = neg_mix
             self.beta.mo_coeff = mo_coeff
             self.update()
-
+   
+    def excite(self): 
+        """ Performs an Sz preserving HOMO LUMO excitation """
+        alfa_gap =  self.alfa.mo_energy[self.alfa.nocc]-self.alfa.mo_energy[self.alfa.nocc-1]
+        beta_gap =  self.beta.mo_energy[self.beta.nocc]-self.beta.mo_energy[self.beta.nocc-1]
+        if(alfa_gap < beta_gap): 
+            self.alfa.mo_coeff[:,[self.alfa.nocc -1, self.alfa.nocc]] = self.alfa.mo_coeff[:,[self.alfa.nocc, self.alfa.nocc-1]]
+        else: 
+            self.beta.mo_coeff[:,[self.beta.nocc -1, self.beta.nocc]] = self.beta.mo_coeff[:,[self.beta.nocc, self.beta.nocc-1]]
+        # Update the density and Fock matrices
+        self.update()
+ 
+    @property 
     def value(self):
         """Map the energy onto the function value"""
         return self.energy
 
     def overlap(self,other):
-        """Compute the overlap with another UHF wavefunction"""
-        if (self.nocc != other.nocc): 
-            return 0 
-        elif (self.nalfa != other.nalfa) or (self.nbeta != self.nbeta): 
-            return 0 
-        nalfa = self.nalfa
-        nbeta = self.nbeta
-        # Assume same AO basis  
-        ovlp = self.integrals.overlap_matrix() 
-        # Compute alpha and beta overlap 
-        Sa = np.linalg.multi_dot([self.alfa.mo_coeff[:,:nalfa].T, ovlp, other.alfa.mo_coeff[:,:nalfa]])
-        Sb = np.linalg.multi_dot([self.beta.mo_coeff[:,:nbeta].T, ovlp, other.beta.mo_coeff[:,:nbeta]])
-        # Contruct the full overlap 
-        S = np.zeros((2*self.nmo, 2*self.nmo))
-        S[:self.nmo, :self.nmo] = Sa
-        S[self.nmo:, self.nmo:] = Sb
-        return S
-
+        return 
+              
     def initialise(self, mo_coeff, mat_ci=None, integrals=True):
         """Initialise wavefunction with orbital coefficient (and CI matrix)"""
         pass
 
-    def save_to_disk(self, tag):
-        """Save a wavefunction object to disk"""
-        pass
-        
     def read_from_disk(self, tag):
         """Read a wavefunction object to disk"""
         pass
@@ -490,3 +506,25 @@ class UHF(Wavefunction):
         g1 = self.transform_vector(g1, - eps * vec)
         # Get approximation to H @ sk
         return (g1 - g0) / eps
+
+    def mom_update(self, prev_Cs): 
+        """ Construct MOM determinant from an old set of orbitals """
+        for index, spin in enumerate([self.alfa, self.beta]):
+            # Compute projections onto previous occupied space
+            prev_Cocc = prev_Cs[index][:,:spin.nocc] 
+            p = np.einsum('ij,jk,kl->l', prev_Cocc.T, self.integrals.overlap_matrix(), spin.mo_coeff )
+            # Order MOs according to largest projection 
+            idx = list(reversed(np.argsort(np.abs(p))))
+            spin.mo_coeff = spin.mo_coeff[:,idx]
+        
+        self.update()
+
+    def mo_cubegen(self, a_idx, b_idx, fname=""): 
+        """ Generate and store cube files for specified MOs
+                a_idx, b_idx : lists of indices of alpha and beta MOs
+        """
+        spins = ["a","b"]
+        for i, spin in enumerate([self.alfa, self.beta]):    
+            for mo in [a_idx,b_idx][i]: 
+                cubegen.orbital(self.integrals.mol, fname+f".{spins[i]}.mo.{mo}.cube", spin.mo_coeff[:,mo])
+

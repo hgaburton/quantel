@@ -7,6 +7,7 @@ import h5py
 from quantel.utils.linalg import orthogonalise, matrix_print
 from .wavefunction import Wavefunction
 import quantel
+from pyscf.tools import cubegen
 
 class GHF(Wavefunction):
     """ Generalised Hartree-Fock method
@@ -248,6 +249,8 @@ class GHF(Wavefunction):
         # Compute the Coulomb and Exchange matrices
         self.fock = np.kron(np.eye(2), self.integrals.oei_matrix(True)) + self.J - self.K
         self.JK = self.J - self.K
+        # Vectorised format of the Fock matrix 
+        self.fock_vec = self.fock.T.reshape((-1))
 
 
     def canonicalize(self):
@@ -321,7 +324,7 @@ class GHF(Wavefunction):
 
     def try_fock_vec(self, fock_vec): 
         """Wrapper for try_fock() to handle Fock vectors from DIIS"""
-        fock = fock_vec.reshape((self.nbsf,self.nbsf)).T
+        fock = fock_vec.reshape((2*self.nbsf,2*self.nbsf)).T
         self.try_fock(fock) 
 
     def get_diis_error(self):
@@ -455,3 +458,32 @@ class GHF(Wavefunction):
             ev = np.linalg.eigvalsh(M[[0,2],:][:,[0,2]])
             
         return self.nelec - ev[-1]
+    
+    def excite(self):
+        # Perform HOMO-LUMO excitation 
+        self.mo_coeff[:,[self.nocc-1, self.nocc]] = self.mo_coeff[:,[self.nocc,self.nocc-1]]
+        self.update() 
+
+    def mom_update(self, old_C): 
+        """ Construct the MOM determinant from an old set of orbitals """
+        # Compute projection onto previous  occupied space 
+        old_Cocc = old_C[:,:self.nocc]
+        p = np.einsum('ij,jk,kl->l', old_Cocc.T, self.ghf_overlap, self.mo_coeff )
+        # Order MOs according to largest projection 
+        idx = list(reversed(np.argsort(np.abs(p))))
+        self.mo_coeff = self.mo_coeff[:,idx]
+        self.update()
+
+    def mo_cubegen(self,idx,fname=""): 
+        """ Generate and store cube files for specified MOs
+                idx : list of MO indices 
+        """
+        # Sum the alpha and beta spin AO contributions 
+        mo_coeff = self.mo_coeff.copy()
+        alpha = mo_coeff[:self.nbsf]
+        beta = mo_coeff[self.nbsf:]
+        spatial = alpha + beta
+        # Saves MOs as cubegen files
+        for mo in idx: 
+            cubegen.orbital(self.integrals.mol, fname+f".mo.{mo}.cube", spatial[:,mo])
+

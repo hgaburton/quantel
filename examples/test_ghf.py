@@ -1,10 +1,10 @@
 import quantel
 import numpy as np
 from quantel.ints.pyscf_integrals import PySCFMolecule, PySCFIntegrals
-from quantel.wfn.uhf import UHF
+from quantel.wfn.ghf import GHF
 
-# Test UHF object with a range of optimisers
-print("Test UHF object with a range of optimisers")
+# Test GHF object with a range of optimisers
+print("Test RHF object with a range of optimisers")
 
 for driver in ("libint", "pyscf"):
     print("\n===============================================")
@@ -16,10 +16,10 @@ for driver in ("libint", "pyscf"):
         ints = quantel.LibintInterface("6-31g", mol) 
     elif(driver == "pyscf"):
         mol  = PySCFMolecule("formaldehyde.xyz", "6-31g", "angstrom")
-        ints = PySCFIntegrals(mol) # so here we dont put an exchange correlation functional in so it doesnt matter...
+        ints = PySCFIntegrals(mol) 
 
     # Initialise UHF object
-    wfn = UHF(ints)
+    wfn = GHF(ints)
 
     # Setup optimiser
     for guess in ("gwh", "core"):
@@ -33,10 +33,7 @@ for driver in ("libint", "pyscf"):
         from quantel.opt.diis import DIIS
         wfn.get_orbital_guess(method="gwh")
         DIIS().run(wfn,plev= 0)
-
-        # Test canonicalisation and Hessian eigenvalue
         wfn.canonicalize()
-        # Test Hessian index
         wfn.get_davidson_hessian_index()
-        wfn.print()
         
+        wfn.print()

@@ -7,6 +7,7 @@ import h5py
 from quantel.utils.linalg import orthogonalise, matrix_print
 from .wavefunction import Wavefunction
 import quantel
+from pyscf.tools import cubegen
 
 class RHF(Wavefunction):
     """ Restricted Hartree-Fock method
@@ -26,7 +27,7 @@ class RHF(Wavefunction):
         """
         self.integrals = integrals
         self.nalfa     = integrals.molecule().nalfa()
-        self.nbeta     = self.nalfa #integrals.molecule().nbeta()
+        self.nbeta     = self.nalfa
 
         # Get number of basis functions and linearly independent orbitals
         self.nbsf      = integrals.nbsf()
@@ -372,6 +373,12 @@ class RHF(Wavefunction):
         # Get orbital coefficients by diagonalising Fock matrix
         self.diagonalise_fock()
 
+    def excite(self):
+        """ Perform HOMO LUMO excitation on both spins"""
+        self.mo_coeff[:,[self.nalfa-1, self.nalfa]] = self.mo_coeff[:,[self.nalfa,self.nalfa-1]]
+        self.update() 
+        
+
     def deallocate(self):
         pass
         
@@ -391,3 +398,23 @@ class RHF(Wavefunction):
         g1 = self.transform_vector(g1, - eps * vec)
         # Get approximation to H @ sk
         return (g1 - g0) / eps
+
+    def mom_update(self, old_C): 
+        """ Construct MOM determinant from a old set of orbitals """
+        # Compute projections onto previous occupied space 
+        old_Cocc = old_C[:,:self.nalfa]
+        p = np.einsum('ij,jk,kl->l', old_Cocc.T, self.integrals.overlap_matrix(), self.mo_coeff )
+        # Order MOs according to largest projection 
+        idx = list(reversed(np.argsort(np.abs(p))))
+        self.mo_coeff = self.mo_coeff[:,idx]
+        self.update()
+
+    def mo_cubegen(self,idx,fname=""): 
+        """ Generate and store cube files for specified MOs
+                idx : list of MO indices 
+        """
+        # Saves MOs as cubegen files
+        for mo in idx: 
+            cubegen.orbital(self.integrals.mol, fname+f".mo.{mo}.cube", self.mo_coeff[:,mo])
+
+
