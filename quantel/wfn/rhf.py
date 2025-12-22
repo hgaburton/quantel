@@ -317,7 +317,7 @@ class RHF(Wavefunction):
         # Project to linearly independent orbitals
         Ft = np.linalg.multi_dot([X.T, self.fock, X])
         # Diagonalise the Fock matrix
-        self.mo_energy, Ct = np.linalg.eigh(Ft)    
+        Et, Ct = np.linalg.eigh(Ft)
         # Transform back to the original basis
         Cnew = np.dot(X, Ct)
 
@@ -330,6 +330,8 @@ class RHF(Wavefunction):
         else:
             self.mo_coeff = Cnew
 
+        # Save current orbital energies
+        self.mo_energy = self.mo_coeff.T @ self.fock @ self.mo_coeff
         # Update density and Fock matrices
         self.update()
 
@@ -419,7 +421,8 @@ class RHF(Wavefunction):
         # Project to linearly independent orbitals
         Ft = np.linalg.multi_dot([X.T, self.fock, X])
         # Diagonalise the Fock matrix
-        mo_energy, Cinit = np.linalg.eigh(Ft)    
+        Et, Ct = np.linalg.eigh(Ft)    
+        Cinit = np.dot(X, Ct)
         # Get orbital coefficients by diagonalising Fock matrix
         self.initialise(Cinit)
 
@@ -457,7 +460,13 @@ class RHF(Wavefunction):
         return (g1 - g0) / eps
 
     def mom_select(self, Cold, Cnew): 
-        """ Construct MOM determinant from a old set of orbitals """
+        """ Select new occupied orbital coefficients using MOM criteria 
+            Args:
+                Cold : Previous set of occupied orbital coefficients 
+                Cnew : New set of orbital coefficients from Fock diagonalisation
+            Returns:
+                Cnew reordered according to MOM criterion
+        """
         # Compute projections onto previous occupied space 
         p = np.einsum('pj,pq,ql->l', Cold[:,:self.nocc], self.integrals.overlap_matrix(), Cnew, optimize="optimal")
         # Order MOs according to largest projection 

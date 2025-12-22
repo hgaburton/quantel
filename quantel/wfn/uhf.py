@@ -243,7 +243,7 @@ class UHF(Wavefunction):
         vdK[0,:,:]= self.alfa.dens
         vdK[1,:,:]= self.beta.dens
         # Compute arrays of J and K matrices
-        vJ, vK = self.integrals.build_multiple_JK(vdK, vdK, 2,2)
+        vJ, vK = self.integrals.build_JK(vdK, vdK)
         # Extract alpha and beta terms 
         self.alfa.JK = vJ[0] + vJ[1] - vK[0]
         self.beta.JK = vJ[0] + vJ[1] - vK[1]

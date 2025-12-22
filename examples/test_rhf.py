@@ -12,7 +12,7 @@ if __name__ == "__main__":
     ints = PySCFIntegrals(mol)
 
     # Initialise RHF object
-    wfn = RHF(ints,mom_method='IMOM')
+    wfn = RHF(ints)
 
     # Setup optimiser
     for guess in ("gwh", "core"):

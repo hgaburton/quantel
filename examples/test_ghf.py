@@ -13,7 +13,7 @@ if __name__ == "__main__":
     ints = PySCFIntegrals(mol)
 
     # Initialise GHF object
-    wfn = GHF(ints)
+    wfn = GHF(ints,mom_method='IMOM')
     # Set initial coefficients from identity
     wfn.initialise(np.eye(wfn.nmo,wfn.nmo))
 
@@ -27,4 +27,4 @@ if __name__ == "__main__":
     # Test canonicalisation and Hessian eigenvalue
     wfn.canonicalize()
     # Test Hessian index
-    wfn.get_davidson_hessian_index()
+    wfn.get_davidson_hessian_index(approx_hess=True)
