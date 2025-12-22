@@ -7,6 +7,7 @@ import h5py
 from quantel.utils.linalg import orthogonalise, matrix_print
 from .wavefunction import Wavefunction
 import quantel
+from pyscf.tools import cubegen
 
 class RHF(Wavefunction):
     """ Restricted Hartree-Fock method
@@ -26,7 +27,7 @@ class RHF(Wavefunction):
         """
         self.integrals = integrals
         self.nalfa     = integrals.molecule().nalfa()
-        self.nbeta     = self.nalfa #integrals.molecule().nbeta()
+        self.nbeta     = self.nalfa
 
         # Get number of basis functions and linearly independent orbitals
         self.nbsf      = integrals.nbsf()
@@ -40,11 +41,11 @@ class RHF(Wavefunction):
         self.verbose   = verbose
 
         # Setup the indices for relevant orbital rotations
-        self.rot_idx   = self.uniq_var_indices() # Indices for orbital rotations
-        self.nrot      = np.sum(self.rot_idx) # Number of orbital rotations
+        self.rot_idx   = self.uniq_var_indices() 
+        self.nrot      = np.sum(self.rot_idx) 
 
         # Define the orbital energies and coefficients
-        self.mo_coeff         = None
+        self.mo_coeff  = None
         self.mo_energy = None
     
     def initialise(self, mo_guess, ci_guess=None):
@@ -148,7 +149,7 @@ class RHF(Wavefunction):
         # Canonicalise orbitals
         self.canonicalize()
  
-         # Save hdf5 file with MO coefficients, orbital energies, energy, and spin
+        # Save hdf5 file with MO coefficients, orbital energies, energy, and spin
         with h5py.File(tag+".hdf5", "w") as F:
             F.create_dataset("mo_coeff", data=self.mo_coeff)
             F.create_dataset("mo_energy", data=self.mo_energy)
@@ -203,7 +204,10 @@ class RHF(Wavefunction):
         """Compute the 1RDM for the current state in AO basis"""
         Cocc = self.mo_coeff[:,:self.nocc]
         self.dens = np.dot(Cocc, Cocc.T)
+<<<<<<< HEAD
         
+=======
+>>>>>>> origin/uhf_dev
 
     def get_fock(self):
         """Compute the Fock matrix for the current state"""
@@ -211,8 +215,15 @@ class RHF(Wavefunction):
         self.fock = self.integrals.build_fock(self.dens)
         self.JK   = self.fock - self.integrals.oei_matrix(True)
         # Compute the exchange-correlation energy
+<<<<<<< HEAD
         self.exc, self.vxc = self.integrals.build_vxc(self.dens)
         self.fock += self.vxc[0]
+=======
+        self.exc, self.vxc, NULL = self.integrals.build_vxc(self.dens, self.dens) if(self.with_xc) else 0,0,0
+        self.fock += self.vxc 
+        # Vectorised format of the Fock matrix
+        self.fock_vec = self.fock.T.reshape((-1))
+>>>>>>> origin/uhf_dev
 
     def canonicalize(self):
         """Diagonalise the occupied and virtual blocks of the Fock matrix"""
@@ -301,11 +312,16 @@ class RHF(Wavefunction):
         self.fock = fock
         self.diagonalise_fock()
 
+    def try_fock_vec(self, fock_vec): 
+        """Wrapper for try_fock() to handle Fock vectors from DIIS"""
+        fock = fock_vec.reshape((self.nbsf,self.nbsf)).T
+        self.try_fock(fock) 
+
     def get_diis_error(self):
         """Compute the DIIS error vector and DIIS error"""
         err_vec  = np.linalg.multi_dot([self.fock, self.dens, self.integrals.overlap_matrix()])
         err_vec -= err_vec.T
-        return err_vec.ravel(), np.linalg.norm(err_vec)
+        return err_vec.ravel(), np.linalg.norm(err_vec)   
 
     def restore_last_step(self):
         """Restore orbital coefficients to the previous step"""
@@ -369,6 +385,12 @@ class RHF(Wavefunction):
         # Get orbital coefficients by diagonalising Fock matrix
         self.diagonalise_fock()
 
+    def excite(self):
+        """ Perform HOMO LUMO excitation on both spins"""
+        self.mo_coeff[:,[self.nalfa-1, self.nalfa]] = self.mo_coeff[:,[self.nalfa,self.nalfa-1]]
+        self.update() 
+        
+
     def deallocate(self):
         pass
         
@@ -388,3 +410,23 @@ class RHF(Wavefunction):
         g1 = self.transform_vector(g1, - eps * vec)
         # Get approximation to H @ sk
         return (g1 - g0) / eps
+
+    def mom_update(self, old_C): 
+        """ Construct MOM determinant from a old set of orbitals """
+        # Compute projections onto previous occupied space 
+        old_Cocc = old_C[:,:self.nalfa]
+        p = np.einsum('ij,jk,kl->l', old_Cocc.T, self.integrals.overlap_matrix(), self.mo_coeff )
+        # Order MOs according to largest projection 
+        idx = list(reversed(np.argsort(np.abs(p))))
+        self.mo_coeff = self.mo_coeff[:,idx]
+        self.update()
+
+    def mo_cubegen(self,idx,fname=""): 
+        """ Generate and store cube files for specified MOs
+                idx : list of MO indices 
+        """
+        # Saves MOs as cubegen files
+        for mo in idx: 
+            cubegen.orbital(self.integrals.mol, fname+f".mo.{mo}.cube", self.mo_coeff[:,mo])
+
+
