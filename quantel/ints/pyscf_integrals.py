@@ -195,6 +195,7 @@ class PySCFIntegrals:
             return vJ[0], vK[1], vKfunc[1]
         else:
             return vJ[0], vK[1]
+
     
     def build_vxc(self,dms):
         """ Build the exchange-correlation potential

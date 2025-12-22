@@ -20,7 +20,7 @@ class RHF(Wavefunction):
             - save_last_step
             - restore_step
     """
-    def __init__(self, integrals, verbose=0):
+    def __init__(self, integrals, verbose=0, mom_method=None):
         """Initialise Restricted Hartree-Fock wave function
                integrals : quantel integral interface
                verbose   : verbosity level
@@ -39,6 +39,7 @@ class RHF(Wavefunction):
         assert(self.nalfa == self.nbeta)
         self.nocc      = self.nalfa
         self.verbose   = verbose
+        self.mom_method = mom_method
 
         # Setup the indices for relevant orbital rotations
         self.rot_idx   = self.uniq_var_indices() 
@@ -52,6 +53,9 @@ class RHF(Wavefunction):
         """Initialise the wave function with a set of molecular orbital coefficients"""
         # Make sure orbitals are orthogonal
         self.mo_coeff = orthogonalise(mo_guess, self.integrals.overlap_matrix())
+        # Set initial orbital occupation
+        if(self.mom_method == 'IMOM'):
+            self.Cinit = self.mo_coeff.copy()
         # Update the density and Fock matrices
         self.update()
 
@@ -135,7 +139,7 @@ class RHF(Wavefunction):
         return (hessian[:,:,self.rot_idx])[self.rot_idx,:]
     
 
-    def get_hess_on_vec(self,X):
+    def hess_on_vec(self,X):
         """ Compute the action of Fxc part of Hessian on a vector in orbital rotation space"""
         # Reshape X into matrix form
         Xai = np.reshape(X, (self.nmo-self.nocc,self.nocc))
@@ -148,10 +152,13 @@ class RHF(Wavefunction):
         # Coulomb and exchange contributions
         Jia, Kia, = self.integrals.build_JK([Dia],[Dia],hermi=0,Kxc=False)
         # Build ground-state density and fxc kernel
-        occ = np.zeros(self.nmo)
-        occ[:self.nocc] = 1.0
-        rho0, vxc, fxc = self.integrals.cache_xc_kernel([self.mo_coeff,self.mo_coeff],(occ,occ),spin=1)
-        fxc = self.integrals.uks_fxc(Dia, rho0, vxc, fxc)[0]
+        if(not (self.integrals.xc is None)):
+            occ = np.zeros(self.nmo)
+            occ[:self.nocc] = 1.0
+            rho0, vxc, fxc = self.integrals.cache_xc_kernel([self.mo_coeff,self.mo_coeff],(occ,occ),spin=1)
+            fxc = self.integrals.uks_fxc(Dia, rho0, vxc, fxc)[0]
+        else:
+            fxc = np.zeros_like(Jia[0])
         
         # Fock contributions 
         Fba = Ca.T @ self.fock @ Ca
@@ -262,8 +269,6 @@ class RHF(Wavefunction):
         self.exc, self.vxc = self.integrals.build_vxc([self.dens, self.dens])
         self.fock = self.integrals.oei_matrix(True) + self.JK + self.vxc[0]
         return self.fock.reshape((-1))
-        # Vectorised format of the Fock matrix
-        #self.fock_vec = self.fock.T.reshape((-1))
 
     def canonicalize(self):
         """Diagonalise the occupied and virtual blocks of the Fock matrix"""
@@ -312,9 +317,19 @@ class RHF(Wavefunction):
         # Project to linearly independent orbitals
         Ft = np.linalg.multi_dot([X.T, self.fock, X])
         # Diagonalise the Fock matrix
-        self.mo_energy, Ct = np.linalg.eigh(Ft)
+        self.mo_energy, Ct = np.linalg.eigh(Ft)    
         # Transform back to the original basis
-        self.mo_coeff = np.dot(X, Ct)
+        Cnew = np.dot(X, Ct)
+
+        # Select occupied orbitals using MOM if specified
+        if(self.mom_method =='MOM'):
+            Cold = self.mo_coeff.copy()
+            self.mo_coeff = self.mom_select(Cold,Cnew)
+        elif(self.mom_method == 'IMOM'):
+            self.mo_coeff = self.mom_select(self.Cinit,Cnew)
+        else:
+            self.mo_coeff = Cnew
+
         # Update density and Fock matrices
         self.update()
 
@@ -330,15 +345,10 @@ class RHF(Wavefunction):
             kappa = X.T @ kappa
         return kappa[self.rot_idx]
 
-    def try_fock(self, fock):
+    def try_fock(self, fock_vec):
         """Try an extrapolated Fock matrix and update the orbital coefficients"""
-        self.fock = fock
+        self.fock = fock_vec.reshape((self.nbsf,self.nbsf)).T
         self.diagonalise_fock()
-
-    def try_fock_vec(self, fock_vec): 
-        """Wrapper for try_fock() to handle Fock vectors from DIIS"""
-        fock = fock_vec.reshape((self.nbsf,self.nbsf)).T
-        self.try_fock(fock) 
 
     def get_diis_error(self):
         """Compute the DIIS error vector and DIIS error"""
@@ -404,8 +414,14 @@ class RHF(Wavefunction):
         else:
             raise NotImplementedError(f"Orbital guess method {method} not implemented")
         
+        # Get the orthogonalisation matrix
+        X = self.integrals.orthogonalization_matrix()
+        # Project to linearly independent orbitals
+        Ft = np.linalg.multi_dot([X.T, self.fock, X])
+        # Diagonalise the Fock matrix
+        mo_energy, Cinit = np.linalg.eigh(Ft)    
         # Get orbital coefficients by diagonalising Fock matrix
-        self.diagonalise_fock()
+        self.initialise(Cinit)
 
     def excite(self,occ_idx,vir_idx):
         """ Perform orbital excitation on both spins
@@ -440,15 +456,13 @@ class RHF(Wavefunction):
         # Get approximation to H @ sk
         return (g1 - g0) / eps
 
-    def mom_update(self, old_C): 
+    def mom_select(self, Cold, Cnew): 
         """ Construct MOM determinant from a old set of orbitals """
         # Compute projections onto previous occupied space 
-        old_Cocc = old_C[:,:self.nalfa]
-        p = np.einsum('ij,jk,kl->l', old_Cocc.T, self.integrals.overlap_matrix(), self.mo_coeff )
+        p = np.einsum('pj,pq,ql->l', Cold[:,:self.nocc], self.integrals.overlap_matrix(), Cnew, optimize="optimal")
         # Order MOs according to largest projection 
         idx = list(reversed(np.argsort(np.abs(p))))
-        self.mo_coeff = self.mo_coeff[:,idx]
-        self.update()
+        return Cnew[:,idx]
 
     def mo_cubegen(self,idx=None,fname=""): 
         """ Generate and store cube files for specified MOs

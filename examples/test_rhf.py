@@ -12,7 +12,7 @@ if __name__ == "__main__":
     ints = PySCFIntegrals(mol)
 
     # Initialise RHF object
-    wfn = RHF(ints)
+    wfn = RHF(ints,mom_method='IMOM')
 
     # Setup optimiser
     for guess in ("gwh", "core"):
@@ -35,4 +35,5 @@ if __name__ == "__main__":
         # Test canonicalisation and Hessian eigenvalue
         wfn.canonicalize()
         # Test Hessian index
+        print("get_davidson_hessian_index()")
         wfn.get_davidson_hessian_index()

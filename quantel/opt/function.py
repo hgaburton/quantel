@@ -131,7 +131,7 @@ class Function(metaclass=ABCMeta):
             else:         nzero +=1 
         return (ndown, nzero, nuphl)
 
-    def get_davidson_hessian_index(self, ntarget=5, eps=1e-5):
+    def get_davidson_hessian_index(self, ntarget=5, eps=1e-5, approx_hess=True):
         """Iteratively compute Hessian index from gradient only. 
            This approach uses the Davidson algorithm."""
         # Get approximate diagonal terms
@@ -145,17 +145,17 @@ class Function(metaclass=ABCMeta):
         for i, j in enumerate(np.argsort(diag)[:nv]):
             x[j,i] = 1.0
 
-        while True:
-            # Get lowest eigenvalues through Davidson algorithm
+        # Get lowest eigenvalues through Davidson algorithm
+        if(approx_hess):
             eigs, x = david.run(self.approx_hess_on_vec,diag,nv,
-                                xguess=x,plev=2,tol=1e-4,maxit=1000,Hv_args=dict(eps=1e-5))
-            if(np.any(eigs > 0)):
-                # We have found the first positive eigenvalue, so we can break
-                break
+                            xguess=x,plev=2,tol=1e-4,maxit=1000, Hv_args={'eps':eps})
+        else:
+            eigs, x = david.run(self.hess_on_vec,diag,nv,
+                            xguess=x,plev=2,tol=1e-4,maxit=1000)
 
-            # Augment with more columns and try again
-            x  = np.column_stack([x, np.random.rand(diag.size,5)])
-            nv = x.shape[1]
+        # Augment with more columns and try again
+        x  = np.column_stack([x, np.random.rand(diag.size,5)])
+        nv = x.shape[1]
 
         # Count the Hessian index
         ndown = 0

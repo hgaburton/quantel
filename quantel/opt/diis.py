@@ -30,7 +30,7 @@ class DIIS:
         
         for istep in range(maxit+1):
             # Get Fock matrix
-            fock_new = obj.get_fock()   
+            fock_new = obj.get_fock()
             # Save MO coefficients  
             prev_C = obj.mo_coeff.copy()
             # Get error vector
@@ -52,21 +52,11 @@ class DIIS:
             if len(self.err_vecs) > self.max_vec:
                 self.err_vecs.pop(0)
                 self.fock_vecs.pop(0)
-
+ 
             # Perform DIIS extrapolation
             if len(self.err_vecs) >= 1:
                 new_fock_vec = self.diis_extrapolate()  
-                obj.try_fock_vec(new_fock_vec) 
-  
-                # Perform orbital selection
-                if self.occupation_selector.lower() == "aufbau": 
-                    pass 
-                elif self.occupation_selector.lower() == "mom":     
-                    obj.mom_update(prev_C) 
-                elif self.occupation_selector.lower() == "imom":     
-                    obj.mom_update(init_C)
-                else:
-                    raise NotImplementedError(f"Occupation selector {self.occupation_selector} not implemented") 
+                obj.try_fock(new_fock_vec) 
 
         if plev>0: print("  ==========================================")
         kernel_end_time = datetime.datetime.now() # Save end time
