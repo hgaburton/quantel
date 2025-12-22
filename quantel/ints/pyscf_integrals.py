@@ -145,18 +145,7 @@ class PySCFIntegrals:
         ao_dip = self.mol.intor_symmetric('int1e_r', comp=3)
         return nucl_dip, ao_dip 
 
-    def build_fock(self,dm):
-        """ Build the Fock matrix
-            Args:
-                dm : ndarray
-                    The density matrix
-            Returns:
-                ndarray : The Fock matrix (h + 2 * J - K)
-        """
-        vJ, vK = pyscf.scf.hf.get_jk(self.mol, dm)
-        return self.oei + 2 * vJ - vK
-
-    def build_multiple_J(self,vdJ,hermi=0):
+    def build_J(self,vdJ,hermi=0):
         """ Build Coulomb matrices for multiple sets of densities
             Args:
                 vdJ : ndarray
@@ -167,7 +156,7 @@ class PySCFIntegrals:
         vJ, _ = self.get_jk(dm=(vdJ,vdJ), hermi=hermi, with_k=False)
         return vJ[0]
     
-    def build_multiple_JK(self,vdJ,vdK,hermi=0,Kxc=False):
+    def build_JK(self,vdJ,vdK,hermi=0,Kxc=False):
         """ Build Coulomb and Exchange matrices for multiple sets of densities
             Args:
                 vdJ : ndarray
@@ -206,19 +195,6 @@ class PySCFIntegrals:
             return vJ[0], vK[1], vKfunc[1]
         else:
             return vJ[0], vK[1]
-
-
-    def build_JK(self,dm,hermi=0):
-        """ Build the Coulomb and Exchange matrices
-            Args:
-                dm : ndarray
-                    The density matrix
-            Returns:
-                ndarray : The Coulomb matrix
-                ndarray : The Exchange matrix
-        """
-        vJ, vK = self.get_jk(dm=dm, hermi=hermi)
-        return 2 * vJ - vK
     
     def build_vxc(self,dms):
         """ Build the exchange-correlation potential
