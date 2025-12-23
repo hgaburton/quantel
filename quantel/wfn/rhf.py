@@ -5,6 +5,7 @@ import numpy as np
 import scipy.linalg
 import h5py
 from quantel.utils.linalg import orthogonalise, matrix_print
+from quantel.utils.scf_utils import mom_select
 from .wavefunction import Wavefunction
 import quantel
 from pyscf.tools import cubegen
@@ -105,18 +106,18 @@ class RHF(Wavefunction):
             self.update(with_eri=True)
 
         # Initialise Hessian matrix
-        hessian = np.zeros((self.nmo,self.nmo,self.nmo,self.nmo))
+        hessian = np.zeros((nv,no,nv,no))
 
         # Compute Fock contributions
         for i in range(no):
-            hessian[no:,i,no:,i] += 4 * Fmo[no:,no:]
-        for a in range(no,self.nmo):
-            hessian[a,:no,a,:no] -= 4 * Fmo[:no,:no]
+            hessian[:,i,:,i] += 4 * Fmo[no:,no:]
+        for a in range(nv):
+            hessian[a,:,a,:] -= 4 * Fmo[:no,:no]
 
         # Compute two-electron contributions
-        hessian[no:,:no,no:,:no] += 16 * np.einsum('abij->aibj', self.eri_abij, optimize="optimal")
-        hessian[no:,:no,no:,:no] -=  4 * self.integrals.hybrid_K * np.einsum('ajbi->aibj', self.eri_aibj, optimize="optimal")
-        hessian[no:,:no,no:,:no] -=  4 * self.integrals.hybrid_K * np.einsum('abji->aibj', self.eri_abij, optimize="optimal")
+        hessian += 16 * np.einsum('abij->aibj', self.eri_abij, optimize="optimal")
+        hessian -=  4 * self.integrals.hybrid_K * np.einsum('ajbi->aibj', self.eri_aibj, optimize="optimal")
+        hessian -=  4 * self.integrals.hybrid_K * np.einsum('abji->aibj', self.eri_abij, optimize="optimal")
 
         if(not (self.integrals.xc is None)):
             # Build ground-state density and xc kernel
@@ -125,22 +126,22 @@ class RHF(Wavefunction):
             rho0, vxc, fxc = self.integrals.cache_xc_kernel([self.mo_coeff,self.mo_coeff],(occ,occ),spin=1)
 
             # Loop over contributions per orbital pair
-            for i in range(self.nocc):
-                for a in range(self.nocc,self.nmo):
+            for i in range(no):
+                for a in range(nv):
                     # Build the first-order density matrix for this orbital pair
                     # These are weighted by the occupation difference
-                    Dia = np.outer(self.mo_coeff[:,i],self.mo_coeff[:,a])
+                    Dia = np.outer(self.mo_coeff[:,i],self.mo_coeff[:,no+a])
                     # Compute the contracted kernel with first-order density
                     fxc_ia = self.integrals.uks_fxc(Dia,rho0,vxc,fxc)
                     # Compute contribution to Hessian diagonal
-                    hessian[a,i,no:,:no] += 16 * self.mo_coeff[:,self.nocc:].T @ (fxc_ia[0] @ self.mo_coeff[:,:self.nocc])
+                    hessian[a,i,:,:] += 16 * self.mo_coeff[:,self.nocc:].T @ (fxc_ia[0] @ self.mo_coeff[:,:self.nocc])
 
         # Return suitably shaped array
-        return (hessian[:,:,self.rot_idx])[self.rot_idx,:]
+        return np.reshape(hessian, (nv*no,-1))
     
 
     def hess_on_vec(self,X):
-        """ Compute the action of Fxc part of Hessian on a vector in orbital rotation space"""
+        """ Compute the action of Hessian on a vector X"""
         # Reshape X into matrix form
         Xai = np.reshape(X, (self.nmo-self.nocc,self.nocc))
         # Access occupied and virtual orbitals
@@ -307,7 +308,7 @@ class RHF(Wavefunction):
         # Include dominate generalised Fock matrix terms
         for p in range(self.nmo):
             for q in range(p):
-                Q[p,q] = 2 * (fock_mo[p,p] - fock_mo[q,q])
+                Q[p,q] = 4 * (fock_mo[p,p] - fock_mo[q,q])
         return np.abs(Q[self.rot_idx])
 
     def diagonalise_fock(self):
@@ -324,11 +325,11 @@ class RHF(Wavefunction):
         # Select occupied orbitals using MOM if specified
         if(self.mom_method =='MOM'):
             Cold = self.mo_coeff.copy()
-            self.mo_coeff = self.mom_select(Cold,Cnew)
+            self.mo_coeff = mom_select(Cold[:,:self.nocc],Cnew,self.integrals.overlap_matrix())
         elif(self.mom_method == 'IMOM'):
-            self.mo_coeff = self.mom_select(self.Cinit,Cnew)
+            self.mo_coeff = mom_select(self.Cinit[:,:self.nocc],Cnew,self.integrals.overlap_matrix())
         else:
-            self.mo_coeff = Cnew
+            self.mo_coeff = Cnew.copy()
 
         # Save current orbital energies
         self.mo_energy = self.mo_coeff.T @ self.fock @ self.mo_coeff
@@ -447,31 +448,16 @@ class RHF(Wavefunction):
         # Get current gradient
         g0 = self.gradient.copy()
         # Save current position
-        mo_save = self.mo_coeff.copy()
+        self.save_last_step()
         # Get forward gradient
         self.take_step(eps * vec)
         g1 = self.gradient.copy()
         # Restore to origin
-        self.mo_coeff = mo_save.copy()
-        self.update()
+        self.restore_last_step()
         # Parallel transport back to current position
         g1 = self.transform_vector(g1, - eps * vec)
         # Get approximation to H @ sk
         return (g1 - g0) / eps
-
-    def mom_select(self, Cold, Cnew): 
-        """ Select new occupied orbital coefficients using MOM criteria 
-            Args:
-                Cold : Previous set of occupied orbital coefficients 
-                Cnew : New set of orbital coefficients from Fock diagonalisation
-            Returns:
-                Cnew reordered according to MOM criterion
-        """
-        # Compute projections onto previous occupied space 
-        p = np.einsum('pj,pq,ql->l', Cold[:,:self.nocc], self.integrals.overlap_matrix(), Cnew, optimize="optimal")
-        # Order MOs according to largest projection 
-        idx = list(reversed(np.argsort(np.abs(p))))
-        return Cnew[:,idx]
 
     def mo_cubegen(self,idx=None,fname=""): 
         """ Generate and store cube files for specified MOs

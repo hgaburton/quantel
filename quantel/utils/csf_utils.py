@@ -270,7 +270,7 @@ def csf_reorder_orbitals(integrals, exchange_matrix, cinit, pop_method='becke'):
     # Get exchange integrals in active orbital space
     print("  Computing localised orbital exchange integrals")
     vdm = np.einsum('pi,qi->ipq',cinit,cinit)
-    vJ, vK = integrals.build_multiple_JK(vdm,vdm,Kxc=False)
+    vJ, vK = integrals.build_JK(vdm,vdm,Kxc=False)
     # Transform to MO basis
     K = np.einsum('pmn,mq,nq->pq',vK,cinit,cinit)
 

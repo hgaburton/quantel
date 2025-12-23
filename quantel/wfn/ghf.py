@@ -5,6 +5,7 @@ import numpy as np
 import scipy.linalg
 import h5py
 from quantel.utils.linalg import orthogonalise, matrix_print
+from quantel.utils.scf_utils import mom_select
 from .wavefunction import Wavefunction
 import quantel
 from pyscf.tools import cubegen
@@ -97,9 +98,9 @@ class GHF(Wavefunction):
     
     @property
     def s2(self):
-        """Get the spin of the current RHF state"""
+        """Get the spin of the current GHF state"""
         raise NotImplementedError("Spin S^2 not implemented for GHF")
-        return 0 # All RHF states have spin 0
+    
 
     @property
     def gradient(self):
@@ -341,11 +342,11 @@ class GHF(Wavefunction):
         # Select occupied orbitals using MOM if specified
         if(self.mom_method =='MOM'):
             Cold = self.mo_coeff.copy()
-            self.mo_coeff = self.mom_select(Cold,Cnew)
+            self.mo_coeff = mom_select(Cold[:,:self.nocc],Cnew,self.ghf_overlap)
         elif(self.mom_method == 'IMOM'):
-            self.mo_coeff = self.mom_select(self.Cinit,Cnew)
+            self.mo_coeff = mom_select(self.Cinit[:,:self.nocc],Cnew,self.ghf_overlap)
         else:
-            self.mo_coeff = Cnew
+            self.mo_coeff = Cnew.copy()
 
         # Save current orbital energies
         self.mo_energy = self.mo_coeff.T @ self.fock @ self.mo_coeff
@@ -453,13 +454,12 @@ class GHF(Wavefunction):
         # Get current gradient
         g0 = self.gradient.copy()
         # Save current position
-        mo_save = self.mo_coeff.copy()
+        self.save_last_step()
         # Get forward gradient
         self.take_step(eps * vec)
         g1 = self.gradient.copy()
         # Restore to origin
-        self.mo_coeff = mo_save.copy()
-        self.update()
+        self.restore_last_step()
         # Parallel transport back to current position
         g1 = self.transform_vector(g1, - eps * vec)
         # Get approximation to H @ sk
@@ -520,20 +520,6 @@ class GHF(Wavefunction):
         dest   = vir_idx + occ_idx
         self.mo_coeff[:,dest] = self.mo_coeff[:,source]
         self.update() 
-
-    def mom_select(self, Cold, Cnew):
-        """ Select new occupied orbital coefficients using MOM criteria 
-            Args:
-                Cold : Previous set of occupied orbital coefficients 
-                Cnew : New set of orbital coefficients from Fock diagonalisation
-            Returns:
-                Cnew reordered according to MOM criterion
-        """
-        # Compute projections onto previous occupied space 
-        p = np.einsum('pj,pq,ql->l', Cold[:,:self.nocc],self.ghf_overlap,Cnew,optimize="optimal")
-        # Order MOs according to largest projection 
-        idx = list(reversed(np.argsort(np.abs(p))))
-        return Cnew[:,idx]
 
     def mo_cubegen(self,idx,fname=""): 
         """ Generate and store cube files for specified MOs

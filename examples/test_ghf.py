@@ -16,7 +16,6 @@ if __name__ == "__main__":
     wfn = GHF(ints,mom_method='IMOM')
     # Set initial coefficients from identity
     wfn.initialise(np.eye(wfn.nmo,wfn.nmo))
-
     # Test LBFGS
     LBFGS().run(wfn)
 
