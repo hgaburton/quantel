@@ -6,9 +6,11 @@ import scipy.special
 import h5py # type: ignore
 import quantel
 from functools import reduce
-from quantel.utils.linalg import orthogonalise
+from quantel.utils.linalg import orthogonalise, matrix_print
 from quantel.gnme.cas_noci import cas_coupling
 from .wavefunction import Wavefunction
+from quantel.ints.pyscf_integrals import PySCF_MO_Integrals, PySCF_CIspace
+
 
 class SS_CASSCF(Wavefunction):
     """
@@ -30,13 +32,10 @@ class SS_CASSCF(Wavefunction):
                 ncore: number of core electrons
                 verbose: verbosity level
         """
-
         # Initialise integrals object
         self.integrals  = integrals
         self.nalfa      = integrals.molecule().nalfa()
         self.nbeta      = integrals.molecule().nbeta()
-        # Initialise molecular integrals object
-        self.mo_ints    = quantel.MOintegrals(integrals)
         # Get number of basis functions and linearly independent orbitals
         self.nbsf       = integrals.nbsf()
         self.nmo        = integrals.nmo()
@@ -51,7 +50,8 @@ class SS_CASSCF(Wavefunction):
 
         # Get number of core electrons
         if ncore is None:
-            self.ncore = integrals.molecule().nelec() - self.cas_nalfa - self.cas_nbeta
+            ne = integrals.molecule().nalfa() + integrals.molecule().nbeta()
+            self.ncore = ne - self.cas_nalfa - self.cas_nbeta
             if(self.ncore % 2 != 0):
                 raise ValueError("Number of core electrons must be even")
             if(self.ncore < 0):
@@ -63,9 +63,14 @@ class SS_CASSCF(Wavefunction):
         self.nocc       = self.ncore + self.cas_nmo
         self.sanity_check()
 
-        # Initialise CI space
-        self.cispace    = quantel.CIspace(self.mo_ints, self.cas_nmo, self.cas_nalfa, self.cas_nbeta)
-        self.cispace.initialize('FCI')
+        # Initialise mo integrals and CI space
+        if(type(integrals) is quantel.ints.pyscf_integrals.PySCFIntegrals):
+            self.mo_ints    = PySCF_MO_Integrals(integrals)
+            self.cispace    = PySCF_CIspace(self.mo_ints, self.cas_nmo, self.cas_nalfa, self.cas_nbeta)
+        else:
+            self.mo_ints    = quantel.MOintegrals(integrals)
+            self.cispace    = quantel.CIspace(self.mo_ints, self.cas_nmo, self.cas_nalfa, self.cas_nbeta)
+            self.cispace.initialize('FCI')
 
         # Get number of determinants
         self.ndeta      = (scipy.special.comb(self.cas_nmo,self.cas_nalfa)).astype(int)
@@ -130,15 +135,16 @@ class SS_CASSCF(Wavefunction):
     @property
     def dipole(self):
         '''Compute the dipole vector'''
-        raise NotImplementedError("Dipole computation not implemented")
-        #ncore, nocc = self.ncore, self.ncore + self.cas_nmo
+        ncore, nocc = self.ncore, self.ncore + self.cas_nmo
+        # Get the dipole integrals
+        nucl_dip, ao_dip = self.integrals.dipole_matrix()
         # Transform dipole matrices to MO basis
-        #dip_mo = np.einsum('xpq,pm,qn->xmn', self.dip_mat, self.mo_coeff, self.mo_coeff)
+        dip_mo = np.einsum('xpq,pm,qn->xmn', ao_dip, self.mo_coeff, self.mo_coeff)
         # Nuclear and core contributions
-        #dip = self.dip_nuc + 2*np.einsum('ipp->i', dip_mo[:,:ncore,:ncore]) 
+        dip = nucl_dip + 2*np.einsum('ipp->i', dip_mo[:,:ncore,:ncore]) 
         # Active space contribution
-        #dip += np.einsum('ipq,pq->i', dip_mo[:,ncore:nocc,ncore:nocc], self.dm1_cas)
-        #return dip
+        dip += np.einsum('ipq,pq->i', dip_mo[:,ncore:nocc,ncore:nocc], self.dm1_cas)
+        return dip
 
     @property
     def quadrupole(self):
@@ -169,6 +175,37 @@ class SS_CASSCF(Wavefunction):
         H_OrbCI  = self.get_hessianOrbCI()[self.rot_idx,:]
         return np.block([[H_OrbOrb, H_OrbCI],
                          [H_OrbCI.T, H_CICI]])
+
+    
+    def print(self,verbose=1):
+        """ Print details about the state energy and orbital coefficients
+
+            Inputs:
+                verbose : level of verbosity
+                          0 = No output
+                          1 = Print energy components and spinao2mo
+                          2 = Print energy components, spin, and exchange matrices
+                          3 = Print energy components, spin, exchange matrices, and occupied orbital coefficients
+                          4 = Print energy components, spin, exchange matrices, and all orbital coefficients
+                          5 = Print energy components, spin, exchange matrices, generalised Fock matrix, and all orbital coefficients 
+        """
+        print("verbose = ", verbose)
+        if(verbose > 0):
+            print("\n ---------------------------------------------")
+            print(f"         Total Energy = {self.energy:14.8f} Eh")
+            print(" ---------------------------------------------")
+            print(f"        <Sz> = {self.sz:5.2f}")
+            print(f"        <S2> = {self.s2:5.2f}")
+    
+        if(verbose > 1):
+            matrix_print(self.mo_coeff[:,:self.nocc], title="Occupied Orbital Coefficients")
+        if(verbose > 2):
+            matrix_print(self.mat_ci[:,[0]], title="CI Coefficients")
+        if(verbose > 3):
+            matrix_print(self.mo_coeff[:,self.nocc:], title="Virtual Orbital Coefficients", offset=self.nocc)
+        if(verbose > 4):
+            matrix_print(self.gen_fock[:self.nocc,:].T, title="Generalised Fock Matrix (MO basis)")
+        print()
 
     def save_to_disk(self,tag):
         """Save a SS-CASSCF object to disk with prefix 'tag'"""
@@ -221,20 +258,18 @@ class SS_CASSCF(Wavefunction):
         return cas_coupling(self, them, ovlp)[0]
 
     def hamiltonian(self, them):
-        """Compute the many-body Hamiltonian coupling with another CAS wavefunction (them)"""
-        hcore = self.integrals.oei_matrix(True)
-        eri   = self.integrals.tei_array(True,False).transpose(0,2,1,3).reshape(self.nbsf**2,self.nbsf**2)
+        """Compute the many-body Hamiltonian coupling with another CSF wavefunction (them)"""
+        n2 = self.nbsf * self.nbsf 
+        hcore = self.integrals.oei_matrix()
+        eri   = self.integrals.tei_array().reshape(n2,n2)
         ovlp  = self.integrals.overlap_matrix()
         enuc  = self.integrals.scalar_potential()
         return cas_coupling(self, them, ovlp, hcore, eri, enuc)
 
     def tdm(self, them):
-        """Compute the transition dipole moment with other CAS wave function (them)"""
+        """Compute the transition dipole moment with other CSF wave function (them)"""
         raise NotImplementedError("Transition dipole moment computation not implemented")
-        #tdm = np.zeros(3)
-        #for i in range(3):
-        #    s, tdm[i] = cas_coupling(self, them, self.ovlp, self.dip_mat[i], None, self.dip_nuc[i])
-        #return s, tdm
+
 
 
     def initialise(self, mo_guess, ci_guess, integrals=True):
@@ -305,7 +340,10 @@ class SS_CASSCF(Wavefunction):
         self.ham = self.cispace.build_Hmat()
         # Sigma vector in active space
         civec    = self.mat_ci[:,0].copy()
-        self.sigma = self.cispace.H_on_vec(civec)
+        self.sigma = self.ham @ civec
+
+        # Generalised Fock matrix
+        self.gen_fock = self.get_gen_fock(self.dm1_cas, self.dm2_cas, False)
         return 
 
     def restore_last_step(self):
@@ -350,6 +388,10 @@ class SS_CASSCF(Wavefunction):
         S       = np.zeros((self.ndet,self.ndet))
         S[1:,0] = step
         self.mat_ci = np.dot(self.mat_ci, scipy.linalg.expm(S - S.T))
+
+    def transform_vector(self,vec,step,X):
+        # No parallel transport as not yet implemented.
+        return vec
 
     def get_casrdm_12(self):
         """ Compute the 1- and 2-electron reduced density matrices in the active space.
@@ -449,8 +491,8 @@ class SS_CASSCF(Wavefunction):
 
     def get_orbital_gradient(self):
         """ Build the orbital rotation part of the gradient"""
-        g_orb = self.get_gen_fock(self.dm1_cas, self.dm2_cas, False)
-        return (g_orb - g_orb.T)[self.rot_idx]
+        #g_orb = self.get_gen_fock(self.dm1_cas, self.dm2_cas, False)
+        return (self.gen_fock - self.gen_fock.T)[self.rot_idx]
 
     def get_ci_gradient(self):
         """ Build the CI component of the gradient"""
@@ -585,24 +627,51 @@ class SS_CASSCF(Wavefunction):
         else: 
             return np.zeros((0,0))
 
+    
+    def koopmans(self):
+        """
+        Solve IP using Koopmans theory
+        """
+        from scipy.linalg import eigh
+        # Transform gen Fock matrix to MO basis
+        gen_fock = self.gen_fock[:self.nocc,:self.nocc]
+        # Compute the density matrix in occupied space
+        gen_dens = np.zeros((self.nocc,self.nocc))
+        gen_dens[:self.ncore,:self.ncore] = np.eye(self.ncore)*2
+        gen_dens[self.ncore:,self.ncore:] = self.dm1_cas
+        # Solve the generalized eigenvalue problem
+        e, v = eigh(-gen_fock, gen_dens)
+        # Normalize ionization orbitals wrt standard metric
+        for i in range(self.nocc):
+            v[:,i] /= np.linalg.norm(v[:,i])
+        # Convert ionization orbitals to MO basis
+        cip = self.mo_coeff[:,:self.nocc].dot(v)
+        # Compute occupation of ionization orbitals
+        occip = np.diag(np.einsum('ip,ij,jq->pq',v,gen_dens,v))   
+        return e, cip, occip
+
+    def get_civector(self):
+        from pyscf.fci.cistring import gen_occslst
+        
+        occlst_a = gen_occslst(range(self.ncore,self.nocc),self.cas_nalfa)
+        occlst_b = gen_occslst(range(self.ncore,self.nocc),self.cas_nbeta) 
+        na = len(occlst_a)
+        nb = len(occlst_b)
+        core_list = list(range(0,self.ncore))
+
+        for ia, occa in enumerate(occlst_a):
+            for ib, occb in enumerate(occlst_b):
+                yield self.mat_ci[ia*nb+ib,0], core_list+list(occa), core_list+list(occb)
+        
+
     def canonicalize(self):
         """Canonicalise the natural orbitals and CI coefficients"""
-        # Save the old energy
-        eold = self.energy
-        # Compute the natural orbitals
-        occ, u = np.linalg.eigh(-self.dm1_cas)
-        # Update the orbitals and integrals
-        self.mo_coeff[:,self.ncore:self.nocc] = self.mo_coeff[:,self.ncore:self.nocc] @ u
-        self.update_integrals()
-        
-        # For now, we update the CI coefficients by just re-diagonalising the Hamiltonian
-        # TODO: Perform the transformation directly from the orbital rotation to avoid any 
-        #       issues with degeneracies
-        enew, self.mat_ci = np.linalg.eigh(self.ham)
-        n = np.argwhere(abs(enew - eold)<1e-6).flatten()[0]
-        self.mat_ci[:,[0,n]] = self.mat_ci[:,[n,0]]
-        self.update_integrals()
+        # TODO: Implement canonicalisation of SS-CASSCF state
         return
+    
+    def get_preconditioner(self):
+        # TODO: Implement a preconditioner for approximate inverse Hessian
+        return np.ones(self.dim)
 
     def uniq_var_indices(self, frozen):
         """ Create a mask indicating the non-redundant orbital rotations.

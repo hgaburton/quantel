@@ -27,6 +27,17 @@ def getlist(lines, target, typ, required=False, default=None):
         return default
     return []
 
+def getstrlist(lines, target, required=False, default=None):
+    """Get the value of a keyword with a list of arguments"""
+    for line in lines:
+        if re.match(target, line) is not None:
+            return [str(x) for x in re.split("\"", line.strip())[1::2]]
+    if required:
+        errstr = "Keyword '"+target+"' was not found"
+        raise ValueError(errstr)
+    elif default is not None:
+        return default
+    return []
 
 def getbool(lines, target, required=False, default=None):
     """Get the value for a boolean keyword"""

@@ -3,6 +3,7 @@
 import sys, re, numpy, glob
 from pyscf import gto
 from pyscf.tools import cubegen
+import quantel
 
 def analyse(ints, config):
     """Analyse either all the states or a given state"""
@@ -18,9 +19,11 @@ def analyse(ints, config):
     elif config["wavefunction"]["method"] == "casscf":
         from quantel.wfn.ss_casscf import SS_CASSCF as WFN
     elif config["wavefunction"]["method"] == "csf":
-        from quantel.wfn.csf import GenealogicalCSF as WFN
+        from quantel.wfn.csf import CSF as WFN
     elif config["wavefunction"]["method"] == "rhf":
         from quantel.wfn.rhf import RHF as WFN
+    elif config["wavefunction"]["method"] == "roks":
+        from quantel.wfn.roks import ROKS as WFN
     else:
         raise ValueError("Wavefunction method not recognised")
 
@@ -40,29 +43,42 @@ def analyse(ints, config):
         except: pass
         myfun = WFN(ints, **wfnconfig)
         myfun.read_from_disk(fname)
-
         # Store dipole and quadrupole
-        #dip  = myfun.dipole
+        dip  = myfun.dipole
         #quad = myfun.quadrupole
 
         # Plot orbitals
         myfun.canonicalize()
-        ints.molden_orbs(myfun.mo_coeff,myfun.mo_occ,myfun.mo_energy)
-        #orbrange=config["jobcontrol"]["analyse"]["orbital_plots"]
-        #if(len(orbrange)>0):
-        #    for i in range(orbrange[0]-1, orbrange[1]):
-        #        cubegen.orbital(mol, fname+'.mo.{:d}.cube'.format(i+1), myfun.mo_coeff[:,i])
+        eip, cip, occip  = myfun.koopmans()
+        
+        if(config["jobcontrol"]["integrals"]=='pyscf'):
+            orbrange=config["jobcontrol"]["analyse"]["orbital_plots"]
+            dysonorbs=min(config["jobcontrol"]["analyse"]["dyson_plots"],len(eip))
+
+            if(len(orbrange)>0):
+                for i in range(myfun.nocc+orbrange[0], myfun.nocc+orbrange[1]):
+                    cubegen.orbital(ints.mol, fname+'.mo.{:d}.cube'.format(i+1), myfun.mo_coeff[:,i])
+
+            if(type(myfun) is quantel.wfn.csf.CSF):
+                for i in range(myfun.nshell+1):
+                    cubegen.density(ints.mol, fname+'.shell.{:d}.cube'.format(i), myfun.dk[i])
+                open_dens = numpy.einsum('ipq->pq', myfun.dk[1:])
+                cubegen.density(ints.mol, fname+'.open.cube', open_dens)
+
+            for i in range(dysonorbs):
+                cubegen.orbital(ints.mol, fname+'.dyson.{:d}.cube'.format(i+1), cip[:,i])
+        else:
+            ints.molden_orbs(myfun.mo_coeff,myfun.mo_occ,myfun.mo_energy)
 
         with open(fname+".analyse",'w+') as outF:
             outF.write("  Energy = {: 16.10f}\n".format(myfun.energy))
             outF.write("   <S^2> = {: 16.10f}\n".format(myfun.s2))
-            #outF.write("   Index = {: 5d}\n".format(myfun.hess_index[0]))
 
-            #outF.write("\n  ----------------------------------------\n")
-            #outF.write("  Dipole moment:\n")
-            #outF.write("  ----------------------------------------\n")
-            #for (ix, x) in [(0,'x'),(1,'y'),(2,'z')]:
-            #    outF.write("     {:5s}  {: 10.6f}\n".format(x, dip[ix]))
+            outF.write("\n  ----------------------------------------\n")
+            outF.write("  Dipole moment:\n")
+            outF.write("  ----------------------------------------\n")
+            for (ix, x) in [(0,'x'),(1,'y'),(2,'z')]:
+                outF.write("     {:5s}  {: 10.6f}\n".format(x, dip[ix]))
 
             #outF.write("\n  ----------------------------------------\n")
             #outF.write("  Quadrupole moment:\n")
@@ -87,6 +103,11 @@ def analyse(ints, config):
                 outF.write(" {:5d}  {: 10.6f}  {: 10.6f}\n".format(i+1, myfun.mo_occ[i], myfun.mo_energy[i]))
             outF.write("  ----------------------------------------\n")
 
+            outF.write("\n  ----------------------------------------\n")
+            outF.write("  Extended Koopman's theorem IP (eV):\n")
+            outF.write("  ----------------------------------------\n")
+            for i in range(myfun.nocc):
+                outF.write(" {:5d}  {: 10.4f}  {: 10.6f}\n".format(i+1, 27.2114*eip[i], occip[i]))
             #outF.write("\n  ----------------------------------------\n")
             #outF.write("  CI vector:\n")
             #outF.write("  ----------------------------------------\n")

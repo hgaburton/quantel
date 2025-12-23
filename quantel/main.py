@@ -12,14 +12,14 @@ import os
 os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
-#os.environ["OMP_NUM_THREADS"] = "1"
 import argparse, numpy, time
 from datetime import datetime, timedelta
 from quantel import Molecule, LibintInterface
 from quantel.io.config import Config
-from quantel.drivers import random_search, from_file, from_orca, ci_guess, standard_guess, ev_linesearch, noci, overlap, analyse
+from quantel.drivers import random_search, from_file, ci_guess, standard_guess, ev_linesearch, analyse, noci
 from cProfile import Profile
 from pstats import SortKey, Stats
+from quantel.ints.pyscf_integrals import PySCFMolecule, PySCFIntegrals
 
 def write_splash():
     print("====================================================")
@@ -55,8 +55,32 @@ def main():
     config.print()
 
     # Setup  molecule and integrals
-    mol = Molecule(config["molecule"]["atom"], config["molecule"]["unit"])
-    ints = LibintInterface(config["molecule"]["basis"],mol)
+    if(config["jobcontrol"]["integrals"]=='pyscf'):
+        from pyscf import lib
+        print(" *** Using PySCF for integral evaluation ***")
+        print("       xc_functional = ",config["jobcontrol"]["xc_functional"])
+        print("    Exchange scaling = ",config["jobcontrol"]["kscale"])
+        print("   Number of threads = ",lib.num_threads())
+        print()
+        with open(config["molecule"]["atom"]) as f:
+            f.readline()
+            tmp = f.readline().split()
+            charge = int(tmp[0])
+            spin   = int(tmp[1])-1
+        mol  = PySCFMolecule(config["molecule"]["atom"],
+                            config["molecule"]["basis"],
+                            config["molecule"]["unit"],
+                            charge=charge,spin=spin)
+        ints = PySCFIntegrals(mol,xc=config["jobcontrol"]["xc_functional"],
+                                  kscale=config["jobcontrol"]["kscale"])
+    elif(config["jobcontrol"]["integrals"]=='libint'):
+        print(" *** Using Libint for integral evaluation ***\n")
+        # Raise error if xc_functional is not None
+        if(config["jobcontrol"]["xc_functional"] is not None):
+            raise ValueError("Libint does not support the use of XC functionals")
+        mol = Molecule(config["molecule"]["atom"], config["molecule"]["unit"])
+        ints = LibintInterface(config["molecule"]["basis"],mol)
+        
     # Generate wavefunctions 
     wfnlist = None
     if config["jobcontrol"]["guess"] == "fromfile":
@@ -81,9 +105,16 @@ def main():
     if config["jobcontrol"]["analyse"]:
         analyse(ints, config)
     if config["jobcontrol"]["noci"]:
+        if(config["jobcontrol"]["xc_functional"] is not None):
+            raise ValueError("NOCI is not currently compatible with DFT wavefunctions")
         noci(wfnlist, **config["jobcontrol"]["noci_job"])
     elif config["jobcontrol"]["ovlp_mat"]:
         overlap(wfnlist)
+
+    if config["jobcontrol"]["fcidump"]:
+        for i, wfn in enumerate(wfnlist):
+            tag = "{:04d}".format(i+1)
+            wfn.write_fcidump(tag)
 
 
     # Clean up

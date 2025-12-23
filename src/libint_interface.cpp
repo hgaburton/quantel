@@ -1,8 +1,10 @@
 #include <omp.h>
 #include <fstream>
 #include <libint2/lcao/molden.h>
+#include <Eigen/Dense>
 #include "libint_interface.h"
 #include "linalg.h"
+#include "omp_device.h"
 
 using namespace libint2;
 using namespace Eigen;
@@ -14,113 +16,24 @@ void LibintInterface::initialize()
 
     // Compute nuclear potential
     compute_nuclear_potential();
-
     // Compute integrals
     compute_overlap();
     compute_one_electron_matrix();
-    compute_two_electron_integrals();
-
     // Compute the orthogonalisation matrix
     compute_orthogonalization_matrix();
-
     // Compute the dipole integrals
-    compute_dipole_integrals();
-}
+    compute_dipole_integrals();    
+    // Compute eri integrals if in-core
+    compute_two_electron_integrals();
 
-double LibintInterface::overlap(size_t p, size_t q) 
-{
-    return m_S[oei_index(p,q)];
-}
-
-double LibintInterface::oei(size_t p, size_t q, bool alpha) 
-{
-    return alpha ? m_oei_a[oei_index(p,q)] : m_oei_b[oei_index(p,q)];
-}
-
-double LibintInterface::tei(size_t p, size_t q, size_t r, size_t s) 
-{
-    return m_tei[tei_index(p,q,r,s)];
-}
-
-
-void LibintInterface::set_scalar_potential(double value) 
-{
-    m_V = value;
-}
-
-void LibintInterface::set_ovlp(size_t p, size_t q, double value) 
-{ 
-    m_S[oei_index(p,q)] = value;
-}
-
-void LibintInterface::set_oei(size_t p, size_t q, double value, bool alpha)
-{
-    std::vector<double> &oei = alpha ? m_oei_a : m_oei_b;
-    oei[oei_index(p,q)] = value;
-}
-
-void LibintInterface::set_tei(size_t p, size_t q, size_t r, size_t s, double value)
-{
-    m_tei[tei_index(p,q,r,s)] = value;
-}
-
-
-void LibintInterface::compute_two_electron_integrals()
-{
-    // Setup II dimensions
-    auto shell2bf = m_basis.shell2bf();
-    size_t strides[3];
-
-    // Resize and zero the two-electron integral arrays
-    m_tei.resize(m_nbsf*m_nbsf*m_nbsf*m_nbsf);
-    std::fill(m_tei.begin(), m_tei.end(), 0.0);
-
-    // Compute integrals
-    Engine coul_engine(Operator::coulomb, m_basis.max_nprim(), m_basis.max_l());
-    const auto &buf_coul = coul_engine.results();
-    for(size_t s1=0; s1 < m_basis.size(); ++s1)
-    for(size_t s2=0; s2 < m_basis.size(); ++s2)
-    for(size_t s3=0; s3 < m_basis.size(); ++s3)
-    for(size_t s4=0; s4 < m_basis.size(); ++s4)
-    {
-        // Start of each shell
-        size_t bf1 = shell2bf[s1];
-        size_t bf2 = shell2bf[s2];
-        size_t bf3 = shell2bf[s3];
-        size_t bf4 = shell2bf[s4];
-        // Size of each shell
-        size_t n1 = m_basis[s1].size();
-        size_t n2 = m_basis[s2].size();
-        size_t n3 = m_basis[s3].size();
-        size_t n4 = m_basis[s4].size();
-        // Set strides
-        strides[0] = n2 * n3 * n4;
-        strides[1] = n3 * n4;
-        strides[2] = n4;
-
-        // Compute contribution in chemists notation
-        coul_engine.compute(m_basis[s1], m_basis[s2], m_basis[s3], m_basis[s4]);
-        const auto *ints = buf_coul[0];
-        if(ints == nullptr)
-            continue;
-
-        // Save elements to array
-        for(size_t f1=0; f1 < n1; ++f1)
-        for(size_t f2=0; f2 < n2; ++f2)
-        for(size_t f3=0; f3 < n3; ++f3)
-        for(size_t f4=0; f4 < n4; ++f4)
-        {
-            // Save value for aabb block in physicists notation
-            double value = ints[f1*strides[0] + f2*strides[1] + f3*strides[2] + f4];
-            set_tei(bf1+f1,bf2+f2,bf3+f3,bf4+f4,value);
-        }
-    }
+    // Setup shell pair list
+    std::tie(m_splist, m_spdata) = compute_shellpairs(m_basis);
 }
 
 void LibintInterface::compute_nuclear_potential() 
 {
     // Initialise value
-    double vnuc = 0.0;
+    m_V = 0.0;
 
     // Loop over atom pairs
     for(size_t i=0;   i < m_mol.atoms.size(); i++)
@@ -131,13 +44,9 @@ void LibintInterface::compute_nuclear_potential()
         auto zij = m_mol.atoms[i].z - m_mol.atoms[j].z;
         auto r2 = xij * xij + yij * yij + zij * zij;
         auto r = sqrt(r2);
-        vnuc += m_mol.atoms[i].atomic_number * m_mol.atoms[j].atomic_number / r;
+        m_V += m_mol.atoms[i].atomic_number * m_mol.atoms[j].atomic_number / r;
     }
-
-    // Set the value
-    set_scalar_potential(vnuc);
 }
-
 
 void LibintInterface::compute_overlap()
 {
@@ -169,7 +78,7 @@ void LibintInterface::compute_overlap()
         for(size_t f2=0; f2 < n2; ++f2)
         {   
             // Save the value
-            set_ovlp(bf1+f1, bf2+f2, ints[f1*n2+f2]);
+            m_S[(bf1+f1)*m_nbsf+bf2+f2] = ints[f1*n2+f2];
         }
     }
 }
@@ -228,11 +137,64 @@ void LibintInterface::compute_one_electron_matrix()
                 value += pe_ints[f1*n2+f2];
        
             // Set alfa and beta term
-            set_oei(bf1+f1, bf2+f2, value, true);
-            set_oei(bf1+f1, bf2+f2, value, false);
+            m_oei_a[(bf1+f1)*m_nbsf+bf2+f2] = value;
+            m_oei_b[(bf1+f1)*m_nbsf+bf2+f2] = value;
         }
     }
 } 
+
+void LibintInterface::compute_two_electron_integrals()
+{
+    // Setup II dimensions
+    auto shell2bf = m_basis.shell2bf();
+    size_t strides[3];
+
+    // Resize and zero the two-electron integral arrays
+    m_tei.resize(m_nbsf*m_nbsf*m_nbsf*m_nbsf);
+    std::fill(m_tei.begin(), m_tei.end(), 0.0);
+
+    // Compute integrals
+    Engine coul_engine(Operator::coulomb, m_basis.max_nprim(), m_basis.max_l());
+    const auto &buf_coul = coul_engine.results();
+    for(size_t s1=0; s1 < m_basis.size(); ++s1)
+    for(size_t s2=0; s2 < m_basis.size(); ++s2)
+    for(size_t s3=0; s3 < m_basis.size(); ++s3)
+    for(size_t s4=0; s4 < m_basis.size(); ++s4)
+    {
+        // Start of each shell
+        size_t bf1 = shell2bf[s1];
+        size_t bf2 = shell2bf[s2];
+        size_t bf3 = shell2bf[s3];
+        size_t bf4 = shell2bf[s4];
+        // Size of each shell
+        size_t n1 = m_basis[s1].size();
+        size_t n2 = m_basis[s2].size();
+        size_t n3 = m_basis[s3].size();
+        size_t n4 = m_basis[s4].size();
+        // Set strides
+        strides[0] = n2 * n3 * n4;
+        strides[1] = n3 * n4;
+        strides[2] = n4;
+
+        // Compute contribution in chemists notation
+        coul_engine.compute(m_basis[s1], m_basis[s2], m_basis[s3], m_basis[s4]);
+        const auto *ints = buf_coul[0];
+        if(ints == nullptr)
+            continue;
+
+        // Save elements to array
+        for(size_t f1=0; f1 < n1; ++f1)
+        for(size_t f2=0; f2 < n2; ++f2)
+        for(size_t f3=0; f3 < n3; ++f3)
+        for(size_t f4=0; f4 < n4; ++f4)
+        {
+            // Save value for aabb block in physicists notation
+            double value = ints[f1*strides[0] + f2*strides[1] + f3*strides[2] + f4];
+            m_tei[tei_index(bf1+f1,bf2+f2,bf3+f3,bf4+f4)] = value;
+        }
+    }
+}
+
 
 void LibintInterface::compute_dipole_integrals()
 {
@@ -301,6 +263,25 @@ void LibintInterface::build_fock(std::vector<double> &dens, std::vector<double> 
         fock[pq] += m_oei_a[pq];
 }
 
+void LibintInterface::oei_ao_to_mo(
+    std::vector<double> &C1, std::vector<double> &C2, 
+    std::vector<double> &oei_mo, bool alpha)
+{
+    // Check dimensions
+    assert(C1.size() % m_nbsf == 0);
+    assert(C2.size() % m_nbsf == 0);
+
+    // Get number of columns of transformation matrices
+    size_t d1 = C1.size() / m_nbsf;
+    size_t d2 = C2.size() / m_nbsf;
+
+    // Get alfa or beta one-electron integrals
+    std::vector<double> &oei = alpha ? m_oei_a : m_oei_b;
+
+    // Perform transformation
+    oei_transform(C1,C2,oei,oei_mo,d1,d2,m_nbsf);
+}
+
 void LibintInterface::build_JK(std::vector<double> &dens, std::vector<double> &JK)
 {
     // Get size of n2 for indexing later
@@ -313,8 +294,8 @@ void LibintInterface::build_JK(std::vector<double> &dens, std::vector<double> &J
     std::fill(JK.begin(),JK.end(),0.0);
 
     // Setup thread-safe memory
-    int nthread = omp_get_max_threads();
-    std::vector<double> Jt(nthread*n2), Kt(nthread*n2);
+    omp_device dev;
+    std::vector<double> Jt(dev.nthreads*n2), Kt(dev.nthreads*n2);
     std::fill(Jt.begin(),Jt.end(),0.0);
     std::fill(Kt.begin(),Kt.end(),0.0);
 
@@ -323,7 +304,7 @@ void LibintInterface::build_JK(std::vector<double> &dens, std::vector<double> &J
     for(size_t p=0; p<m_nbsf; p++)
     for(size_t r=0; r<m_nbsf; r++)
     {
-        int ithread = omp_get_thread_num();
+        int ithread = dev.thread_id();
         double *J = &Jt[ithread*n2];
         double *K = &Kt[ithread*n2];
 
@@ -374,66 +355,9 @@ void LibintInterface::build_JK(std::vector<double> &dens, std::vector<double> &J
     }
 
     // Collect values for each thread
-    for(size_t it=0; it < nthread; it++)
+    for(size_t it=0; it < dev.nthreads; it++)
     for(size_t pq=0; pq < n2; pq++)
         JK[pq] += 2.0 * Jt[it*n2+pq] - Kt[it*n2+pq];
-}
-
-
-void LibintInterface::build_J(std::vector<double> &dens, std::vector<double> &J)
-{
-    // Get size of n2 for indexing later
-    size_t n2 = m_nbsf * m_nbsf;
-    // Check dimensions of density matrix
-    assert(dens.size() == n2);
-
-    // Resize JK matrix
-    J.resize(n2);
-    std::fill(J.begin(),J.end(),0.0);
-
-    // Setup thread-safe memory
-    int nthread = omp_get_max_threads();
-    std::vector<double> Jsafe(nthread*n2);
-    std::fill(Jsafe.begin(),Jsafe.end(),0.0);
-
-    // Loop over basis functions
-    #pragma omp parallel for collapse(2) schedule(guided)
-    for(size_t p=0; p<m_nbsf; p++)
-    for(size_t r=0; r<m_nbsf; r++)
-    {
-        int ithread = omp_get_thread_num();
-        double *Jt = &Jsafe[ithread*n2];
-
-        for(size_t q=p; q<m_nbsf; q++)
-        for(size_t s=r; s<m_nbsf; s++)
-        {
-            size_t pq = p*m_nbsf+q;
-            size_t rs = r*m_nbsf+s;
-            if(pq > rs) continue;
-
-            // Skip if below threshold
-            double Vpqrs = m_tei[pq*n2+rs];
-            if(std::abs(Vpqrs) < thresh) continue;
-
-            Jt[p*m_nbsf+q] += dens[r*m_nbsf+s] * Vpqrs;
-            if(p!=q) Jt[q*m_nbsf+p] += dens[r*m_nbsf+s] * Vpqrs;
-            if(r!=s) Jt[p*m_nbsf+q] += dens[s*m_nbsf+r] * Vpqrs;
-            if(r!=s and p!=q) Jt[q*m_nbsf+p] += dens[s*m_nbsf+r] * Vpqrs;
-
-            if(pq != rs) 
-            {
-                Jt[r*m_nbsf+s] += dens[p*m_nbsf+q] * Vpqrs;
-                if(r!=s) Jt[s*m_nbsf+r] += dens[p*m_nbsf+q] * Vpqrs;
-                if(p!=q) Jt[r*m_nbsf+s] += dens[q*m_nbsf+p] * Vpqrs;
-                if(r!=s and p!=q) Jt[s*m_nbsf+r] += dens[q*m_nbsf+p] * Vpqrs;
-            }
-        }
-    }
-
-    // Collect values for each thread
-    for(size_t it=0; it < nthread; it++)
-    for(size_t pq=0; pq < n2; pq++)
-        J[pq] += Jsafe[it*n2+pq];
 }
 
 void LibintInterface::build_multiple_JK(
@@ -457,8 +381,8 @@ void LibintInterface::build_multiple_JK(
     std::fill(vK.begin(),vK.end(),0.0);
 
     // Setup thread-safe memory
-    int nthread = omp_get_max_threads();
-    std::vector<double> Jsafe(nthread*n2*nj), Ksafe(nthread*n2*nk);
+    omp_device dev;
+    std::vector<double> Jsafe(dev.nthreads*n2*nj), Ksafe(dev.nthreads*n2*nk);
     std::fill(Jsafe.begin(),Jsafe.end(),0.0);
     std::fill(Ksafe.begin(),Ksafe.end(),0.0);
 
@@ -467,7 +391,7 @@ void LibintInterface::build_multiple_JK(
     for(size_t p=0; p<m_nbsf; p++)
     for(size_t r=0; r<m_nbsf; r++)
     {
-        int ithread = omp_get_thread_num();
+        int ithread = dev.thread_id();
         double *Jt = &Jsafe[ithread*n2*nj];
         double *Kt = &Ksafe[ithread*n2*nk];
 
@@ -523,7 +447,7 @@ void LibintInterface::build_multiple_JK(
     }
 
     // Collect values for each thread
-    for(size_t it=0; it < nthread; it++)
+    for(size_t it=0; it < dev.nthreads; it++)
     {
         for(size_t pqk=0; pqk < n2 * nj; pqk++)
             vJ[pqk] += Jsafe[it*n2*nj+pqk];
@@ -672,34 +596,71 @@ void LibintInterface::tei_ao_to_mo(
     }
 }
 
-void LibintInterface::oei_ao_to_mo(
-    std::vector<double> &C1, std::vector<double> &C2, 
-    std::vector<double> &oei_mo, bool alpha)
+MOintegrals LibintInterface::mo_integrals(
+    std::vector<double> &C, size_t ncore, size_t nactive)
 {
-    // Check dimensions
-    assert(C1.size() % m_nbsf == 0);
-    assert(C2.size() % m_nbsf == 0);
+    // Handle default values
+    if(nactive == 0) nactive = m_nmo - ncore;
+    // Raise error if no orbitals are given
+    if(C.size() == 0)
+        throw std::runtime_error("LibintInterface::mo_integrals: Cannot build MO integrals with no active orbitals");
+    // Check dimensions of orbital coefficients
+    if(C.size() != m_nbsf * m_nmo)
+        throw std::runtime_error("LibintInterface::mo_integrals: Orbital coefficients have wrong dimensions");
+    // Check we have a valid number of orbitals
+    if(ncore + nactive > m_nmo)
+        throw std::runtime_error("LibintInterface::mo_integrals: Invalid number of orbitals");
+    
+    // Access active orbital coefficients
+    std::vector<double> Cact(m_nbsf*nactive);
+    std::fill(Cact.begin(),Cact.end(),0.0);
+    #pragma omp parallel for collapse(2)
+    for(size_t mu=0; mu<m_nbsf; mu++)
+    for(size_t p=0; p<nactive; p++)
+        Cact[mu*nactive+p] = C[mu*m_nmo+(p+ncore)];
+    
+    // Compute core density
+    std::vector<double> Pcore(m_nbsf*m_nbsf);
+    std::fill(Pcore.begin(),Pcore.end(),0.0);
+    #pragma omp parallel for collapse(2)
+    for(size_t p=0; p<m_nbsf; p++)
+    for(size_t q=0; q<m_nbsf; q++)
+    {
+        for(size_t i=0; i<ncore; i++)
+            Pcore[p*m_nbsf+q] += C[p*m_nmo+i] * C[q*m_nmo+i];
+    }
 
-    // Get number of columns of transformation matrices
-    size_t d1 = C1.size() / m_nbsf;
-    size_t d2 = C2.size() / m_nbsf;
+    // Compute core potential
+    std::vector<double> Veff(nactive*nactive);
+    double Vmo = scalar_potential();
+    if(ncore > 0)
+    {
+        // Compute inactive JK matrix (2J-K) in AO basis
+        std::vector<double> JK(m_nbsf*m_nbsf,0.0);
+        build_JK(Pcore,JK);
 
-    // Get alfa or beta one-electron integrals
-    std::vector<double> &oei = alpha ? m_oei_a : m_oei_b;
+        // Compute scalar core energy
+        double *Hao = oei_matrix(true);
+        #pragma omp parallel for reduction(+:Vmo)
+        for(size_t pq=0; pq<m_nbsf*m_nbsf; pq++)
+            Vmo += 2 * (Hao[pq] + 0.5 * JK[pq]) * Pcore[pq];
 
-    // Perform transformation
-    oei_transform(C1,C2,oei,oei_mo,d1,d2,m_nbsf);
-}
+        // Transform to active orbital basis to give core one-electron potential
+        oei_transform(Cact,Cact,JK,Veff,nactive,nactive,m_nbsf);
+    }
 
-void LibintInterface::molden_orbs(
-    std::vector<double> &C, std::vector<double> &occ, std::vector<double> &evals)
-{
-    // Convert arrays to Eigen format
-    Map<Matrix<double,Dynamic,Dynamic,RowMajor> > coeff(C.data(),m_nbsf,m_nmo);
-    Map<VectorXd> mo_occ(occ.data(),m_nmo);
-    Map<VectorXd> mo_energy(evals.data(),m_nmo);
-    // Export orbitals
-    molden::Export xport(m_mol.atoms, m_basis, coeff, mo_occ, mo_energy);
-    std::ofstream molden_file("hf++.molden");
-    xport.write(molden_file);
+    // Compute 1e integrals in active space
+    std::vector<double> h1e_mo(nactive*nactive);
+    oei_ao_to_mo(Cact,Cact,h1e_mo,true);
+    // Add core potential
+    if(ncore > 0)
+        for(size_t pq=0; pq<nactive*nactive; pq++)
+            h1e_mo[pq] += Veff[pq];
+
+    // Compute 2e integrals in active space
+    std::vector<double> eri_mo;
+    tei_ao_to_mo(Cact,Cact,Cact,Cact,eri_mo,true,false);
+
+    // Return MO integrals
+    return MOintegrals(Vmo,h1e_mo,eri_mo,nactive);
 }

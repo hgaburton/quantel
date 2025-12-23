@@ -62,6 +62,11 @@ public:
     /// @param Hmat
     void build_Hmat(std::vector<double> &Hmat);
 
+
+    /// @brief Build the diagonal of the Hamiltonian matrix
+    /// @param Hdiag
+    void build_Hd(std::vector<double> &Hdiag);
+
     /// @brief Compute 1RDM
     /// @param bra CI vector for bra
     /// @param ket CI vector for ket
@@ -83,11 +88,36 @@ public:
         const std::vector<double> &bra, const std::vector<double> &ket, 
         std::vector<double> &rdm2, bool alpha1, bool alpha2);
 
-    /// &brief Compute the variance of the Hamiltonian
-    /// @param ci_vec Input CI vector
-    /// @param E Total energy
-    /// @param var Variance
-    void get_variance(const std::vector<double> ci_vec, double &E, double &var);
+    /// @brief Get the index of a determinant
+    /// @param det Determinant to get the index of
+    /// @return Index of the determinant
+    int get_det_index(const Determinant &det) const
+    {
+        auto it = m_dets.find(det);
+        if(it == m_dets.end())
+            throw std::runtime_error("CIspace::get_index: Determinant not found");
+        return it->second;
+    }
+
+    /// @brief Get a list of tupes with determinants and their index
+    /// @return List of determinants
+    std::vector<std::string> get_det_list() const
+    {
+        // Get list of tuples so we can sort by index
+        std::vector<std::tuple<int,std::string> > dets;
+        for(auto &[det, ind] : m_dets)
+            dets.push_back(std::make_tuple(ind,det_str(det)));
+        // Sort the list by index
+        std::sort(dets.begin(), dets.end(), [](const auto &a, const auto &b) {
+            return std::get<0>(a) < std::get<0>(b);
+        });
+
+        // Convert to a list of strings without the index
+        std::vector<std::string> dets_str;
+        for(auto &[ind, det] : dets)
+            dets_str.push_back(det);
+        return dets_str;
+    }
 
 private:
     /// MO integrals
@@ -104,6 +134,9 @@ private:
     size_t m_nbeta = 0;
     /// Number of molecular orbitals
     size_t m_nmo = 0;
+
+    /// Diagonal of the Hamiltonian matrix
+    std::vector<double> m_Hd;
 
     /// 1-electron memory map
     mem_map_1 m_map_a;
@@ -125,13 +158,6 @@ private:
     /// Determinant list
     std::map<Determinant,int> m_dets;
 
-    /// Compute scalar part of sigma vector
-    void H0_on_vec(const std::vector<double> &ci_vec, std::vector<double> &sigma);
-    /// Compute the one-electron part of the sigma vector
-    void H1_on_vec(const std::vector<double> &ci_vec, std::vector<double> &sigma, bool alpha);
-    /// Compute the two-electron part of the sigma vector
-    void H2_on_vec(const std::vector<double> &ci_vec, std::vector<double> &sigma, bool alpha1, bool alpha2);
-
     /// Build FCI determinants
     void build_fci_determinants();
     /// Build CIS determinants
@@ -139,13 +165,14 @@ private:
     /// Build custom determinants
     void build_custom_determinants(std::vector<std::string> detlist);
     /// Build memory maps
-    void build_memory_map1(bool alpha);
-    void build_memory_map2(bool alpha1, bool alpha2);
+    void build_memory_map1();
+    void build_memory_map2();
 
     /// Build the Hamiltonian matrix
     void build_H0(std::vector<double> &Hmat);
     void build_H1(std::vector<double> &Hmat, bool alpha);
     void build_H2(std::vector<double> &Hmat, bool alpha1, bool alpha2);
+
 };
 
 #endif // CI_SPACE_H

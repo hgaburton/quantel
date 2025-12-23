@@ -51,24 +51,25 @@ set_property(DIRECTORY . APPEND PROPERTY COMPILE_DEFINITIONS
 
 # Find third-party packages
 #list(APPEND CMAKE_PREFIX_PATH "lib/")
-find_package(Eigen3)
+find_package(Eigen3 REQUIRED)
+include_directories(${EIGEN3_INCLUDE_DIR})
 find_package(Boost)
-include_directories(${EIGEN3_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
+include_directories(${Boost_INCLUDE_DIRS})
 
 # Generate Python module
 find_package(pybind11 CONFIG REQUIRED)
 pybind11_add_module(_quantel ${SOURCES} "${SOURCE_DIR}/bindings.cpp"
+    "${SOURCE_DIR}/shell_pair.cpp"
     "${SOURCE_DIR}/molecule.cpp"
     "${SOURCE_DIR}/libint_interface.cpp"
     "${SOURCE_DIR}/linalg.cpp"
     "${SOURCE_DIR}/determinant.cpp"
-    "${SOURCE_DIR}/mo_integrals.cpp"
     "${SOURCE_DIR}/ci_space.cpp"
+    "${SOURCE_DIR}/ci_space2.cpp"
     )
 
 add_subdirectory(external/fmt)
 add_subdirectory(external/libint2)
-
 
 target_link_libraries(_quantel PRIVATE 
             fmt-header-only 
@@ -80,23 +81,9 @@ target_link_libraries(_quantel PRIVATE
             ${EIGEN3_LIBRARIES})
 
 # specify open MP flags
-if(USE_OpenMP)
-  find_package(OpenMP REQUIRED)
-  if(OpenMP_CXX_FOUND)
-      target_link_libraries(_quantel PUBLIC OpenMP::OpenMP_CXX)
-  endif()
-endif(USE_OpenMP)
+find_package(OpenMP REQUIRED)
+if(OpenMP_CXX_FOUND)
+  target_link_libraries(_quantel PUBLIC OpenMP::OpenMP_CXX)
+endif()
 
 install(TARGETS _quantel DESTINATION ${ROOT_DIR}/quantel/lib)
-
-#ExternalProject_Add(libint2 
-#    PREFIX ${ROOT_DIR}/external/
-#    URL https://github.com/evaleev/libint/releases/download/v2.9.0/libint-2.9.0.tgz
-#    DOWNLOAD_DIR ${ROOT_DIR}/external
-#    DOWNLOAD_NAME libint2
-#    STAMP_DIR ${ROOT_DIR}/external/libint-2.9.0/stamp
-#    BINARY_DIR ${ROOT_DIR}/external/libint-2.9.0/build
-#    SOURCE_DIR ${ROOT_DIR}/external/libint-2.9.0/libint-2.9.0
-#    INSTALL_DIR ${ROOT_DIR}/quantel/lib
-#)
-#add_dependencies(_quantel libint2)

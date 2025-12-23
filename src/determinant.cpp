@@ -68,7 +68,7 @@ int Determinant::apply_excitation(Eph &Epq, bool alpha)
     uint8_t *occ = alpha ? m_occ_alfa.data() : m_occ_beta.data();
 
     // Operator defined as
-    // Epqrs = a_p^+ a_q
+    // Epq = a_p^+ a_q
 
     if(occ[q]==0) 
         return 0;

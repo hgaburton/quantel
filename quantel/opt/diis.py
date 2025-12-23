@@ -1,30 +1,40 @@
 import numpy as np
 import datetime, sys
+import copy
 
 # Code to implement the DIIS algorithm for SCF convergence
 class DIIS:
-    def __init__(self):
-        self.err_vecs = []
-        self.fock_list = []
+    def __init__(self,occupation_selector="Aufbau"):
+        self.err_vecs = []  
+        self.fock_vecs = []
+        self.occupation_selector = occupation_selector
     
-    def run(self, obj, thresh=1e-8, maxit=100, index=0, plev=1, max_vec=6):
+    def run(self, obj, thresh=1e-6, maxit=100, index=0, plev=1, max_vec=6):
         """Run the DIIS optimisation"""
         self.nbsf = obj.nbsf
-        self.max_vec = max_vec
+        self.max_vec = max_vec 
 
         kernel_start_time = datetime.datetime.now()
         if plev>0: print()
         if plev>0: print("  Running DIIS optimisation...")
+        if plev>0:
+            print(f"    > Num. MOs          = {obj.nmo: 6d}")
+            print(f"    > Max DIIS subspace = {max_vec: 6d}")
         if plev>0: print("  ==========================================")
         if plev>0: print("       {:^16s}    {:^8s}".format("   Energy / Eh","Error"))
         if plev>0: print("  ==========================================")
         converged = False
 
+        # Save initial MO coefficients for IMOM 
+        init_C = obj.mo_coeff.copy()
+        
         for istep in range(maxit+1):
             # Get Fock matrix
-            obj.get_fock()
+            fock_new = obj.get_fock()
+            # Save MO coefficients  
+            prev_C = obj.mo_coeff.copy()
             # Get error vector
-            errvec, err = obj.get_diis_error()
+            errvec, err = obj.get_diis_error()  
             # Print status
             if plev > 0:
                 print(" {: 5d} {: 16.10f}    {:8.2e}".format(istep, obj.energy, err))
@@ -35,47 +45,52 @@ class DIIS:
                 break
             # Append error vector to list
             self.err_vecs.append(errvec)
-            # Append Fock matrix to list
-            self.fock_list.append(obj.fock)
+            # Append Fock vector to list
+            self.fock_vecs.append(fock_new)
+            
             # Remove oldest error vector and Fock matrix if we have too many
             if len(self.err_vecs) > self.max_vec:
                 self.err_vecs.pop(0)
-                self.fock_list.pop(0)
-
+                self.fock_vecs.pop(0)
+ 
             # Perform DIIS extrapolation
             if len(self.err_vecs) >= 1:
-                new_fock = self.diis_extrapolate()
-                obj.try_fock(new_fock)
-        
+                new_fock_vec = self.diis_extrapolate()  
+                obj.try_fock(new_fock_vec) 
+
         if plev>0: print("  ==========================================")
         kernel_end_time = datetime.datetime.now() # Save end time
-        computation_time = kernel_end_time - kernel_start_time
-        if plev>0: print("  DIIS walltime: ", computation_time.total_seconds(), " seconds")
+        computation_time = (kernel_end_time - kernel_start_time).total_seconds()
+        if(not converged):
+            if plev>0: print(f"  DIIS failed to converge in {istep: 6d} iterations ({computation_time: 6.2f} seconds)")
+        else:
+            if plev>0: print(f"  DIIS converged in {istep: 6d} iterations ({computation_time: 6.2f} seconds)")
+        sys.stdout.flush()
+        return converged
 
 
-    def diis_extrapolate(self):
+    def diis_extrapolate(self):  
         """Perform DIIS extrapolation to get the next Fock matrix"""
         # Get number of error vectors
         nerr = len(self.err_vecs)
 
         # Get the error matrix
-        B = np.zeros((nerr+1, nerr+1))
+        B = np.zeros((nerr+1, nerr+1)) 
         for i in range(nerr):
             for j in range(nerr):
-                B[i,j] = np.dot(self.err_vecs[i], self.err_vecs[j])
+                B[i,j] = np.dot(self.err_vecs[i], self.err_vecs[j]) 
         B[-1,:] = -1
         B[:,-1] = -1
         B[-1,-1] = 0
-        
         # Get the right hand side vector
-        rhs = np.zeros(nerr+1)
+        rhs = np.zeros(nerr+1) 
         rhs[-1] = -1
         
         # Solve the linear equations
-        coeffs = np.linalg.solve(B, rhs)
+        coeffs = np.linalg.solve(B, rhs) 
         
         # Get the new Fock matrix
-        fock = np.zeros((self.nbsf, self.nbsf))
+        fock_vec = np.zeros_like(self.fock_vecs[0])
         for i in range(nerr):
-            fock += coeffs[i] * self.fock_list[i]
-        return fock
+            fock_vec += coeffs[i] * self.fock_vecs[i]
+        return fock_vec

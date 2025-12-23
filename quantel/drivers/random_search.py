@@ -1,13 +1,12 @@
 #!/usr/bin/python3
 
 import numpy
-from scipy.linalg import expm 
 from quantel.utils.linalg import random_rot
 from quantel.wfn.rhf import RHF
 from quantel.opt.diis import DIIS
-from quantel import LibintInterface
 from quantel.opt.lbfgs import LBFGS
-from quantel.wfn.csf import GenealogicalCSF as CSF
+from quantel.wfn.csf import CSF
+from quantel.gnme.utils import gen_eig_sym
 
 def random_search(ints, config):
     """Perform a random search for multiple solutions"""
@@ -20,19 +19,22 @@ def random_search(ints, config):
 
     # Get RHF orbitals
     ms = ints.molecule().nalfa() - ints.molecule().nbeta()
+    # Initial SCF cycles
+    init_scf_cycles = config["jobcontrol"]["search"]["init_scf_cycles"]
     if(ms==0):
         print("\nRunning initial closed-shell RHF calculation...")
         mf = RHF(ints)
         mf.get_orbital_guess()
-        DIIS().run(mf,thresh=1e-7,maxit=500)    
+        LBFGS().run(mf,maxit=init_scf_cycles)
         ref_mo = mf.mo_coeff.copy()
     else:
         print(f"\nRunning initial high-spin ROHF calculation with multiplicity {ms+1: 3d}...")
         mf = CSF(ints, '+'*ms)
         mf.get_orbital_guess()
-        LBFGS().run(mf,maxit=500)
+        LBFGS().run(mf,maxit=init_scf_cycles)
         ref_mo = mf.mo_coeff.copy()
     ref_ci = None
+    mf.print(config["jobcontrol"]["print_final"])
 
     # Get information about the wavefunction defintion
     wfnconfig = config["wavefunction"][config["wavefunction"]["method"]]
@@ -45,9 +47,11 @@ def random_search(ints, config):
         ref_ci = numpy.identity(WFN(ints, **wfnconfig).ndet)
         ndet = ref_ci.shape[1]
     elif config["wavefunction"]["method"] == "csf":
-        from quantel.wfn.csf import GenealogicalCSF as WFN
+        from quantel.wfn.csf import CSF as WFN
     elif config["wavefunction"]["method"] == "rhf":
         from quantel.wfn.rhf import RHF as WFN
+    elif config["wavefunction"]["method"] == "roks":
+        from quantel.wfn.roks import ROKS as WFN
     else:
         raise ValueError("Wavefunction method not recognised")
         
@@ -91,6 +95,7 @@ def random_search(ints, config):
         myfun = WFN(ints, **wfnconfig)
         myfun.initialise(mo_guess, ci_guess)
 
+
         # Run the optimisation
         myopt = OPT(**optconfig)
         if not myopt.run(myfun, **config["optimiser"]["keywords"]):
@@ -98,21 +103,25 @@ def random_search(ints, config):
 
         # Check the Hessian index
         myfun.canonicalize()
-        myfun.get_davidson_hessian_index()
-        hindices = myfun.hess_index
-        if (hindices[0] != target_index) and (target_index is not None):
-            continue
+        if config["jobcontrol"]["nohess"]:
+            myfun.hess_index = (0,0,0)        
+        else:
+            myfun.get_davidson_hessian_index()
+            hindices = myfun.hess_index
+            if (hindices[0] != target_index) and (target_index is not None):
+                continue
         
         # Compare solution against previously found states
         new = True
         for otherwfn in wfn_list:
             if abs(myfun.energy - otherwfn.energy) < config["jobcontrol"]["dist_thresh"]:
               if 1.0 - abs(myfun.overlap(otherwfn)) < config["jobcontrol"]["dist_thresh"]:
-                new = False
-                break
+                  new = False
+                  break
 
         # Save the solution if it is a new one!
         if new: 
+            myfun.print(config["jobcontrol"]["print_final"])
             if config["wavefunction"]["method"] == "esmf":
                 myfun.canonicalize()
             # Get the prefix for this solution

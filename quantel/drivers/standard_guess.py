@@ -19,9 +19,13 @@ def standard_guess(ints, config):
         from quantel.wfn.ss_casscf import SS_CASSCF as WFN
         ref_ci = numpy.identity(WFN(ints, **wfnconfig).ndet)
     elif config["wavefunction"]["method"] == "csf":
-        from quantel.wfn.csf import GenealogicalCSF as WFN
+        from quantel.wfn.csf import CSF as WFN
     elif config["wavefunction"]["method"] == "rhf":
         from quantel.wfn.rhf import RHF as WFN
+    elif config["wavefunction"]["method"] == "roks":
+        from quantel.wfn.roks import ROKS as WFN
+    else:
+        raise ValueError("Wavefunction method not recognised")
 
     # Select the optimiser
     optconfig = config["optimiser"][config["optimiser"]["algorithm"]]
@@ -47,7 +51,9 @@ def standard_guess(ints, config):
 
     # Initialise optimisation object
     myfun = WFN(ints, **wfnconfig)
-    myfun.get_orbital_guess(method=config["jobcontrol"]["guess_method"])
+    myfun.get_orbital_guess(method=config["jobcontrol"]["guess_method"],
+                            avas_ao_labels=config["jobcontrol"]["avas_ao_labels"],
+                            reorder=config["jobcontrol"]["csf_reorder"])
 
     # Run the optimisation
     myopt = OPT(**optconfig)
@@ -56,14 +62,20 @@ def standard_guess(ints, config):
 
     # Check the Hessian index
     myfun.canonicalize()
-    myfun.get_davidson_hessian_index()
-    hindices = myfun.hess_index
-    if (hindices[0] != target_index) and (target_index is not None):
-        return
+    if config["jobcontrol"]["nohess"]:
+        myfun.hess_index = (0,0,0) 
+        hindices = myfun.hess_index       
+    else:
+        myfun.get_davidson_hessian_index()
+        hindices = myfun.hess_index
+        if (hindices[0] != target_index) and (target_index is not None):
+            return 
 
     # Save the solution if it is a new one!
     if config["wavefunction"]["method"] == "esmf":
         myfun.canonicalize()
+    myfun.print(config["jobcontrol"]["print_final"])
+
     # Get the prefix for this solution
     count += 1
     tag = "0001"

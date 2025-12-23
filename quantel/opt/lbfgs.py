@@ -23,6 +23,7 @@ class LBFGS:
         self.control["with_canonical"] = True
         self.control["canonical_interval"] = 10
         self.control['gamma_preconditioner'] = False
+        self.control['preconditioner_interval'] = 1
 
         for key in kwargs:
             if not key in self.control.keys():
@@ -53,17 +54,19 @@ class LBFGS:
         # Extract key parameters
         max_subspace = self.control["max_subspace"]
         dim = obj.dim
+        if(dim == 0): return True
+
 
         if plev>0:
             print(f"    > Num. MOs       = {obj.nmo: 6d}")
             print(f"    > Num. params    = {dim: 6d}")
             print(f"    > Max subspace   = {max_subspace: 6d}")
+            print(f"    > Max step size   = {self.control['maxstep']: 6.3f}")
             print(f"    > Backtracking   = {self.control['backtrack_scale']: 6.3f}")
             print(f"    > Parallel tr.   = {self.control['with_transport']}")
             print(f"    > Pseudo-canon.  = {self.control['with_canonical']}")
             print(f"    > Canon interval = {self.control['canonical_interval']}")
             print(f"    > Hybrid prec.   = {not self.control['gamma_preconditioner']}")
-            print()
 
         # Initialise lists for subspace vectors
         v_step = []
@@ -75,13 +78,13 @@ class LBFGS:
 
         zero_step = np.zeros(obj.dim)
         converged = False
-        n_rescale = 0
         qn_count = 0
         reset = False
         for istep in range(maxit+1):
             # Get energy, gradient and check convergence
             ecur = obj.energy
             grad = obj.gradient
+            rms = np.linalg.norm(grad)/np.sqrt(grad.size)
             conv = np.linalg.norm(grad,ord=np.inf)
             
             if istep > 0 and plev > 0:
@@ -141,7 +144,8 @@ class LBFGS:
                 v_grad.append(grad.copy())
 
                 # Get L-BFGS quasi-Newton step
-                prec = obj.get_preconditioner()
+                if(np.mod(istep,self.control["preconditioner_interval"])==0):
+                    prec = obj.get_preconditioner()
                 step = self.get_lbfgs_step(v_grad,v_step,prec)
                 qn_count += 1
 

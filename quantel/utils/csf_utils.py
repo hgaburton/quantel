@@ -1,6 +1,21 @@
-import sys, itertools
+import itertools
 import numpy as np
 from quantel.utils.guga import e_ijji
+from quantel.utils.linalg import pseudo_inverse
+
+def verify_spin_coupling(spin_coupling):
+    """ Verify that a given spin coupling pattern is valid
+            :param spin_coupling:
+            :return:
+    """
+    n = len(spin_coupling)
+    if(n==0):
+        return True
+    
+    spin_incr = np.cumsum([1 if s=='+' else -1 for s in spin_coupling])
+    if(np.any(spin_incr < 0)):
+        raise RuntimeError(f"Invalid spin coupling pattern [{spin_coupling}]: intermediate spin negative")
+
 
 def get_coupling_coefficient(Tn, Pn, tn, pn):
     """ Computes the coupling coefficient C_{tn, pn}^{Tn, Pn}
@@ -168,7 +183,216 @@ def get_shells(ncore, spin_coupling):
     if(len(spin_coupling)>0):
         # Get indices for each shell
         active_shells = np.cumsum([0 if i==0 else spin_coupling[i-1]!=spin_coupling[i] 
-                                for i in range(len(spin_coupling ))])
+                                for i in range(len(spin_coupling))])
         for i in range(active_shells[-1]+1):
             shell_indices.append((ncore+np.argwhere(active_shells==i).ravel()).tolist())
     return core_indices, shell_indices
+
+def get_det_occupation(shell_spin, shell_indices, ncore, nmo):
+    """ Get the occupation vector from a specified shell spin pattern
+            :param shell_spin:      Spin pattern per shell 
+            :param shell_indices:   Indices of orbitals per shell
+            :param ncore:           Number of core orbitals
+            :param nmo:             Total number of molecular orbitals
+            :return: occa, occb
+    """
+    # Initialise occupation vectors
+    occa, occb = np.zeros(nmo), np.zeros(nmo)
+    # Core orbitals
+    occa[:ncore] = 1
+    occb[:ncore] = 1
+    # Open-shell orbitals
+    for i, shell in enumerate(shell_indices):
+        occa[shell] = 1 if (shell_spin[i] == 'a') else 0
+        occb[shell] = 0 if (shell_spin[i] == 'a') else 1
+    return occa, occb
+
+def optimise_order(K, X):
+    """
+    Discrete (local) optimisation of the open-shell orbital ordering through orbital swaps. 
+    This algorithm is designed to quickly minimise the exchange energy, but is not guaranteed 
+    to find the global minimum.
+        Input:
+            K : Matrix of exchange integrals in the active orbital space <pq|qp>
+            X : Matrix of exchange coupling terms Xpq
+        Returns:
+            order : Optimised orbital ordering
+    """
+    norb = K.shape[0]
+    order = np.arange(norb)
+    for it in range(10):
+        sweep_swap = False
+        for i in range(norb):
+            for j in range(i):
+                Knew = K.copy()
+                Knew[[i,j],:] = Knew[[j,i],:]
+                Knew[:,[i,j]] = Knew[:,[j,i]]
+                if(0.5 * np.vdot(Knew-K, X) < -1e-10):
+                    # Swap the orbitals
+                    order[[j,i]] = order[[i,j]]
+                    K[[i,j],:] = K[[j,i],:]
+                    K[:,[i,j]] = K[:,[j,i]]
+                    sweep_swap = True
+
+        # If we have not made any further swaps, we are done.
+        if(not sweep_swap):
+            break
+
+    return order
+
+def csf_reorder_orbitals(integrals, exchange_matrix, cinit, pop_method='becke'):  
+    """
+    Optimise the order of the CSF orbitals using the exchange matrix 
+    to minimise the exchange energy
+        Input:
+            integrals : Integrals object
+            exchange_matrix : Exchange coupling matrix for the CSF
+            cinit    : Initial open-shell orbitals
+        Returns:
+            copt     : Optimised orbital guess
+    """
+    from pyscf import scf, lo
+
+    # Get the number of open-shell orbitals
+    nopen = cinit.shape[1]
+    if(exchange_matrix.shape[0] != nopen):
+        raise RuntimeError("  Number of CSF orbitals does not match number of open-shell orbitals")
+
+    # Access the PySCF molecule object
+    pymol = integrals.molecule()
+
+    # Localise the active orbitals
+    print("  Localising open-shell orbitals")
+    pm = lo.PM(pymol, cinit, scf.ROHF(pymol))
+    pm.pop_method = pop_method
+    cinit = pm.kernel()
+
+    # Get exchange integrals in active orbital space
+    print("  Computing localised orbital exchange integrals")
+    vdm = np.einsum('pi,qi->ipq',cinit,cinit)
+    vJ, vK = integrals.build_JK(vdm,vdm,Kxc=False)
+    # Transform to MO basis
+    K = np.einsum('pmn,mq,nq->pq',vK,cinit,cinit)
+
+    # These are the active exchange integrals in chemists order (pq|rs)
+    print("  Optimising order of open-shell orbitals")
+    order = optimise_order(K, exchange_matrix)
+
+    # Save initial guess and return
+    copt = cinit[:,order].copy()
+    return copt
+
+def csf_det_list(spin_coupling):
+    """ Get the list of open-shell determinants for a given CSF pattern
+            :param spin_coupling:
+            :return:
+    """
+    # Check CSF vector is valid
+    n = len(spin_coupling)
+    if(n==0):
+        return [""]
+
+    if(spin_coupling[0]!='+'):
+        raise RuntimeError("Invalid spin coupling pattern")
+    
+    na = np.sum([s=='+' for s in spin_coupling])
+    det_list = []
+    for occa in itertools.combinations(range(n),na):
+        # Set occupation vector
+        occ = np.zeros(n)
+        occ[list(occa)] = 1
+        # Get determinant string
+        det = ''.join(['a' if oi==1 else 'b' for oi in occ])
+        det_list.append(det)
+    return det_list
+
+def get_uhf_coupling(occstr):
+    """ Get the UHF/UKS exchange coupling matrix for a given occupation string
+            :param occstr:
+            :return:
+    """
+    nopen = len(occstr)
+    Kmat = np.zeros((nopen,nopen))
+    for p,pchar in enumerate(occstr):
+        for q, qchar in enumerate(occstr):
+            if(pchar==qchar):
+                Kmat[p,q] = -1
+    return Kmat
+
+def get_ensemble_expansion(spin_coupling):
+    """ Get the ensemble expansion of energy in terms of UHF/UKS determinant energies
+        We achieve this by matching the exchange matrices of CSF and ensemble
+
+            :param spin_coupling:
+            :return: list of (determinant string, coefficient) tuples
+    """
+    if(len(spin_coupling)==0 or spin_coupling=='cs'):
+        return []
+    # Get length of spin coupling pattern
+    nopen = len(spin_coupling)
+    ncore = 0 
+    # Get indices of shells
+    shells = get_shells(ncore,spin_coupling)[1]
+    # Get number of shells
+    nshell = len(shells)
+    # Define function to vectorize shell matrices
+    vector_inds = (np.insert(np.tril_indices(nshell,k=-1)[0],0,0),
+                      np.insert(np.tril_indices(nshell,k=-1)[1],0,0))
+    vec = lambda M : M[vector_inds]
+    # Get Beta vector
+    v_beta = vec(get_shell_exchange(ncore,shells,spin_coupling))
+
+    # Now we construct the determinants with at most 2 shell flips
+    # Here, we denote only the spin per shell
+    dets = []
+    if(nshell==4 or nshell<=2):
+        for it in itertools.combinations(range(0,nshell),r=1):
+            spins = np.zeros(nshell)
+            # Flip the spin of a shell
+            spins[it[0]]=1
+            # Make sure first shell is always alpha
+            if(spins[0] == 1): spins = 1 - spins
+            # Get string format
+            spin_str = ''.join(['a' if s==0 else 'b' for s in spins])
+            # Add to dets if not present
+            if(not spin_str in [d[0] for d in dets]): 
+                dets.append((spin_str, vec(get_uhf_coupling(spin_str))))
+    else:
+        spin_str = 'a'*nshell
+        dets.append((spin_str, vec(get_uhf_coupling(spin_str))))
+
+    for it in itertools.combinations(range(0,nshell),r=2):
+        spins = np.zeros(nshell)
+        # Flip the spins of two shells
+        spins[it[0]]=1
+        spins[it[1]]=1
+        # Make sure first shell is always alpha
+        if(spins[0] == 1): spins = 1 - spins
+        # Get string format
+        spin_str = ''.join(['a' if s==0 else 'b' for s in spins])
+        # Add to dets if not present
+        if(not spin_str in [d[0] for d in dets]): 
+            dets.append((spin_str, vec(get_uhf_coupling(spin_str))))
+    # Sort lexicographically for clarity
+    dets.sort()
+
+    # We now have a basis to expand our exchange matrix in. 
+    # We need to buld the metric tensor and solve for the expansion coefficients
+    nbasis = len(dets)
+    metric = np.zeros((nbasis,nbasis))
+    for i in range(nbasis):
+        for j in range(nbasis):
+            metric[i,j] = np.dot(dets[i][1], dets[j][1])
+    # Build pseudo-inverse
+    X = np.linalg.pinv(metric)
+
+    # Form the projection of target exchange matrix
+    bvec = np.array([np.dot(dets[i][1],v_beta) for i in range(nbasis)])
+    coeffs = X @ bvec
+
+    # Form the expansion and return
+    expansion = [(idet[0],coeff) for idet, coeff in zip(dets, coeffs)]
+    #print("Exchange matrix expansion coefficients:")
+    #for detI, cI in expansion:
+    #    print(f"{detI}: {cI: 8.4f}")
+    return expansion

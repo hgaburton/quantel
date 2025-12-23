@@ -8,7 +8,7 @@ class Davidson:
     def __init__(self, **kwargs):
         """Initialise the Davidson instance"""
         self.control = dict()
-        self.control["nreset"] = 10
+        self.control["nreset"] = 50
 
         for key in kwargs:
             if not key in self.control.keys():
@@ -40,20 +40,30 @@ class Davidson:
         # Initialise Krylov subspace
         dim = diag.size
         K   = np.empty((dim,0))
+
+        if(n > dim):
+            # If the number of requested states exceeds the dimension of the matrix, reset the values
+            n = dim
+            if(xguess is not None):
+                print(f"WARNING: Number of requested eigenvectors exceeds matrix dimension, selecting first {n:6d} guess vectors")
+                xguess = xguess[:,:n]
         
         # If no guess provided, start with identity
         if(xguess is None):
             inds = np.argsort(diag)[:n]
-            K = 0.01 * np.ones((dim,n))
+            K = 0.4 * (np.random.rand(dim,n)-1)
             for i,j in enumerate(inds):
                 K[j,i] = 1
         else:
             assert(xguess.shape[1] == n)
             K = xguess.copy()
-        K = orthogonalise(K,np.identity(dim),fill=False)
+        K = orthogonalise(K,fill=False)
 
         # Initialise HK vectors
         HK = np.empty((dim, 0))
+
+        # Make K in fortran column-major
+        K = np.asfortranarray(K)
 
         if plev>1: print("  =========================================")
         if plev>1: print("    Step   Max(|res|)    # Conv            ")
@@ -65,7 +75,8 @@ class Davidson:
         for it in range(maxit+1):
             # Form new HK vectors as required
             for ik in range(HK.shape[1],K.shape[1]):
-                # Get step
+                # Get step 
+                # NOTE this requires column-major ordering for effective slicing
                 sk = K[:,ik]
                 # Get approximate Hessian on vector
                 H_sk = fun_Hv(sk,**Hv_args)
@@ -87,7 +98,6 @@ class Davidson:
             nconv  = np.sum(residuals < tol)
 
             if plev>1:  print(f"  {it: 5d}    {maxres:10.2e}    {nconv: 5d}  {comment}")
-
             # Check convergence
             if all(res < tol for res in residuals):
                 converged = True
@@ -105,15 +115,14 @@ class Davidson:
             for i in range(n):
                 ri = r[:,i]
                 if(residuals[i] > tol):
-                    v_new = ri / (e[i] - diag)
+                    v_new = ri / (e[i] - diag + 1e-4)
                     # Perform Gram-Schmidt orthogonalisation twice
                     v_new = v_new - K @ (K.T @ v_new)
                     v_new = v_new - K @ (K.T @ v_new)
                     # Add vector to Krylov subspace if norm is non-vanishing
                     nv = np.linalg.norm(v_new)
-                    if(np.linalg.norm(v_new) > 1e-10):
-                        v_new = v_new / np.linalg.norm(v_new)
-                    K = np.column_stack([K, v_new])
+                    if(nv > 1e-10):
+                        K = np.column_stack([K, v_new / nv])
         if plev>1: print("  =========================================")
 
         # Save end time and report duration

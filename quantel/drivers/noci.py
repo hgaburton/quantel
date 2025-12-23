@@ -99,7 +99,6 @@ def noci(wfnlist, lindep_tol=1e-8, plev=1):
     Hwx = numpy.zeros((nstate, nstate))
     Swx = numpy.zeros((nstate, nstate))
     for i, state_i in enumerate(wfnlist):
-        print(i)
         for j, state_j in enumerate(wfnlist):
             if(i<j): continue
             Swx[i,j], Hwx[i,j] = state_i.hamiltonian(state_j)

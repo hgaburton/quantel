@@ -68,7 +68,7 @@ def gen_eig_sym(M, S, thresh=1e-8):
     X = orthogonalisation_matrix(S, thresh=thresh)
 
     # Project into non-null subspace
-    Mp = X.H.dot(M.dot(X))
+    Mp = np.conj(X).T.dot(M.dot(X))
 
     # Solve orthogonalised problem
     eigval, eigvec_p = np.linalg.eigh(Mp)
@@ -153,6 +153,149 @@ def lowdin_pair(Cw,Cx,S,thresh=1e-10):
     # Return the result
     return Cw_new, Cx_new, Sxx
 
+def factorised_densities(Cwa,Cwb,Cxa,Cxb,metric,stol=1e-8,ktol=1e-8,thresh=1e-8):
+    """ 
+    Compute the factorised density matrices for nonorthogonal matrix element 
+    with up to 2-body coupling.
+     
+       Inputs:
+       -------
+           Cax, Cbx     2x 1d-arrays containing alfa and beta coefficients for bra state
+           Caw, Cbw     2x 1d-arrays containing alfa and beta coefficients for ket state
+           metric       AO overlap matrix
+           ktol (optional) Threshold for cutting off kappa singular values.
+           stol (optional) Threshold for cutting of zero overlap orbital pairs.
+           thresh (optional) Threshold diagonal comparison in Lowdin pairing
+
+       return S, (Wa,Ma,Pa), (Wb,Mb,Pb), kt
+    """
+    # Perform Lowdin pairing for the alfa and beta orbital spaces
+    Cwa_new, Cxa_new, Sa = lowdin_pair(Cwa,Cxa,metric,thresh=thresh)
+    Cwb_new, Cxb_new, Sb = lowdin_pair(Cwb,Cxb,metric,thresh=thresh)
+
+    # Compute the epislon tensors
+    na, nb = Sa.shape[0], Sb.shape[0]
+    Sxx = np.hstack([Sa, Sb])
+    norb = na + nb
+    nbsf = metric.shape[0]
+
+    # Build single orbital epsilon tensors
+    ei  = np.zeros((norb))
+    for i in range(norb):
+        mask = np.ones(norb, dtype=bool)
+        mask[i] = False
+        ei[i] = np.prod(Sxx[mask])
+
+    # Build double orbital epsilon tensors
+    eij = np.zeros((norb,norb))
+    for i in range(norb):
+        for j in range(norb):
+            mask = np.ones(norb, dtype=bool)
+            mask[i] = False
+            mask[j] = False
+            eij[i,j] = 0 if i==j else np.prod(Sxx[mask])
+    
+    # Build the W matrix and record lower than treshold values
+    Wa, Wb = np.zeros((nbsf,nbsf)), np.zeros((nbsf,nbsf))
+    for i, si in enumerate(Sa):
+        if(abs(si) > stol):
+            Wa += np.outer(Cxa_new[:,i],Cwa_new[:,i]) / si
+    for i, si in enumerate(Sb):
+        if(abs(si) > stol):
+            Wb += np.outer(Cxb_new[:,i],Cwb_new[:,i]) / si
+
+    # Find indices of small overlap terms
+    vind = np.argwhere(np.abs(Sxx) < stol).ravel()
+    nsmall = len(vind)
+
+    # Build M matrix
+    Ma, Mb = np.zeros((nbsf,nbsf)), np.zeros((nbsf,nbsf))
+    for v in vind:
+        if(v<na):
+            # Contributes to alfa space
+            Ma += np.outer(Cxa_new[:,v],Cwa_new[:,v]) * ei[v]
+        else:
+            # Contributes to beta space
+            Mb += np.outer(Cxb_new[:,v-na],Cwb_new[:,v-na]) * ei[v]
+
+    # Build P matrices for small terms
+    Pva = np.zeros((nsmall,nbsf,nbsf))
+    Pvb = np.zeros((nsmall,nbsf,nbsf))
+    for i, v in enumerate(vind):
+        if(v<na):
+            Pva[i] = np.outer(Cxa_new[:,v],Cwa_new[:,v])
+        else:
+            Pvb[i] = np.outer(Cxb_new[:,v-na],Cwb_new[:,v-na])
+
+    # Diagonalise evw for small overlap terms
+    evw = eij[vind,:][:,vind]
+    kt, vt = np.linalg.eigh(evw)
+
+    # Transform the P matrices
+    Pa = np.einsum('kij,kt->tij',Pva,vt)
+    Pb = np.einsum('kij,kt->tij',Pvb,vt)
+
+    return np.prod(Sxx), (Wa,Ma,Pa), (Wb,Mb,Pb), kt
+
+def generalised_slater_condon(Cax,Cbx,Caw,Cbw,ints,ktol=1e-8,stol=1e-8):
+    """ 
+    Compute a matrix element for two-body operator using generalised Slater-Condon rules
+     
+       Inputs:
+       -------
+           Cax, Cbx     2x 1d-arrays containing alfa and beta coefficients for bra state
+           Caw, Cbw     2x 1d-arrays containing alfa and beta coefficients for ket state
+           ints         Integral object holding relevant AO integrals
+           ktol (optional) Threshold for cutting off kappa singular values.
+           stol (optional) Threshold for cutting of zero overlap orbital pairs.
+
+       Outputs:
+       --------
+           S       Overlap of the two determinants
+           H       Hamiltonian coupling of the two determinants
+
+       return S, H
+    """
+    metric = ints.overlap_matrix()
+    hcore  = ints.oei_matrix(True)
+
+    S, (Wa,Ma,Pa), (Wb,Mb,Pb), kt = factorised_densities(Cax,Cbx,Caw,Cbw,metric,stol,ktol)
+    nd = 2 + len(kt)
+
+    # Overlap term
+    H = S * ints.scalar_potential()
+
+    # One-body matrix
+    H += S * np.einsum('ij,ji', hcore, Wa + Wb) + np.einsum('ij,ji', hcore, Ma + Mb)
+
+    # JK builds
+    vd = np.zeros((2*nd,ints.nbsf(),ints.nbsf()))
+    vd[0] = Wa
+    vd[1] = Ma
+    vd[2:nd] = Pa
+    vd[nd] = Wb
+    vd[nd+1] = Mb
+    vd[nd+2:] = Pb
+
+    # Call the JK build
+    vj, vk = ints.build_JK(vd,vd)
+
+    # Compute two-electron contributions
+    jw_t = vj[0] + vj[nd]
+    Wt = Wa + Wb
+    Mt = Ma + Mb
+    H += 0.5 * np.einsum('ij,ji',jw_t, S * Wt + 2 * Mt)
+    H -= 0.5 * np.einsum('ij,ji',vk[0],  S * Wa + 2 * Ma)
+    H -= 0.5 * np.einsum('ij,ji',vk[nd], S * Wb + 2 * Mb)
+    for t, ek in enumerate(kt):
+        Pk = Pa[t] + Pb[t]
+        Jk = vj[2+t] + vj[nd+2+t]
+
+        H += 0.5 * ek * np.einsum('ij,ji',Jk, Pk)
+        H -= 0.5 * ek * np.einsum('ij,ji',vk[2+t], Pa[t])
+        H -= 0.5 * ek * np.einsum('ij,ji',vk[nd+2+t], Pb[t])
+
+    return S, H
 
 def reduced_overlap(Sxx, thresh=1e-8):
     '''Evaluate the reduced overlap from an array of biorthogonal overlap elements

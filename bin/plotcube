@@ -52,7 +52,7 @@ mol addrep top
 
 scale by [lindex \$argv 2]
 #rotate y by 90
-rotate x by -85
+#rotate x by 45
 #rotate z by 45
 
 #render gs [lindex \$argv 0].ps
@@ -64,5 +64,5 @@ exit
 
 vmd -dispdev none -e plot.tcl -args $1 $2 $3
 rm $1.png &> /dev/null
-povray +W600 +H600 +FN +A +C -D +UA -I$1.pov -O$1.png
+povray +W900 +H900 +FN +A +C -D +UA -I$1.pov -O$1.png
 rm plot.tcl
