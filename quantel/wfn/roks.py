@@ -31,7 +31,8 @@ class ROKS(CSF):
         """
         # Call the parent constructor
         super().__init__(integrals, spin_coupling, verbose)
-    
+
+
     def initialise(self, mo_guess, spin_coupling=None, mat_ci=None, integrals=True):
         """ Initialise the CSF object with a set of MO coefficients"""
         if(spin_coupling is None):
@@ -127,7 +128,6 @@ class ROKS(CSF):
         """ Compute the approximate Hess * vec product using forward finite difference """
         # Get current gradient
         g0 = self.gradient.copy()
-
         # Get forward gradient
         # First copy CSF but don't initialise integrals
         them = self.copy(integrals=False)
@@ -156,7 +156,7 @@ class ROKS(CSF):
         if(self.nopen == 0):
             # Restricted case
             rho = self.dk[0]
-            exc, vxc = self.integrals.build_vxc(rho)
+            exc, vxc = self.integrals.build_vxc(rho,hermi=1)
             vxc_shell[0] = vxc[0] + vxc[1]
         else:
             # loop over determinants in the ensemble
@@ -172,12 +172,13 @@ class ROKS(CSF):
                     else: dmb += dshell
 
                 # Build the vxc for this determinant
-                exc_det, (vxca_det,vxcb_det) = self.integrals.build_vxc((dma,dmb))
+                exc_det, (vxca_det,vxcb_det) = self.integrals.build_vxc((dma,dmb),hermi=1)
                 # Accumulate the energy
                 exc += coeff * exc_det
 
                 # Core contribution
-                vxc_shell[0] += coeff * (vxca_det + vxcb_det)
+                if(self.ncore > 0):
+                    vxc_shell[0] += coeff * (vxca_det + vxcb_det)
                 # Open-shell contributions
                 for Ishell, spinI in enumerate(det_str):
                     vxc_shell[1+Ishell] += coeff * (vxca_det if (spinI=='a') else vxcb_det)
@@ -220,8 +221,8 @@ class ROKS(CSF):
         self.exc, self.vxc = self.get_vxc()
         # Update JK matrices (AO basis) 
         self.J, self.K = self.get_JK_matrices(self.vd)
-        # Get Fock matrix (AO basis). This includes spin-averaged xc-potential
-        self.fock = self.integrals.oei_matrix(True) + self.J - 0.5 * np.einsum('mpq->pq',self.K) + self.vxc[0]
+        # Get Fock matrix (AO basis)
+        self.fock = self.integrals.oei_matrix(True) + self.J - 0.5 * np.einsum('mpq->pq',self.K)
         # Get generalized Fock matrices
         self.gen_fock, self.Ipqpq, self.Ipqqp = self.get_generalised_fock()
         return 
@@ -269,7 +270,7 @@ class ROKS(CSF):
         # Get the guess for the molecular orbital coefficients
         Cguess = orbital_guess(self.integrals,method,avas_ao_labels=avas_ao_labels,rohf_ms=0.5*self.nopen)
         # Optimise the order of the CSF orbitals and return
-        if(reorder and (self.spin_coupling != '')):
+        if(reorder and (not self.spin_coupling is '')):
             Cguess[:,self.ncore:self.nocc] = csf_reorder_orbitals(self.integrals,self.exchange_matrix,
                                                                   np.copy(Cguess[:,self.ncore:self.nocc]))
 
@@ -291,7 +292,7 @@ class ROKS(CSF):
     def get_generalised_fock(self):
         """ Compute the generalised Fock matrix in MO basis"""
         # Initialise memory
-        F = np.zeros((self.nmo, self.nmo))
+        F = np.zeros((self.nmo, self.nmo)) 
 
         # Memory for diagonal elements
         self.gen_fock_diag = np.zeros((self.nmo,self.nmo))
@@ -385,7 +386,9 @@ class ROKS(CSF):
     def get_preconditioner(self):
         """Compute approximate diagonal of Hessian"""
          # Initialise approximate preconditioner with xc contribution
-        Q = np.zeros((self.nmo,self.nmo)) #self.get_fxc_diag()
+        Q = np.zeros((self.nmo,self.nmo)) 
+        if(False):
+            Q += self.get_fxc_diag()
 
         # Include dominate generalised Fock matrix terms
         for p in range(self.nmo):
@@ -458,8 +461,7 @@ class ROKS(CSF):
         Q = np.zeros((self.nmo,self.nmo))
 
         # Get core transformation using generalised Fock matrix
-        # Include factor of 0.5 for doubly-occupied orbitals
-        foo = 0.5 * self.gen_fock[self.core_indices,:][:,self.core_indices]
+        foo = self.gen_fock[self.core_indices,:][:,self.core_indices]
         self.mo_energy[:self.ncore], Qoo = stable_eigh(foo)
         for i, ii in enumerate(self.core_indices):
             for j, jj in enumerate(self.core_indices):
@@ -476,12 +478,13 @@ class ROKS(CSF):
         # Virtual transformation
         # Here we use the standard Fock matrix
         fvv = np.linalg.multi_dot([self.mo_coeff[:,self.nocc:].T, self.fock, self.mo_coeff[:,self.nocc:]])
-        self.mo_energy[self.nocc:], Q[self.nocc:,self.nocc:] = stable_eigh(fvv)
+        self.mo_energy[self.nocc:], Qvv = stable_eigh(fvv)
+        Q[self.nocc:,self.nocc:] = Qvv
 
         # Apply transformation
         if(np.linalg.det(Q) < 0): Q[:,0] *= -1
         self.mo_coeff = self.mo_coeff @ Q
         
-        # Update integrals
-        self.update_integrals()
+        # Update generalised Fock matrix and diagonal approximations
+        self.gen_fock, self.Ipqpq, self.Ipqqp = self.get_generalised_fock()
         return Q

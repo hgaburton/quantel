@@ -426,7 +426,7 @@ class RHF(Wavefunction):
         # Get orbital coefficients by diagonalising Fock matrix
         self.initialise(Cinit)
 
-    def excite(self,occ_idx,vir_idx):
+    def excite(self,occ_idx,vir_idx,mom_method=None):
         """ Perform orbital excitation on both spins
             Args:
                 occ_idx : list of occupied orbital indices to be excited
@@ -436,8 +436,11 @@ class RHF(Wavefunction):
             raise ValueError("Occupied and virtual index lists must have the same length")
         source = occ_idx + vir_idx
         dest   = vir_idx + occ_idx
-        self.mo_coeff[:,dest] = self.mo_coeff[:,source]
-        self.update() 
+        coeff_new = self.mo_coeff.copy()
+        coeff_new[:,dest] = self.mo_coeff[:,source]
+        them = RHF(self.integrals,verbose=self.verbose,mom_method=mom_method)
+        them.initialise(coeff_new)
+        return them
 
     def deallocate(self):
         pass

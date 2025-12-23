@@ -47,10 +47,12 @@ class UHF(Wavefunction):
         """ Initialse the wave function with a set of molecalar orbital coefficients """
         if(len(mo_guess.shape) == 2):
             # We have 1 set of orbital coefficients so assume RHF guess
-            self.mo_coeff = [mo_guess.copy(), mo_guess.copy()]
+            self.mo_coeff = np.zeros((2,self.nbsf,self.nmo))
+            self.mo_coeff[0] = mo_guess.copy()
+            self.mo_coeff[1] = mo_guess.copy()
         elif(len(mo_guess.shape) == 3):
             # We have 2 sets of orbital coefficients
-            self.mo_coeff = [mo_guess[0].copy(), mo_guess[1].copy()]
+            self.mo_coeff = mo_guess.copy()
         else:
             raise ValueError("UHF initialisation requires 1 or 2 sets of molecular orbital coefficients")
 
@@ -476,10 +478,19 @@ class UHF(Wavefunction):
             self.beta.mo_coeff = mo_coeff
             self.update()
    
-    def excite(self): 
+    def excite(self,occ_idx,vir_idx,mom_method=None): 
         """ Performs an Sz preserving HOMO LUMO excitation """
         # HGAB: 22/12/2025
         #       Maybe we should write a new driver routine to perform this type of routine?
+        new_coeff = self.mo_coeff.copy()
+        for spin in range(2):
+            source = list(occ_idx[spin]) + list(vir_idx[spin])
+            dest   = list(vir_idx[spin]) + list(occ_idx[spin])
+            new_coeff[spin][:,dest] = self.mo_coeff[spin][:,source]
+        them = UHF(self.integrals,mom_method=mom_method)
+        them.initialise(new_coeff)
+        return them
+        dest   = vir_idx + occ_idx
         alfa_gap =  self.alfa.mo_energy[self.alfa.nocc]-self.alfa.mo_energy[self.alfa.nocc-1]
         beta_gap =  self.beta.mo_energy[self.beta.nocc]-self.beta.mo_energy[self.beta.nocc-1]
         if(alfa_gap < beta_gap): 
