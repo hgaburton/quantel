@@ -9,7 +9,7 @@ if __name__ == "__main__":
     print(f" Testing GHF optimisation method")
     print("===============================================")
     # Setup molecule and integrals
-    mol  = PySCFMolecule("h3.xyz", "cc-pvdz", "angstrom",spin=1,charge=0)
+    mol  = PySCFMolecule("mol/h3.xyz", "cc-pvdz", "angstrom",spin=1,charge=0)
     ints = PySCFIntegrals(mol)
 
     # Initialise GHF object

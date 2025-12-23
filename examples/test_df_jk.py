@@ -8,7 +8,7 @@ if __name__ == "__main__":
     print(f" Testing JK build with density fitting        ")
     print("===============================================")
     # Setup molecule and integrals
-    mol  = PySCFMolecule("formaldehyde.xyz", "aug-cc-pvdz", "angstrom")
+    mol  = PySCFMolecule("mol/formaldehyde.xyz", "aug-cc-pvdz", "angstrom")
     ints = PySCFIntegrals(mol)
     df_ints = PySCFIntegrals(mol,with_df=True)
     print(ints)

@@ -9,7 +9,7 @@ for driver in ("libint", "pyscf"):
     print(f" Testing '{driver}' integral method")
     print("===============================================")
     # Setup molecule and integrals
-    mol  = PySCFMolecule("formaldehyde.xyz", "6-31g", "angstrom")
+    mol  = PySCFMolecule("mol/formaldehyde.xyz", "6-31g", "angstrom")
     ints = PySCFIntegrals(mol,xc="PBE0")
 
     # Initialise UHF object

@@ -9,7 +9,7 @@ from quantel.opt.mode_controlling import ModeControl
 from quantel.ints.pyscf_integrals import PySCFMolecule, PySCFIntegrals
 
 # Name of molecule xyz
-molxyz = "formaldehyde.xyz"
+molxyz = "mol/formaldehyde.xyz"
 
 gradient = []
 # Define integrals

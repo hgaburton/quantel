@@ -12,7 +12,7 @@ if __name__ == "__main__":
     print(f" Testing CSF optimisation method")
     print("===============================================")
     # Setup molecule and integrals
-    mol  = PySCFMolecule("formaldehyde.xyz", "def2svp", "angstrom")
+    mol  = PySCFMolecule("mol/formaldehyde.xyz", "def2svp", "angstrom")
     ints = PySCFIntegrals(mol,xc='pbe0')
     print(ints)
 

@@ -7,7 +7,7 @@ if __name__ == "__main__":
     print(f" Testing CSF optimisation method")
     print("===============================================")
     # Setup molecule and integrals
-    mol  = PySCFMolecule("formaldehyde.xyz", "sto-3g", "angstrom")
+    mol  = PySCFMolecule("mol/formaldehyde.xyz", "sto-3g", "angstrom")
     ints = PySCFIntegrals(mol)
 
     # Initialise CSF object for an open-shell singlet state
