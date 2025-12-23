@@ -9,7 +9,7 @@ from quantel.opt.diis import DIIS
 
 if __name__ == "__main__":
     # Initialise H6 molecule
-    mol = PySCFMolecule("h6.xyz", "sto-3g", "angstrom",spin=0,charge=0)
+    mol = PySCFMolecule("mol/h6.xyz", "sto-3g", "angstrom",spin=0,charge=0)
     ints = PySCFIntegrals(mol)
     # Initialise RHF object from integrals
     wfn = RHF(ints)

@@ -6,7 +6,7 @@ if __name__ == "__main__":
     print(f" Testing RHF object with a range of optimisers")
     print("===============================================")
     # Setup molecule and integrals
-    mol  = PySCFMolecule("formaldehyde.xyz", "6-31g", "angstrom")
+    mol  = PySCFMolecule("mol/formaldehyde.xyz", "6-31g", "angstrom")
     ints = PySCFIntegrals(mol,xc="PBE0")
 
     # Initialise RHF object

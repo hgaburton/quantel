@@ -5,7 +5,7 @@ from quantel.opt.diis import DIIS
 
 if __name__ == "__main__":
     # Setup molecule
-    mol = PySCFMolecule("h6.xyz", "sto-3g", "angstrom",spin=0,charge=0)
+    mol = PySCFMolecule("mol/h6.xyz", "sto-3g", "angstrom",spin=0,charge=0)
     ints = PySCFIntegrals(mol)
 
     # Run RHF to get MO coefficients
