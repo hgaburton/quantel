@@ -1,4 +1,3 @@
-import numpy as np
 from quantel.ints.pyscf_integrals import PySCFMolecule, PySCFIntegrals
 from quantel.wfn.rhf import RHF
 
@@ -7,7 +6,7 @@ if __name__ == "__main__":
     print(f" Testing RHF object with a range of optimisers")
     print("===============================================")
     # Setup molecule and integrals
-    mol  = PySCFMolecule("h4.xyz", "sto3g", "angstrom")
+    mol  = PySCFMolecule("formaldehyde.xyz", "6-31g", "angstrom")
     ints = PySCFIntegrals(mol,xc="PBE0")
 
     # Initialise RHF object
@@ -26,14 +25,8 @@ if __name__ == "__main__":
         # Test canonicalisation and Hessian eigenvalue
         wfn.canonicalize()
         # Test Hessian index
-        wfn.get_davidson_hessian_index()
+        wfn.get_davidson_hessian_index(approx_hess=False)
 
         from quantel.opt.diis import DIIS
         wfn.get_orbital_guess(method="gwh")
         DIIS().run(wfn)
-        
-        # Test canonicalisation and Hessian eigenvalue
-        wfn.canonicalize()
-        # Test Hessian index
-        print("get_davidson_hessian_index()")
-        wfn.get_davidson_hessian_index()

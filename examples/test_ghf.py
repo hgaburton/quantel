@@ -9,7 +9,7 @@ if __name__ == "__main__":
     print(f" Testing GHF optimisation method")
     print("===============================================")
     # Setup molecule and integrals
-    mol  = PySCFMolecule("h3.xyz", "3-21g", "angstrom",spin=1,charge=0)
+    mol  = PySCFMolecule("h3.xyz", "cc-pvdz", "angstrom",spin=1,charge=0)
     ints = PySCFIntegrals(mol)
 
     # Initialise GHF object
@@ -19,11 +19,12 @@ if __name__ == "__main__":
     # Test LBFGS
     LBFGS().run(wfn)
 
+    # Test canonicalisation and Hessian eigenvalue
+    wfn.canonicalize()
+    # Test Hessian index
+    wfn.get_davidson_hessian_index(approx_hess=False)
+    
     # Test DIIS
     wfn.initialise(np.eye(wfn.nmo,wfn.nmo))
     DIIS().run(wfn)
 
-    # Test canonicalisation and Hessian eigenvalue
-    wfn.canonicalize()
-    # Test Hessian index
-    wfn.get_davidson_hessian_index(approx_hess=True)

@@ -113,6 +113,7 @@ class GHF(Wavefunction):
         """Compute the internal RHF orbital Hessian"""
         # Number of occupied and virtual orbitals
         no = self.nocc
+        nv = self.nmo - no
 
         # Compute Fock matrix in MO basis 
         Fmo = np.linalg.multi_dot([self.mo_coeff.T, self.fock, self.mo_coeff])
@@ -134,21 +135,21 @@ class GHF(Wavefunction):
                     + self.integrals.tei_ao_to_mo(Cbv,Cbo,Cbv,Cbo,True,False))
 
         # Initialise Hessian matrix
-        hessian = np.zeros((self.nmo,self.nmo,self.nmo,self.nmo))
+        hessian = np.zeros((nv,no,nv,no))
 
         # Compute Fock contributions
         for i in range(no):
-            hessian[no:,i,no:,i] += 2 * Fmo[no:,no:]
-        for a in range(no,self.nmo):
-            hessian[a,:no,a,:no] -= 2 * Fmo[:no,:no]
+            hessian[:,i,:,i] += 2 * Fmo[no:,no:]
+        for a in range(nv):
+            hessian[a,:,a,:] -= 2 * Fmo[:no,:no]
 
         # Compute two-electron contributions
-        hessian[no:,:no,no:,:no] += 4 * np.einsum('abij->aibj', eri_abij, optimize="optimal")
-        hessian[no:,:no,no:,:no] -= 2 * np.einsum('aibj->aibj', eri_aibj, optimize="optimal")
-        hessian[no:,:no,no:,:no] -= 2 * np.einsum('abji->aibj', eri_abij, optimize="optimal")
+        hessian += 4 * np.einsum('abij->aibj', eri_abij, optimize="optimal")
+        hessian -= 2 * np.einsum('aibj->aibj', eri_aibj, optimize="optimal")
+        hessian -= 2 * np.einsum('abji->aibj', eri_abij, optimize="optimal")
 
         # Return suitably shaped array
-        return (hessian[:,:,self.rot_idx])[self.rot_idx,:]
+        return np.reshape(hessian,(nv*no,-1))
 
 
     def hess_on_vec(self,X):
@@ -250,7 +251,8 @@ class GHF(Wavefunction):
 
     def hamiltonian(self, them):
         """Compute the (nonorthogonal) many-body Hamiltonian coupling with another RHF wavefunction (them)"""
-        raise NotImplementedError("RHF Hamiltonian not implemented")
+        raise NotImplementedError("R" \
+        "HF Hamiltonian not implemented")
 
     def update(self):
         """Update the 1RDM and Fock matrix for the current state"""

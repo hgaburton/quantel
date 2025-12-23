@@ -172,7 +172,6 @@ class RHF(Wavefunction):
 
         return HX.ravel()
 
-
     def print(self,verbose=1):
         """ Print details about the state energy and orbital coefficients
 

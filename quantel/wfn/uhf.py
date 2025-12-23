@@ -34,6 +34,9 @@ class UHF(Wavefunction):
         self.verbose = verbose
         self.mom_method = mom_method
         self.nocc = (self.nalfa, self.nbeta)
+        self.mo_occ = np.zeros((2,self.nmo))
+        self.mo_occ[0,:self.nalfa] = 1.0
+        self.mo_occ[1,:self.nbeta] = 1.0
 
         # Setup the indices for relevant spin orbital rotations
         self.rot_idx = self.uniq_var_indices() 
@@ -161,14 +164,11 @@ class UHF(Wavefunction):
         hess_bb -= 2 * self.integrals.hybrid_K * np.einsum('abji->iajb', eri_bb_qsrp, optimize="optimal")        
         # Cross spin terms 
         hess_ab += 4 * np.einsum('rqsp->pqrs', eri_ab_rqsp, optimize="optimal")
-        
+
         # Contribution from xc correlation
         if(not (self.integrals.xc is None)):
             # Build ground-state density and xc kernel
-            occ = np.zeros((2,self.nmo))
-            occ[0][:self.nalfa] = 1.0
-            occ[1][:self.nbeta] = 1.0
-            rho0, vxc, fxc = self.integrals.cache_xc_kernel(self.mo_coeff,occ,spin=1)
+            rho0, vxc, fxc = self.integrals.cache_xc_kernel(self.mo_coeff,self.mo_occ,spin=1)
 
             # Loop over contributions per orbital pair
             for i in range(no_a):
@@ -197,7 +197,8 @@ class UHF(Wavefunction):
         hess_ab = np.reshape(hess_ab, (nv_a*no_a, -1))
         return np.block([[hess_aa, hess_ab], [hess_ab.T, hess_bb]])
 
-    
+
+
     def print(self,verbose=1):
         """ Print details about the state energy and orbital coefficients
 
@@ -283,7 +284,6 @@ class UHF(Wavefunction):
         """ Canonicalize the alpha and beta orbitals by diagonalising the occupied and virtual blocks of the Fock matrices """
         Q = np.zeros((2,self.nmo,self.nmo))
         self.mo_energy = np.zeros((2,self.nmo))
-        self.mo_occ = np.zeros((2,self.nmo))
         for spin in range(2):
             # Get data for this spin sector
             nocc = self.nocc[spin]
@@ -300,9 +300,6 @@ class UHF(Wavefunction):
             # Build the canonical MO coefficients
             self.mo_coeff[spin][:,:nocc] = np.dot(C[:,:nocc], Qocc)     
             self.mo_coeff[spin][:,nocc:] = np.dot(C[:,nocc:], Qvir)
-            # Get orbital occupation
-            self.mo_occ[spin] = np.zeros(self.nmo)
-            self.mo_occ[spin][:nocc] = 1.0 
             # Combine full transformation matrix
             Q[spin][:nocc,:nocc] = Qocc
             Q[spin][nocc:,nocc:] = Qvir
@@ -519,6 +516,51 @@ class UHF(Wavefunction):
         g1 = self.transform_vector(g1, - eps * vec)
         # Get approximation to H @ sk
         return (g1 - g0) / eps
+    
+
+    def hess_on_vec(self,X):
+        """ Compute the direct action of Hessian on a vector X (much faster than building the full Hessian)"""
+        # Number of occupied and virtual orbitals
+        (no_a, no_b) = self.nocc
+        (nv_a, nv_b) = (self.nmo - no_a, self.nmo - no_b)
+        # Split vector into alpha and beta parts
+        Xai_alfa = np.reshape(X[:self.nrot[0]], (nv_a, no_a))
+        Xai_beta = np.reshape(X[self.nrot[0]:], (nv_b, no_b))
+        # Access occupied and virtual orbital coefficients
+        Ci_alfa = self.mo_coeff[0][:,:no_a].copy()
+        Ca_alfa = self.mo_coeff[0][:,no_a:].copy()
+        Ci_beta = self.mo_coeff[1][:,:no_b].copy()
+        Ca_beta = self.mo_coeff[1][:,no_b:].copy()
+    
+        # First order density change
+        D1a = np.einsum('pa,ai,qi->pq', Ca_alfa, Xai_alfa, Ci_alfa, optimize="optimal")
+        D1b = np.einsum('pa,ai,qi->pq', Ca_beta, Xai_beta, Ci_beta, optimize="optimal")
+        # Coulomb and exchange contributions
+        J, K = self.integrals.build_JK([D1a,D1b],[D1a,D1b], Kxc=False)
+        # Build ground-state density and xc kernel
+        if(not (self.integrals.xc is None)):
+            rho0, vxc, fxc = self.integrals.cache_xc_kernel(self.mo_coeff,self.mo_occ,spin=1)
+            fxc = self.integrals.uks_fxc([D1a,D1b],rho0,vxc,fxc)
+        else:
+            fxc = np.zeros_like(J)
+        
+        # Fock contributions
+        Fba_alfa = np.linalg.multi_dot([Ca_alfa.T, self.fock[0], Ca_alfa])
+        Fij_alfa = np.linalg.multi_dot([Ci_alfa.T, self.fock[0], Ci_alfa])
+        Fba_beta = np.linalg.multi_dot([Ca_beta.T, self.fock[1], Ca_beta])
+        Fij_beta = np.linalg.multi_dot([Ci_beta.T, self.fock[1], Ci_beta])
+        
+        # Initialise output 
+        HX = np.zeros_like(X)
+        HX[:self.nrot[0]] = 2 * (Fba_alfa @ Xai_alfa - Xai_alfa @ Fij_alfa).ravel()
+        HX[self.nrot[0]:] = 2 * (Fba_beta @ Xai_beta - Xai_beta @ Fij_beta).ravel()
+        
+        # Compute 2-electron contributions
+        kernel_a = 4 * (J[0] + J[1]) + (4*fxc[0]) - 2 * self.integrals.hybrid_K * (K[0] + K[0].T)
+        kernel_b = 4 * (J[0] + J[1]) + (4*fxc[1]) - 2 * self.integrals.hybrid_K * (K[1] + K[1].T)
+        HX[:self.nrot[0]] += np.linalg.multi_dot([Ca_alfa.T, kernel_a, Ci_alfa]).ravel()
+        HX[self.nrot[0]:] += np.linalg.multi_dot([Ca_beta.T, kernel_b, Ci_beta]).ravel()
+        return HX
     
     def mo_cubegen(self, a_idx, b_idx, fname=""): 
         """ Generate and store cube files for specified MOs
