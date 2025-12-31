@@ -177,7 +177,7 @@ class CSF(Wavefunction):
         # Get generalised Fock and symmetrise
         F = self.gen_fock + self.gen_fock.T
         # Get one-electron matrix elements 
-        h1e = np.linalg.multi_dot([self.mo_coeff.T, self.integrals.oei_matrix(True), self.mo_coeff])
+        h1e = self.mo_transform(self.integrals.oei_matrix(True))
         # Combine intermediates (Eq. 10.8.53 in Helgaker book) 
         Hess = 2 * self.get_Y_intermediate()
         for i in range(self.nmo):
@@ -259,59 +259,82 @@ class CSF(Wavefunction):
         
         # Return approximation to H @ sk
         return (g1 - g0) / eps
+    
+    def mo_transform(self, M):
+        """ Transform a matrix from AO to MO basis """
+        if(type(M) is tuple):
+            return (self.mo_transform(Mi) for Mi in M)
+        elif(type(M) is list):
+            return [self.mo_transform(Mi) for Mi in M]
+        elif(type(M) is dict):
+            return {k:self.mo_transform(Mi) for k, Mi in M.items()}
+        elif(type(M) is np.ndarray):
+            if(len(M.shape)==3):
+                return np.einsum('mp,imn,nq->ipq',self.mo_coeff,M,self.mo_coeff)
+            elif(len(M.shape)==2):
+                return np.einsum('mp,mn,nq->pq',self.mo_coeff,M,self.mo_coeff)
+            else:
+                raise ValueError("Matrix must be rank 2 or 3 for MO transformation")
 
     def hess_on_vec(self, vec):
+        """ Compute the Hessian @ vec product directly, without forming the full Hessian matrix 
+            This is more memory efficient and avoids any ERI computation.
+
+            Inputs:
+                vec : vector to be multiplied by the Hessian
+            Returns:
+                Hvec : result of Hessian @ vec product
+        """
         # Antisymmetric step
         step = np.zeros((self.nmo,self.nmo))
         step[self.rot_idx] = vec
         step -= step.T
-        print(step)
-        # Initialize H @ vec
-        Hvec = np.zeros_like(step)
-        # One-electron part
-        h1e = np.linalg.multi_dot([self.mo_coeff.T, self.integrals.oei_matrix(True), self.mo_coeff])
-        print(self.mo_occ)
-        Hvec += 2 * np.einsum('q,ps,sq->pq',self.mo_occ,h1e,step)
-        # Generalised Fock part
-        Ft = 0.5 * (self.gen_fock + self.gen_fock.T)
-        Hvec -= np.einsum('ps,sq->pq',step,Ft) + np.einsum('ps,sq->pq',Ft,step)
-        # J/K part
-        vd = np.zeros((self.nshell+1,self.nbsf,self.nbsf))
-        vd[0] = np.einsum('r,rs,mr,ns->mn',self.mo_occ,step,self.mo_coeff,self.mo_coeff)
-        for P in range(self.nshell):
-            # Core contribution
-            vd[P+1] -= np.einsum('mr,rs,ns->mn',self.mo_coeff[:,:self.ncore],step[:self.ncore,:],self.mo_coeff)
-            # Active contribution
-            for R, Rinds in enumerate(self.shell_indices):
-                vd[P+1] += self.beta[P,R] * np.einsum('mr,rs,ns->mn',self.mo_coeff[:,Rinds],step[Rinds,:],self.mo_coeff)
 
-        print(vd)
-        J, K = self.integrals.build_JK(vd,vd,hermi=0,Kxc=False)
-        Jmo = np.einsum('pr,ipq,qs->irs',self.mo_coeff,J,self.mo_coeff)
-        Kmo = np.einsum('pr,ipq,qs->irs',self.mo_coeff,K,self.mo_coeff)
-        Hvec += 4 * np.einsum('p,qp->pq',self.mo_occ,Jmo[0]) 
-        Hvec[:self.ncore,:] -= 2 * (Kmo[0] + Kmo[0].T)[:self.ncore,:]
-        for P, Pinds in enumerate(self.shell_indices):
-            Hvec[Pinds,:] += 2 * (Kmo[P+1] + Kmo[P+1].T)[Pinds,:]
-        print("Jmo")
-        print(Jmo)
-        print("Kmo")
-        print(Kmo)
-        # Coulomb part
-        Jmo = self.mo_coeff.T @ self.J @ self.mo_coeff
-        Kmo = np.einsum('mp,imn,nq->ipq',self.mo_coeff,self.K,self.mo_coeff)
-        Hvec += 2 * np.einsum('p,qs,ps->pq',self.mo_occ,Jmo,step)
+        ## 0. Initialize H @ vec
+        Hvec = np.zeros_like(step)
+
+        ## 1. One-electron part
+        h1e = self.mo_transform(self.integrals.oei_matrix(True))
+        Hvec += 2 * h1e @ np.einsum('sq,q->sq',step,self.mo_occ)
+
+        ## 2. Generalised Fock part
+        Ft = 0.5 * (self.gen_fock + self.gen_fock.T)
+        Hvec -= step @ Ft + Ft @ step
+
+        ## 3. Zeroth-order J/K part
+        Jmo, Kmo = self.mo_transform((self.J,self.K))
+        Hvec += 2 * np.einsum('p,ps->ps',self.mo_occ,step) @ Jmo
         # Core contribution
         for I in range(Kmo.shape[0]):
-            Hvec[:self.ncore,:] -= 2 * np.einsum('qs,ps->pq',Kmo[I],step[:self.ncore,:]) 
+            Hvec[:self.ncore,:] -= 2 * step[:self.ncore,:] @ Kmo[I]
         for P, Pinds in enumerate(self.shell_indices):
-            Hvec[Pinds,:] += (2 * np.einsum('r,rqs,ps->pq',self.beta[P],Kmo[1:],step[Pinds,:])
-                              - np.einsum('qs,ps->pq',Kmo[0],step[Pinds,:]))
-        print("Hvec")
-        print(Hvec)
+            Hvec[Pinds,:] += step[Pinds,:] @ (2 * np.einsum('r,rqs->qs',self.beta[P],Kmo[1:]) - Kmo[0])
+            
+        ## 4. J/K part
+        # Build first-order densities
+        vd = np.zeros((self.nshell+1,self.nbsf,self.nbsf))
+        vd[0] = np.linalg.multi_dot([self.mo_coeff,np.einsum('r,rs->rs',self.mo_occ,step),self.mo_coeff.T])
+        # Symmetrise for efficiency
+        vd[0] = 0.5 * (vd[0] + vd[0].T)
+        for P in range(self.nshell):
+            # Core contribution
+            vd[P+1] -= np.linalg.multi_dot([self.mo_coeff[:,:self.ncore],step[:self.ncore,:],self.mo_coeff.T])
+            # Active contribution
+            for R, Rinds in enumerate(self.shell_indices):
+                vd[P+1] += self.beta[P,R] * np.linalg.multi_dot([self.mo_coeff[:,Rinds],step[Rinds,:],self.mo_coeff.T])
+            vd[P+1] = 0.5 * (vd[P+1] + vd[P+1].T)
+        # Build J and K matrices from first-order densities
+        J1, K1 = self.mo_transform(self.integrals.build_JK(vd,vd,hermi=1,Kxc=False))
+        # Contribution to Hvec
+        Hvec += 4 * np.einsum('p,qp->pq',self.mo_occ,J1[0]) 
+        # Don't include transpose as density was symmetrised
+        Hvec[:self.ncore,:] -= 4 * K1[0][:self.ncore,:]
+        for P, Pinds in enumerate(self.shell_indices):
+            Hvec[Pinds,:] += 4 * K1[P+1][Pinds,:]
+        
+        ## 5. Antisymmetrise and return
         Hvec = Hvec - Hvec.T
         return Hvec[self.rot_idx]
-        return self.hessian @ vec
 
     def get_rdm12(self,only_occ=True):
         """ Compute the 1- and 2-electron reduced matrices from the shell coupling in occupied space
