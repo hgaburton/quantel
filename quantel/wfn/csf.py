@@ -261,6 +261,56 @@ class CSF(Wavefunction):
         return (g1 - g0) / eps
 
     def hess_on_vec(self, vec):
+        # Antisymmetric step
+        step = np.zeros((self.nmo,self.nmo))
+        step[self.rot_idx] = vec
+        step -= step.T
+        print(step)
+        # Initialize H @ vec
+        Hvec = np.zeros_like(step)
+        # One-electron part
+        h1e = np.linalg.multi_dot([self.mo_coeff.T, self.integrals.oei_matrix(True), self.mo_coeff])
+        print(self.mo_occ)
+        Hvec += 2 * np.einsum('q,ps,sq->pq',self.mo_occ,h1e,step)
+        # Generalised Fock part
+        Ft = 0.5 * (self.gen_fock + self.gen_fock.T)
+        Hvec -= np.einsum('ps,sq->pq',step,Ft) + np.einsum('ps,sq->pq',Ft,step)
+        # J/K part
+        vd = np.zeros((self.nshell+1,self.nbsf,self.nbsf))
+        vd[0] = np.einsum('r,rs,mr,ns->mn',self.mo_occ,step,self.mo_coeff,self.mo_coeff)
+        for P in range(self.nshell):
+            # Core contribution
+            vd[P+1] -= np.einsum('mr,rs,ns->mn',self.mo_coeff[:,:self.ncore],step[:self.ncore,:],self.mo_coeff)
+            # Active contribution
+            for R, Rinds in enumerate(self.shell_indices):
+                vd[P+1] += self.beta[P,R] * np.einsum('mr,rs,ns->mn',self.mo_coeff[:,Rinds],step[Rinds,:],self.mo_coeff)
+
+        print(vd)
+        J, K = self.integrals.build_JK(vd,vd,hermi=0,Kxc=False)
+        Jmo = np.einsum('pr,ipq,qs->irs',self.mo_coeff,J,self.mo_coeff)
+        Kmo = np.einsum('pr,ipq,qs->irs',self.mo_coeff,K,self.mo_coeff)
+        Hvec += 4 * np.einsum('p,qp->pq',self.mo_occ,Jmo[0]) 
+        Hvec[:self.ncore,:] -= 2 * (Kmo[0] + Kmo[0].T)[:self.ncore,:]
+        for P, Pinds in enumerate(self.shell_indices):
+            Hvec[Pinds,:] += 2 * (Kmo[P+1] + Kmo[P+1].T)[Pinds,:]
+        print("Jmo")
+        print(Jmo)
+        print("Kmo")
+        print(Kmo)
+        # Coulomb part
+        Jmo = self.mo_coeff.T @ self.J @ self.mo_coeff
+        Kmo = np.einsum('mp,imn,nq->ipq',self.mo_coeff,self.K,self.mo_coeff)
+        Hvec += 2 * np.einsum('p,qs,ps->pq',self.mo_occ,Jmo,step)
+        # Core contribution
+        for I in range(Kmo.shape[0]):
+            Hvec[:self.ncore,:] -= 2 * np.einsum('qs,ps->pq',Kmo[I],step[:self.ncore,:]) 
+        for P, Pinds in enumerate(self.shell_indices):
+            Hvec[Pinds,:] += (2 * np.einsum('r,rqs,ps->pq',self.beta[P],Kmo[1:],step[Pinds,:])
+                              - np.einsum('qs,ps->pq',Kmo[0],step[Pinds,:]))
+        print("Hvec")
+        print(Hvec)
+        Hvec = Hvec - Hvec.T
+        return Hvec[self.rot_idx]
         return self.hessian @ vec
 
     def get_rdm12(self,only_occ=True):
