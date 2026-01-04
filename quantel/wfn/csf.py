@@ -9,8 +9,7 @@ from quantel.gnme.csf_noci import csf_coupling, csf_coupling_slater_condon
 from .wavefunction import Wavefunction
 from quantel.utils.csf_utils import csf_reorder_orbitals
 from quantel.utils.orbital_guess import orbital_guess
-from quantel.ints.pyscf_integrals import PySCFIntegrals
-from pyscf.tools import cubegen
+
 
 def flag_transport(A,T,mask,max_order=50,tol=1e-4):
    tA = A.copy()
@@ -740,7 +739,7 @@ class CSF(Wavefunction):
             for q in range(p):
                 Q[p,q] = 2 * ( (self.gen_fock_diag[p,q] - self.gen_fock_diag[q,q]) 
                              + (self.gen_fock_diag[q,p] - self.gen_fock_diag[p,p]) )
-           
+                
         # Compute two-electron corrections involving active orbitals
         Acoeff = self.Ipqqp
         for q in range(self.ncore,self.nocc):

@@ -510,17 +510,17 @@ class UHF(Wavefunction):
         """Compute the Hamiltonian coupling with another wavefunction of this type"""
         pass
     
-    def approx_hess_on_vec(self, vec, eps=1e-3): 
+    
+    def approx_hess_on_vec(self, vec, eps=1e-3):
         """ Compute the approximate Hess * vec product using forward finite difference """
         # Get current gradient
         g0 = self.gradient.copy()
         # Save current position
         self.save_last_step()
         # Get forward gradient
-        self.take_step(eps * vec)
-        g1 = self.gradient.copy()
-        # Restore to origin
-        self.restore_last_step()
+        them = self.copy(integrals=False)
+        them.take_step(eps * vec)
+        g1 = them.gradient.copy()
         # Parallel transport back to current position
         g1 = self.transform_vector(g1, - eps * vec)
         # Get approximation to H @ sk

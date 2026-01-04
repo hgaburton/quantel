@@ -1,15 +1,10 @@
 #!/usr/bin/python3
-# Modified from ss_casscf code of Antoine Marie and Hugh G. A. Burton
-# This is code for a CSF, which can be formed in a variety of ways.
 import numpy as np
-import scipy, quantel, h5py
-from quantel.utils.csf_utils import get_csf_vector, get_ensemble_expansion, get_det_occupation
+from quantel.utils.csf_utils import get_ensemble_expansion, get_det_occupation, csf_reorder_orbitals
 from quantel.utils.linalg import orthogonalise, stable_eigh, matrix_print
-from quantel.gnme.csf_noci import csf_coupling, csf_coupling_slater_condon
+#from quantel.gnme.csf_noci import csf_coupling, csf_coupling_slater_condon
 from .csf import CSF
-from quantel.utils.csf_utils import csf_reorder_orbitals
 from quantel.utils.orbital_guess import orbital_guess
-from quantel.ints.pyscf_integrals import PySCFIntegrals
 
 class ROKS(CSF):
     """ 
@@ -30,7 +25,7 @@ class ROKS(CSF):
                 verbose       : verbosity level
         """
         # Call the parent constructor
-        super().__init__(integrals, spin_coupling, verbose)
+        CSF.__init__(self,integrals,spin_coupling,verbose)
 
 
     def initialise(self, mo_guess, spin_coupling=None, mat_ci=None, integrals=True):
@@ -40,6 +35,7 @@ class ROKS(CSF):
         self.setup_spin_coupling(spin_coupling)
         # We also want to compute the ROKS ensemble coefficients
         self.ensemble_dets = get_ensemble_expansion(spin_coupling)
+        self.ensemble_coeff = np.array([c for (_,c) in self.ensemble_dets])
 
         # Orthogonalise the MO coefficients
         mo_guess      = orthogonalise(mo_guess, self.integrals.overlap_matrix())        
@@ -111,7 +107,7 @@ class ROKS(CSF):
             occ = np.asarray(get_det_occupation(detL, self.shell_indices, self.ncore, self.nmo))
 
             # Get corresponding vxc in MO basis
-            vxc_mo = self.vxc_ensemble_mo[Idet]
+            vxc_mo = self.mo_transform(self.vxc_ensemble[Idet])
             # Contribution from xc potential (2nd order orbital and density term)
             for p in range(self.nmo):
                 xc_hess[p,:,p,:] += cL * (2 * occ[0][p] - occ[0][:,None] - occ[0][None,:]) * vxc_mo[0]
@@ -165,7 +161,7 @@ class ROKS(CSF):
             occ = np.asarray(get_det_occupation(detL, self.shell_indices, self.ncore, self.nmo))
             
             # Get corresponding vxc in MO basis
-            vxc_mo = self.vxc_ensemble_mo[Idet]
+            vxc_mo = self.mo_transform(self.vxc_ensemble[Idet])
             # Contribution from xc potential (2nd order orbital and density term)
             # here x is an index for the spin channels
             xc_Hvec += cL * (2 * np.einsum('xp,ps,xsq->pq',occ,step,vxc_mo,optimize='optimal') 
@@ -218,7 +214,7 @@ class ROKS(CSF):
         if(verbose > 3):
             matrix_print(self.mo_coeff[:,self.nocc:], title="Virtual Orbital Coefficients", offset=self.nocc)
         if(verbose > 4):
-            matrix_print(self.gen_fock[:self.nocc,:].T, title="Generalised Fock Matrix (MO basis)")
+            matrix_print(self.gen_fock_xc[:self.nocc,:].T, title="Generalised Fock Matrix (MO basis)")
         print()
 
 
@@ -236,10 +232,10 @@ class ROKS(CSF):
             rho = self.dk[0]
             exc, vxc = self.integrals.build_vxc(rho,hermi=1)
             vxc_shell[0] = vxc[0] + vxc[1]
-            vxc_ensemble_mo = self.mo_transform(vxc_shell[0])
+            vxc_ensemble = vxc_shell[0]
         else:
             # loop over determinants in the ensemble
-            vxc_ensemble_mo = np.zeros((len(self.ensemble_dets),2,self.nbsf,self.nbsf))
+            vxc_ensemble = np.zeros((len(self.ensemble_dets),2,self.nbsf,self.nbsf))
             for Idet, (det_str, coeff) in enumerate(self.ensemble_dets):
                 # Initialise spin densities from core contribution
                 dma, dmb = 0.5 * self.dk[0], 0.5 * self.dk[0]
@@ -251,7 +247,7 @@ class ROKS(CSF):
 
                 # Build the vxc for this determinant
                 exc_det, vxc_det = self.integrals.build_vxc((dma,dmb),hermi=1)
-                vxc_ensemble_mo[Idet] = self.mo_transform(vxc_det)
+                vxc_ensemble[Idet] = vxc_det
                 # Accumulate the energy
                 exc += coeff * exc_det
 
@@ -262,7 +258,7 @@ class ROKS(CSF):
                 for Ishell, spinI in enumerate(det_str):
                     vxc_shell[1+Ishell] += coeff * (vxc_det[0] if (spinI=='a') else vxc_det[1])
                 
-        return exc, vxc_shell, vxc_ensemble_mo
+        return exc, vxc_shell, vxc_ensemble
 
 
     def update_integrals(self):
@@ -270,7 +266,14 @@ class ROKS(CSF):
         # Update density, J, K, wfn_fock and gen_fock from parent CSF class
         CSF.update_integrals(self)
         # Compute xc-potential
-        self.exc, self.vxc, self.vxc_ensemble_mo = self.get_vxc()
+        self.exc, self.vxc, self.vxc_ensemble = self.get_vxc()
+        # Get DFT generalised Fock matrix
+        self.gen_fock_xc = self.gen_fock.copy()
+        self.gen_fock_xc[:self.ncore,:] += np.linalg.multi_dot([self.mo_coeff[:,:self.ncore].T, self.vxc[0], self.mo_coeff])
+        for W, shell in enumerate(self.shell_indices):
+            self.gen_fock_xc[shell,:] += np.linalg.multi_dot([self.mo_coeff[:,shell].T, self.vxc[W+1], self.mo_coeff])
+        # Add XC contribution to overall Fock matrix
+        self.fock += np.einsum('Lxpq,L->pq',self.vxc_ensemble,self.ensemble_coeff)
 
 
     def copy(self,integrals=True):
@@ -283,8 +286,7 @@ class ROKS(CSF):
     def overlap(self, them):
         """ Compute the overlap between two CSF objects
         """
-        ovlp = self.integrals.overlap_matrix()
-        return csf_coupling(self, them, ovlp)[0]
+        raise NotImplementedError("ROKS overlap coupling not yet implemented")
 
 
     def hamiltonian(self, them):
@@ -305,55 +307,6 @@ class ROKS(CSF):
         # Initialise the CSF object with the guess coefficients.
         self.initialise(Cguess, spin_coupling=self.spin_coupling)
         return
-    
-
-    def get_dft_generalised_fock(self):
-        """ Compute the generalised Fock matrix in MO basis"""
-        # Initialise memory
-        F = np.zeros((self.nmo, self.nmo)) 
-
-        # Memory for diagonal elements
-        self.gen_fock_diag = np.zeros((self.nmo,self.nmo))
-        # Core contribution
-        Fcore_ao = 2 * (self.integrals.oei_matrix(True) + self.J 
-                      - 0.5 * np.sum(self.K[i] for i in range(self.nshell+1)))
-        # XC potential contribution
-        # HERE
-        Fcore_ao = self.vxc[0]
-        # AO-to-MO transformation
-        Fcore_mo = np.linalg.multi_dot([self.mo_coeff.T, Fcore_ao, self.mo_coeff])
-        for i in range(self.ncore):
-            self.gen_fock_diag[i,:] = Fcore_mo.diagonal()
-        F[:self.ncore,:] = Fcore_mo[:self.ncore,:]
-
-        # Open-shell contributions
-        for W in range(self.nshell):
-            # Get shell indices and coefficients
-            shell = self.shell_indices[W]
-            # One-electron matrix, Coulomb and core exchange
-            Fw_ao = self.integrals.oei_matrix(True) + self.J - 0.5 * self.K[0]
-            # Different shell exchange
-            Fw_ao += np.einsum('v,vpq->pq',self.beta[W],self.K[1:])
-            # XC potential contribution
-            # HERE
-            Fw_ao = self.vxc[W+1]
-            # AO-to-MO transformation
-            Fw_mo = np.linalg.multi_dot([self.mo_coeff.T, Fw_ao, self.mo_coeff])
-            for w in shell:
-                self.gen_fock_diag[w,:] = Fw_mo.diagonal()
-            F[shell,:] = Fw_mo[shell,:]
-        
-        # Get diagonal J/K terms
-        Ipqpq = np.zeros((self.nopen,self.nmo))
-        Ipqqp = np.zeros((self.nopen,self.nmo))
-        for i in range(self.nopen):
-            Ji = self.mo_coeff.T @ self.vJ[1+i] @ self.mo_coeff
-            Ki = self.mo_coeff.T @ self.vIpqqp[1+i] @ self.mo_coeff
-            Ipqpq[i] = np.diag(Ji)
-            Ipqqp[i] = np.diag(Ki)
-
-        # Add exchange-correlation contribtu
-        return F, Ipqpq, Ipqqp
 
 
     def get_preconditioner(self,abs=True,include_fxc=False):
@@ -367,7 +320,7 @@ class ROKS(CSF):
             # Get occupation numbers and occupied/virtual orbitals for this determinant
             occ = np.asarray(get_det_occupation(detL, self.shell_indices, self.ncore, self.nmo))            
             # Get corresponding vxc in MO basis
-            vxc_mo = self.vxc_ensemble_mo[Idet]
+            vxc_mo = self.mo_transform(self.vxc_ensemble[Idet])
             diag_vxc_mo = np.einsum('xpp->xp',vxc_mo)
             # Contribution from xc potential (2nd order orbital and density term)
             Q_xc += 2 * cL * np.einsum('xpq,xpq->pq',occ[:,:,None]-occ[:,None,:], diag_vxc_mo[:,None,:]-diag_vxc_mo[:,:,None])
@@ -396,14 +349,10 @@ class ROKS(CSF):
     
 
     def koopmans(self):
-        """
-        Solve IP using Koopmans theory
-        """
+        """ Solve IP using Extended Koopmans theory"""
         from scipy.linalg import eigh
         # Transform gen Fock matrix to MO basis
-        gen_fock = self.gen_fock[:self.nocc,:self.nocc]
-        gen_dens = np.diag(self.mo_occ[:self.nocc])
-        e, v = eigh(-gen_fock, gen_dens)
+        e, v = eigh(-self.gen_fock_xc[:self.nocc,:self.nocc], np.diag(self.mo_occ[:self.nocc]))
         # Normalize ionization orbitals wrt standard metric
         for i in range(self.nocc):
             v[:,i] /= np.linalg.norm(v[:,i])
@@ -427,22 +376,23 @@ class ROKS(CSF):
         Q = np.zeros((self.nmo,self.nmo))
 
         # Get core transformation using generalised Fock matrix
-        foo = self.gen_fock[self.core_indices,:][:,self.core_indices]
+        foo = self.gen_fock_xc[self.core_indices,:][:,self.core_indices]
         self.mo_energy[:self.ncore], Qoo = stable_eigh(foo)
         for i, ii in enumerate(self.core_indices):
             for j, jj in enumerate(self.core_indices):
                 Q[ii,jj] = Qoo[i,j]
+        # Scale core orbital energies
+        self.mo_energy[:self.ncore] *= 0.5
 
         # Loop over shells
         for W in self.shell_indices:
-            fww = self.gen_fock[W,:][:,W]
+            fww = self.gen_fock_xc[W,:][:,W]
             self.mo_energy[W], Qww = stable_eigh(fww)
             for i, ii in enumerate(W):
                 for j, jj in enumerate(W):
                     Q[ii,jj] = Qww[i,j]
 
-        # Virtual transformation
-        # Here we use the standard Fock matrix
+        # Virtual transformation. Here we use the standard Fock matrix
         fvv = np.linalg.multi_dot([self.mo_coeff[:,self.nocc:].T, self.fock, self.mo_coeff[:,self.nocc:]])
         self.mo_energy[self.nocc:], Qvv = stable_eigh(fvv)
         Q[self.nocc:,self.nocc:] = Qvv
@@ -451,6 +401,6 @@ class ROKS(CSF):
         if(np.linalg.det(Q) < 0): Q[:,0] *= -1
         self.mo_coeff = self.mo_coeff @ Q
         
-        # Update generalised Fock matrix and diagonal approximations
-        self.gen_fock, self.Ipqpq, self.Ipqqp = self.get_generalised_fock()
+        # Update integrals
+        self.update_integrals()
         return Q
