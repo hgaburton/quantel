@@ -183,12 +183,12 @@ class CSF(Wavefunction):
         for i in range(self.nmo):
             Hess[i,:,i,:] += 2 * self.mo_occ[i] * h1e
             Hess[:,i,:,i] -= F
-               # Apply permutation symmetries
+        # Apply permutation symmetries
         Hess = Hess - Hess.transpose(1,0,2,3)
         Hess = Hess - Hess.transpose(0,1,3,2)
         # Reshape and return
         return (Hess[:, :, self.rot_idx])[self.rot_idx, :]
-
+    
     @property
     def exchange_matrix(self):
         """ Compute the exchange matrix in the MO basis"""
@@ -211,7 +211,7 @@ class CSF(Wavefunction):
         # Return the combination
         return nucl_dip - np.einsum('xij,ji->x',ao_dip,self.dj)
 
-
+        
     def print(self,verbose=1):
         """ Print details about the state energy and orbital coefficients
 
@@ -247,7 +247,6 @@ class CSF(Wavefunction):
         """ Compute the approximate Hess * vec product using forward finite difference """
         # Get current gradient
         g0 = self.gradient.copy()
-
         # Get forward gradient
         # First copy CSF but don't initialise integrals
         them = self.copy(integrals=False)
@@ -256,7 +255,6 @@ class CSF(Wavefunction):
         g1 = them.gradient.copy()
         # Parallel transport back to current position
         g1 = self.transform_vector(g1, - eps * vec)
-        
         # Return approximation to H @ sk
         return (g1 - g0) / eps
     
@@ -324,7 +322,7 @@ class CSF(Wavefunction):
                 vd[P+1] += self.beta[P,R] * np.linalg.multi_dot([self.mo_coeff[:,Rinds],step[Rinds,:],self.mo_coeff.T])
             vd[P+1] = 0.5 * (vd[P+1] + vd[P+1].T)
         # Build J and K matrices from first-order densities
-        J1, K1 = self.mo_transform(self.integrals.build_JK(vd,vd,hermi=1,Kxc=False))
+        J1, _, K1 = self.mo_transform(self.integrals.build_JK(vd,vd,hermi=1,Kxc=True))
         # Contribution to Hvec
         Hvec += 4 * np.einsum('p,qp->pq',self.mo_occ,J1[0]) 
         # Don't include transpose as density was symmetrised
@@ -392,7 +390,7 @@ class CSF(Wavefunction):
         # Get Fock matrix (AO basis)
         self.fock = self.integrals.oei_matrix(True) + self.J - 0.5 * np.einsum('mpq->pq',self.K)
         # Get generalized Fock matrices
-        self.gen_fock, self.Ipqpq, self.Ipqqp = self.get_generalised_fock()
+        self.gen_fock, self.Ipqpq, self.Ipqqp, self.gen_fock_diag = self.get_generalised_fock()
         return 
 
     def save_to_disk(self, tag):
@@ -650,14 +648,14 @@ class CSF(Wavefunction):
         F = np.zeros((self.nmo, self.nmo)) 
 
         # Memory for diagonal elements
-        self.gen_fock_diag = np.zeros((self.nmo,self.nmo))
+        gen_fock_diag = np.zeros((self.nmo,self.nmo))
         # Core contribution
         Fcore_ao = 2 * (self.integrals.oei_matrix(True) + self.J 
                       - 0.5 * np.sum(self.K[i] for i in range(self.nshell+1)))
         # AO-to-MO transformation
         Fcore_mo = np.linalg.multi_dot([self.mo_coeff.T, Fcore_ao, self.mo_coeff])
         for i in range(self.ncore):
-            self.gen_fock_diag[i,:] = Fcore_mo.diagonal()
+            gen_fock_diag[i,:] = Fcore_mo.diagonal()
         F[:self.ncore,:] = Fcore_mo[:self.ncore,:]
 
         # Open-shell contributions
@@ -671,7 +669,7 @@ class CSF(Wavefunction):
             # AO-to-MO transformation
             Fw_mo = np.linalg.multi_dot([self.mo_coeff.T, Fw_ao, self.mo_coeff])
             for w in shell:
-                self.gen_fock_diag[w,:] = Fw_mo.diagonal()
+                gen_fock_diag[w,:] = Fw_mo.diagonal()
             F[shell,:] = Fw_mo[shell,:]
         
         # Get diagonal J/K terms
@@ -682,7 +680,7 @@ class CSF(Wavefunction):
             Ki = self.mo_coeff.T @ self.vK[1+i] @ self.mo_coeff
             Ipqpq[i] = np.diag(Ji)
             Ipqqp[i] = np.diag(Ki)
-        return F, Ipqpq, Ipqqp
+        return F, Ipqpq, Ipqqp, gen_fock_diag
 
 
     def get_Y_intermediate(self):
@@ -707,15 +705,15 @@ class CSF(Wavefunction):
         Y = np.zeros((nmo,nmo,nmo,nmo))
         # Y_imjn
         Y[:ncore,:,:ncore,:] += 8 * np.einsum('mnij->imjn',ppoo[:,:,:ncore,:ncore]) 
-        Y[:ncore,:,:ncore,:] -= 2 * np.einsum('mnji->imjn',ppoo[:,:,:ncore,:ncore])
-        Y[:ncore,:,:ncore,:] -= 2 * np.einsum('mjni->imjn',popo[:,:ncore,:,:ncore])
+        Y[:ncore,:,:ncore,:] -= 2 * self.integrals.hybrid_K * np.einsum('mnji->imjn',ppoo[:,:,:ncore,:ncore])
+        Y[:ncore,:,:ncore,:] -= 2 * self.integrals.hybrid_K * np.einsum('mjni->imjn',popo[:,:ncore,:,:ncore])
         for i in range(ncore):
             Y[i,:,i,:] += 2 * Jmn - Kmn
 
         # Y_imwn
         Y[:ncore,:,ncore:nocc,:] = (4 * ppoo[:,:,:ncore,ncore:nocc].transpose(2,0,3,1)
-                                      - ppoo[:,:,ncore:nocc,:ncore].transpose(3,0,2,1)
-                                      - popo[:,ncore:nocc,:,:ncore].transpose(3,0,1,2))
+                                      - self.integrals.hybrid_K * ppoo[:,:,ncore:nocc,:ncore].transpose(3,0,2,1)
+                                      - self.integrals.hybrid_K * popo[:,ncore:nocc,:,:ncore].transpose(3,0,1,2))
         Y[ncore:nocc,:,:ncore,:] = Y[:ncore,:,ncore:nocc,:].transpose(2,3,0,1)
 
         # Y_wmvn
@@ -724,14 +722,15 @@ class CSF(Wavefunction):
             for V in range(W,self.nshell):
                 for w in self.shell_indices[W]:
                     for v in self.shell_indices[V]:
-                        Y[w,:,v,:] = 2 * ppoo[:,:,w,v] + self.beta[W,V] * (ppoo[:,:,v,w] + popo[:,v,:,w])
+                        Y[w,:,v,:] = 2 * ppoo[:,:,w,v] + self.integrals.hybrid_K * self.beta[W,V] * (ppoo[:,:,v,w] + popo[:,v,:,w])
                         if(w==v):
                             Y[w,:,w,:] = Y[w,:,w,:] + Jmn - 0.5 * vKmn[0] + wKmn
                         else:
                             Y[v,:,w,:] = Y[w,:,v,:].T
         return Y
 
-    def get_preconditioner(self):
+    
+    def get_preconditioner(self,abs=True):
         """Compute approximate diagonal of Hessian"""
         # Initialise approximate preconditioner
         Q = np.zeros((self.nmo,self.nmo))
@@ -750,7 +749,7 @@ class CSF(Wavefunction):
             for p in range(q+1,self.nmo):
                 Q[p,q] += 4 * (self.mo_occ[p]-self.mo_occ[q])**2 * Acoeff[q-self.ncore,p]
 
-        Bcoeff = self.Ipqpq + self.Ipqqp
+        Bcoeff = self.integrals.hybrid_K * (self.Ipqpq + self.Ipqqp)
         for W in range(self.nshell):
             for q in self.shell_indices[W]:
                 # Core-Active
@@ -764,7 +763,7 @@ class CSF(Wavefunction):
                 for p in range(self.nocc,self.nmo):
                     Q[p,q] -= 2 * (self.mo_occ[p] + self.mo_occ[q]) * Bcoeff[q-self.ncore,p]
 
-        return np.abs(Q[self.rot_idx])
+        return np.abs(Q[self.rot_idx]) if abs else Q[self.rot_idx]
 
     def edit_mask_by_gcoupling(self, mask):
         r"""

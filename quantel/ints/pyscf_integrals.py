@@ -197,7 +197,7 @@ class PySCFIntegrals:
             return vJ[0], vK[1]
 
     
-    def build_vxc(self,dms):
+    def build_vxc(self,dms,hermi=0):
         """ Build the exchange-correlation potential
             Args:
                 dma : ndarray
@@ -211,7 +211,7 @@ class PySCFIntegrals:
         """
         if(self.xc is None):
             return 0, (np.zeros_like(dms[0]), np.zeros_like(dms[1]))
-        return self.ni.nr_uks(self.mol, self.grid, self.xc, dms)[1:]
+        return self.ni.nr_uks(self.mol, self.grid, self.xc, dms, hermi=hermi)[1:]
     
     def oei_ao_to_mo(self, C1, C2, spin=None):
         """ Transform the one-electron integrals from AO to MO basis
@@ -268,7 +268,7 @@ class PySCFIntegrals:
         """
         return self.ni.cache_xc_kernel(self.mol, self.grid, self.xc, mo_coeff, mo_occ, spin)
     
-    def uks_fxc(self, dm1, rho0, vxc, fxc):
+    def uks_fxc(self, dm1, rho0, vxc, fxc, hermi=0):
         """ Compute the fxc kernel for first-order density dm1 with precomputed rho0, vxc, fxc.
             Args:
                 dm1 : 2 x ndarray
@@ -282,7 +282,7 @@ class PySCFIntegrals:
             Returns:
                 ndarray : The fxc contribution to the Fock matrix as [alpha,beta]
         """
-        return self.ni.nr_uks_fxc(self.mol,self.grid,self.xc,None,dm1,0,hermi=0,rho0=rho0,vxc=vxc,fxc=fxc)
+        return self.ni.nr_uks_fxc(self.mol,self.grid,self.xc,None,dm1,0,hermi=hermi,rho0=rho0,vxc=vxc,fxc=fxc)
 
 class PySCF_MO_Integrals:
     """Wrapper class to call integral functions from PySCF"""

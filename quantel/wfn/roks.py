@@ -78,20 +78,117 @@ class ROKS(CSF):
         self.energy_components = dict(Nuclear=En, One_Electron=E1, Coulomb=EJ, 
                                       ROHF_Exchange=EK, Exchange_Correlation=Exc)
         return En + E1 + EJ + EK + Exc
+    
 
     @property
-    def exchange_matrix(self):
-        """ Compute the exchange matrix in the MO basis"""
-        Xb = np.zeros((self.nocc,self.nocc))
-        # Open-Open
-        for W, sW in enumerate(self.shell_indices):
-            for V, sV in enumerate(self.shell_indices):
-                for w in sW:
-                    for v in sV:
-                        Xb[w,v] = self.beta[W,V]
-        # Set diagonal to zero
-        np.fill_diagonal(Xb,0)
-        return Xb[self.ncore:,self.ncore:]
+    def gradient(self):
+        # 1. Get wavefunction part from parent CSF class
+        grad = CSF.gradient.fget(self)
+
+        # 2. Compute XC contribution
+        grad_xc = np.zeros((self.nmo,self.nmo))
+        grad_xc[:self.ncore,:] += np.linalg.multi_dot([self.mo_coeff[:,:self.ncore].T, self.vxc[0], self.mo_coeff])
+        for W in range(self.nshell):
+            shell = self.shell_indices[W]
+            grad_xc[shell,:] += np.linalg.multi_dot([self.mo_coeff[:,shell].T, self.vxc[W+1], self.mo_coeff])
+
+        # 3. Combine and return
+        grad += 2 * (grad_xc.T - grad_xc)[self.rot_idx]
+        return grad
+
+
+    @property
+    def hessian(self):
+        ''' This method finds orb-orb part of the Hessian '''
+        # 1. Get wavefunction component from parent CSF class
+        hess = CSF.hessian.fget(self)
+
+        # 2.Compute xc_correlation part
+        xc_hess = np.zeros((self.nmo,self.nmo,self.nmo,self.nmo))
+        # Loop over determinants in the ensemble
+        for Idet, (detL, cL) in enumerate(self.ensemble_dets):
+            # Get occupation numbers and occupied/virtual orbitals for this determinant
+            occ = np.asarray(get_det_occupation(detL, self.shell_indices, self.ncore, self.nmo))
+
+            # Get corresponding vxc in MO basis
+            vxc_mo = self.vxc_ensemble_mo[Idet]
+            # Contribution from xc potential (2nd order orbital and density term)
+            for p in range(self.nmo):
+                xc_hess[p,:,p,:] += cL * (2 * occ[0][p] - occ[0][:,None] - occ[0][None,:]) * vxc_mo[0]
+                xc_hess[p,:,p,:] += cL * (2 * occ[1][p] - occ[1][:,None] - occ[1][None,:]) * vxc_mo[1]
+
+            # Contribution from xc kernel (2nd order functional term)
+            if(not (self.integrals.xc is None)):
+                # Build ground-state density and xc kernel
+                rho0, vxc, fxc = self.integrals.cache_xc_kernel((self.mo_coeff,self.mo_coeff),occ,spin=1)
+
+                # Loop over unique contributions, where s is occupied in alpha or beta space
+                for s in np.argwhere(occ[0]+occ[1]>0).flatten():
+                    for r in range(self.nmo):
+                        # Build the first-order density matrix for this orbital pair
+                        D1 = np.einsum('x,m,n->xmn',occ[:,s],self.mo_coeff[:,r],self.mo_coeff[:,s],optimize='optimal')
+                        # Compute the contracted kernel with first-order density
+                        fxc_ia = self.mo_transform(self.integrals.uks_fxc(D1,rho0,vxc,fxc))
+                        # Add contribution
+                        xc_hess[r,s] += 4 * cL * np.einsum('xq,xpq->pq',occ,fxc_ia,optimize='optimal')
+        # Antisymmetrise
+        xc_hess = xc_hess - xc_hess.transpose(1,0,2,3)
+        xc_hess = xc_hess - xc_hess.transpose(0,1,3,2)
+
+        # 3. Combine wavefunction with xc and return
+        hess += (xc_hess[:,:,self.rot_idx])[self.rot_idx,:]
+        return hess
+
+
+    def hess_on_vec(self, vec):
+        """ Compute the Hessian @ vec product directly, without forming the full Hessian matrix 
+            This is more memory efficient and avoids any ERI computation.
+
+            Inputs:
+                vec : vector to be multiplied by the Hessian
+            Returns:
+                Hvec : result of Hessian @ vec product
+        """
+        # 0. Get antisymmetric step from vector
+        step = np.zeros((self.nmo,self.nmo))
+        step[self.rot_idx] = vec
+        step -= step.T
+
+        # 1. Get wavefunction part from parent CSF class (already formatted)
+        Hvec = CSF.hess_on_vec(self,vec)
+
+        # 2. Compute xc contribution
+        xc_Hvec = np.zeros_like(step)
+        # Loop over determinants in the ensemble
+        for Idet, (detL, cL) in enumerate(self.ensemble_dets):
+            # Get occupation numbers and occupied/virtual orbitals for this determinant
+            occ = np.asarray(get_det_occupation(detL, self.shell_indices, self.ncore, self.nmo))
+            
+            # Get corresponding vxc in MO basis
+            vxc_mo = self.vxc_ensemble_mo[Idet]
+            # Contribution from xc potential (2nd order orbital and density term)
+            # here x is an index for the spin channels
+            xc_Hvec += cL * (2 * np.einsum('xp,ps,xsq->pq',occ,step,vxc_mo,optimize='optimal') 
+                               - np.einsum('ps,xs,xsq->pq',step,occ,vxc_mo,optimize='optimal')
+                               - np.einsum('ps,xsq,xq->pq',step,vxc_mo,occ,optimize='optimal'))
+
+            # Contribution from xc kernel (2nd order functional term)
+            if(not (self.integrals.xc is None)):
+                # Build ground-state density and xc kernel
+                rho0, vxc, fxc = self.integrals.cache_xc_kernel((self.mo_coeff,self.mo_coeff),occ,spin=1)
+                # Build the first-order density matrix for this orbital pair
+                D1 = np.einsum('xs,mr,rs,ns->xmn',occ,self.mo_coeff,step,self.mo_coeff,optimize='optimal')
+                # Compute the contracted kernel with first-order density
+                fxc_ia = self.mo_transform(self.integrals.uks_fxc(D1,rho0,vxc,fxc))
+                # Add contribution (here x is an index for the spin channels)
+                xc_Hvec += 4 * cL * np.einsum('xq,xpq->pq',occ,fxc_ia,optimize='optimal')
+        # Antisymmetrise
+        xc_Hvec = xc_Hvec - xc_Hvec.T
+
+        ## 3. Combine wavefunction with xc and return
+        Hvec += xc_Hvec[self.rot_idx]
+        return Hvec
+    
 
     def print(self,verbose=1):
         """ Print details about the state energy and orbital coefficients
@@ -124,24 +221,6 @@ class ROKS(CSF):
             matrix_print(self.gen_fock[:self.nocc,:].T, title="Generalised Fock Matrix (MO basis)")
         print()
 
-    def approx_hess_on_vec(self, vec, eps=1e-3):
-        """ Compute the approximate Hess * vec product using forward finite difference """
-        # Get current gradient
-        g0 = self.gradient.copy()
-        # Get forward gradient
-        # First copy CSF but don't initialise integrals
-        them = self.copy(integrals=False)
-        # Take step (this will evaluate necessary integrals)
-        them.take_step(eps * vec)
-        g1 = them.gradient.copy()
-        # Parallel transport back to current position
-        g1 = self.transform_vector(g1, - eps * vec)
-        
-        # Return approximation to H @ sk
-        return (g1 - g0) / eps
-
-    def hess_on_vec(self, vec):
-        return self.hessian @ vec
 
     def get_vxc(self):
         """ Compute xc-potential from sum of contributions from each determinant in the ensemble
@@ -152,97 +231,46 @@ class ROKS(CSF):
         # Initialise overall variables
         exc = 0.0
         vxc_shell = np.zeros((self.nshell+1,self.nbsf,self.nbsf))
-
         if(self.nopen == 0):
             # Restricted case
             rho = self.dk[0]
             exc, vxc = self.integrals.build_vxc(rho,hermi=1)
             vxc_shell[0] = vxc[0] + vxc[1]
+            vxc_ensemble_mo = self.mo_transform(vxc_shell[0])
         else:
             # loop over determinants in the ensemble
-            for det_str, coeff in self.ensemble_dets:
+            vxc_ensemble_mo = np.zeros((len(self.ensemble_dets),2,self.nbsf,self.nbsf))
+            for Idet, (det_str, coeff) in enumerate(self.ensemble_dets):
                 # Initialise spin densities from core contribution
-                dma = 0.5 * self.dk[0]
-                dmb = 0.5 * self.dk[0]
+                dma, dmb = 0.5 * self.dk[0], 0.5 * self.dk[0]
 
                 # Add open-shell contributions depending on spin occupation of this determinant
                 for Ishell, spinI in enumerate(det_str):
-                    dshell = self.dk[1+Ishell]
-                    if(spinI == 'a'): dma += dshell
-                    else: dmb += dshell
+                    if(spinI == 'a'): dma += self.dk[1+Ishell]
+                    else: dmb += self.dk[1+Ishell]
 
                 # Build the vxc for this determinant
-                exc_det, (vxca_det,vxcb_det) = self.integrals.build_vxc((dma,dmb),hermi=1)
+                exc_det, vxc_det = self.integrals.build_vxc((dma,dmb),hermi=1)
+                vxc_ensemble_mo[Idet] = self.mo_transform(vxc_det)
                 # Accumulate the energy
                 exc += coeff * exc_det
 
                 # Core contribution
                 if(self.ncore > 0):
-                    vxc_shell[0] += coeff * (vxca_det + vxcb_det)
+                    vxc_shell[0] += coeff * (vxc_det[0] + vxc_det[1])
                 # Open-shell contributions
                 for Ishell, spinI in enumerate(det_str):
-                    vxc_shell[1+Ishell] += coeff * (vxca_det if (spinI=='a') else vxcb_det)
-
-        return exc, vxc_shell
-
-    def get_fxc_diag(self):
-        """ Compute the fxc contribution to diagonal of the Hessian"""
-        # Initialise fxc contribution
-        Qpq = np.zeros((self.nmo,self.nmo))
-
-        # Loop over determinants in the ensemble
-        for detL, cL in self.ensemble_dets:
-            # Build alfa and beta density matrices for this determinant
-            occa, occb = get_det_occupation(detL, self.shell_indices, self.ncore, self.nmo)
-            # Store the xc kernel for this determinant
-            rho0, vxc, fxc = self.integrals.cache_xc_kernel([self.mo_coeff,self.mo_coeff],(occa,occb),spin=1)
-            # Loop over contributions per orbital pair
-            for p in range(self.nmo):
-                for q in range(p):
-                    # Skip if occupations are the same
-                    if((occa[p]==occa[q]) and (occb[p]==occb[q])):
-                       continue
-                    # Build the first-order density matrix for this orbital pair
-                    # These are weighted by the occupation difference
-                    Dpq = np.outer(self.mo_coeff[:,p], self.mo_coeff[:,q])
-                    dm1 = np.array([Dpq*(occa[p]-occa[q]), Dpq*(occb[p]-occb[q])])
-                    # Compute the contracted kernel with first-order density
-                    val = self.integrals.uks_fxc(dm1,rho0,vxc,fxc)
-                    # Compute contribution to Hessian diagonal
-                    Qpq[p,q] += 4*cL*np.einsum('spq,spq',dm1,val)
-        return Qpq
+                    vxc_shell[1+Ishell] += coeff * (vxc_det[0] if (spinI=='a') else vxc_det[1])
+                
+        return exc, vxc_shell, vxc_ensemble_mo
 
 
     def update_integrals(self):
         """ Update the integrals with current set of orbital coefficients"""
-        # Update density matrices (AO basis)
-        self.dj, self.dk, self.vd = self.get_density_matrices()
+        # Update density, J, K, wfn_fock and gen_fock from parent CSF class
+        CSF.update_integrals(self)
         # Compute xc-potential
-        self.exc, self.vxc = self.get_vxc()
-        # Update JK matrices (AO basis) 
-        self.J, self.K = self.get_JK_matrices(self.vd)
-        # Get Fock matrix (AO basis)
-        self.fock = self.integrals.oei_matrix(True) + self.J - 0.5 * np.einsum('mpq->pq',self.K)
-        # Get generalized Fock matrices
-        self.gen_fock, self.Ipqpq, self.Ipqqp = self.get_generalised_fock()
-        return 
-
-
-    def write_fcidump(self, tag):
-        """ Write an FCIDUMP file for the current CSF object """
-        if(not (type(self.integrals) is quantel.ints.pyscf_integrals.PySCFIntegrals)):
-            raise ValueError("FCIDUMP file can only be written for PySCF integrals")
-        
-        # Write the FCIDUMP using PySCF
-        from pyscf.tools import fcidump
-        mol = self.integrals.molecule().copy()
-        mol.spin = int(2 * self.sz)
-        fcidump.from_mo(mol, tag+'.fcid', self.mo_coeff, ms=self.sz)
-
-    def write_cidump(self, tag):
-        # Write the CI vector dump
-        from quantel.utils.ci_utils import write_cidump
-        write_cidump(get_csf_vector(self.spin_coupling),self.ncore,self.nbsf,tag+'_civec.txt')
+        self.exc, self.vxc, self.vxc_ensemble_mo = self.get_vxc()
 
 
     def copy(self,integrals=True):
@@ -262,7 +290,7 @@ class ROKS(CSF):
     def hamiltonian(self, them):
         """ Compute the Hamiltonian coupling between two CSF objects
         """
-        return csf_coupling_slater_condon(self, them, self.integrals)
+        raise NotImplementedError("ROKS Hamiltonian coupling not yet implemented")
     
 
     def get_orbital_guess(self, method="gwh",avas_ao_labels=None,reorder=True):
@@ -279,17 +307,7 @@ class ROKS(CSF):
         return
     
 
-    def get_spin_density(self):
-        """ Compute the alfa and beta density matrices"""
-        dm_tmp = np.einsum('kpq->pq',self.dk[1:])
-        rho_a, rho_b = 0.5 * self.dk[0], 0.5 * self.dk[0]
-        if(self.nopen > 0):
-            rho_a += (0.5 + self.sz / self.nopen) * dm_tmp
-            rho_b += (0.5 - self.sz / self.nopen) * dm_tmp
-        return rho_a, rho_b
-
-
-    def get_generalised_fock(self):
+    def get_dft_generalised_fock(self):
         """ Compute the generalised Fock matrix in MO basis"""
         # Initialise memory
         F = np.zeros((self.nmo, self.nmo)) 
@@ -300,7 +318,8 @@ class ROKS(CSF):
         Fcore_ao = 2 * (self.integrals.oei_matrix(True) + self.J 
                       - 0.5 * np.sum(self.K[i] for i in range(self.nshell+1)))
         # XC potential contribution
-        Fcore_ao += self.vxc[0]
+        # HERE
+        Fcore_ao = self.vxc[0]
         # AO-to-MO transformation
         Fcore_mo = np.linalg.multi_dot([self.mo_coeff.T, Fcore_ao, self.mo_coeff])
         for i in range(self.ncore):
@@ -316,7 +335,8 @@ class ROKS(CSF):
             # Different shell exchange
             Fw_ao += np.einsum('v,vpq->pq',self.beta[W],self.K[1:])
             # XC potential contribution
-            Fw_ao += self.vxc[W+1]
+            # HERE
+            Fw_ao = self.vxc[W+1]
             # AO-to-MO transformation
             Fw_mo = np.linalg.multi_dot([self.mo_coeff.T, Fw_ao, self.mo_coeff])
             for w in shell:
@@ -336,90 +356,44 @@ class ROKS(CSF):
         return F, Ipqpq, Ipqqp
 
 
-    def get_Y_intermediate(self):
-        """ Compute the Y intermediate required for Hessian evaluation
-        """
-        # Get required constants
-        nmo   = self.nmo
-        ncore = self.ncore
-        nocc = self.nocc
-
-        # Get required two-electron MO integrals
-        Cocc = self.mo_coeff[:,:nocc].copy()
-        ppoo = self.integrals.tei_ao_to_mo(self.mo_coeff,self.mo_coeff,Cocc,Cocc,True,False)
-        popo = self.integrals.tei_ao_to_mo(self.mo_coeff,Cocc,self.mo_coeff,Cocc,True,False)
-
-        # K and J in MO basis
-        Jmn  = np.einsum('pm,pq,qn->mn',self.mo_coeff, self.J, self.mo_coeff)
-        vKmn = np.einsum('pm,wpq,qn->wmn',self.mo_coeff, self.K, self.mo_coeff)
-        Kmn  = np.einsum('wpq->pq', vKmn)
-
-        # Build Ypqrs
-        Y = np.zeros((nmo,nmo,nmo,nmo))
-        self.Kscale = 0.0
-        # Y_imjn
-        Y[:ncore,:,:ncore,:] += 8 * np.einsum('mnij->imjn',ppoo[:,:,:ncore,:ncore]) 
-        Y[:ncore,:,:ncore,:] -= 2 * self.Kscale * np.einsum('mnji->imjn',ppoo[:,:,:ncore,:ncore])
-        Y[:ncore,:,:ncore,:] -= 2 * self.Kscale * np.einsum('mjni->imjn',popo[:,:ncore,:,:ncore])
-        for i in range(ncore):
-            Y[i,:,i,:] += 2 * Jmn - Kmn
-
-        # Y_imwn
-        Y[:ncore,:,ncore:nocc,:] = (4 * ppoo[:,:,:ncore,ncore:nocc].transpose(2,0,3,1)
-                                      - self.Kscale * ppoo[:,:,ncore:nocc,:ncore].transpose(3,0,2,1)
-                                      - self.Kscale * popo[:,ncore:nocc,:,:ncore].transpose(3,0,1,2))
-        Y[ncore:nocc,:,:ncore,:] = Y[:ncore,:,ncore:nocc,:].transpose(2,3,0,1)
-
-        # Y_wmvn
-        for W in range(self.nshell):
-            wKmn = np.einsum('v,vmn->mn',self.beta[W], vKmn[1:])
-            for V in range(W,self.nshell):
-                for w in self.shell_indices[W]:
-                    for v in self.shell_indices[V]:
-                        Y[w,:,v,:] = 2 * ppoo[:,:,w,v] + self.Kscale * self.beta[W,V] * (ppoo[:,:,v,w] + popo[:,v,:,w])
-                        if(w==v):
-                            Y[w,:,w,:] = Y[w,:,w,:] + Jmn - 0.5 * vKmn[0] + wKmn
-                        else:
-                            Y[v,:,w,:] = Y[w,:,v,:].T
-        return Y
-
-    def get_preconditioner(self):
+    def get_preconditioner(self,abs=True,include_fxc=False):
         """Compute approximate diagonal of Hessian"""
-         # Initialise approximate preconditioner with xc contribution
-        Q = np.zeros((self.nmo,self.nmo)) 
-        if(False):
-            Q += self.get_fxc_diag()
+         # Initialise with diagonal from wfn part
+        Q = CSF.get_preconditioner(self,abs=False)
 
-        # Include dominate generalised Fock matrix terms
-        for p in range(self.nmo):
-            for q in range(p):
-                Q[p,q] += 2 * ( (self.gen_fock_diag[p,q] - self.gen_fock_diag[q,q]) 
-                              + (self.gen_fock_diag[q,p] - self.gen_fock_diag[p,p]) )
+        # Compute xc contribution
+        Q_xc = np.zeros((self.nmo,self.nmo))
+        for Idet, (detL, cL) in enumerate(self.ensemble_dets):
+            # Get occupation numbers and occupied/virtual orbitals for this determinant
+            occ = np.asarray(get_det_occupation(detL, self.shell_indices, self.ncore, self.nmo))            
+            # Get corresponding vxc in MO basis
+            vxc_mo = self.vxc_ensemble_mo[Idet]
+            diag_vxc_mo = np.einsum('xpp->xp',vxc_mo)
+            # Contribution from xc potential (2nd order orbital and density term)
+            Q_xc += 2 * cL * np.einsum('xpq,xpq->pq',occ[:,:,None]-occ[:,None,:], diag_vxc_mo[:,None,:]-diag_vxc_mo[:,:,None])
 
-        # Compute two-electron corrections involving active orbitals
-        Acoeff = self.Ipqqp
-        for q in range(self.ncore,self.nocc):
-            for p in range(q):
-                Q[q,p] += 4 * (self.mo_occ[p]-self.mo_occ[q])**2 * Acoeff[q-self.ncore,p]
-            for p in range(q+1,self.nmo):
-                Q[p,q] += 4 * (self.mo_occ[p]-self.mo_occ[q])**2 * Acoeff[q-self.ncore,p]
+            # Contribution from xc kernel (2nd order functional term).
+            # This is an expensive computation, so only include if requested (see include_fxc flag)
+            if((not (self.integrals.xc is None)) and include_fxc):
+                # Build ground-state density and xc kernel
+                rho0, vxc, fxc = self.integrals.cache_xc_kernel((self.mo_coeff,self.mo_coeff),occ,spin=1)
+                # Loop over unique contributions, where s is occupied in alpha or beta space
+                for p in range(self.nmo):
+                    for q in range(p):
+                        # Build the first-order density matrix for this orbital pair
+                        D1 = np.outer(self.mo_coeff[:,p],self.mo_coeff[:,q])
+                        D1a = (occ[0][q] - occ[0][p]) * D1
+                        D1b = (occ[1][q] - occ[1][p]) * D1
+                        # Compute the contracted kernel with first-order density
+                        fxc_ia = self.mo_transform(self.integrals.uks_fxc([D1a,D1b],rho0,vxc,fxc))
+                        # Add contribution
+                        Q_xc[p,q] += 4 * cL * (occ[0][q] - occ[0][p]) * fxc_ia[0][p,q]
+                        Q_xc[p,q] += 4 * cL * (occ[1][q] - occ[1][p]) * fxc_ia[1][p,q]
 
-        # Compute two-electron hybrid exchange contribution
-        Bcoeff = self.integrals.hybrid_K * (self.Ipqpq + self.Ipqqp)
-        for W in range(self.nshell): 
-            for q in self.shell_indices[W]:
-                # Core-Active
-                for p in range(self.ncore):
-                    Q[q,p] -= 2 * Bcoeff[q-self.ncore,p]
-                # Active-Active
-                for V in range(W):
-                    for p in self.shell_indices[V]:
-                        Q[q,p] -= 4 * (1 + self.beta[V,W]) * Bcoeff[q-self.ncore,p]
-                # Virtual-Active
-                for p in range(self.nocc,self.nmo):
-                    Q[p,q] -= 2 * (self.mo_occ[p] + self.mo_occ[q]) * Bcoeff[q-self.ncore,p]
-
-        return np.abs(Q[self.rot_idx])
+        # Combine wfn and xc, and return
+        Q += Q_xc[self.rot_idx]
+        return np.abs(Q) if abs else Q
+    
 
     def koopmans(self):
         """
@@ -439,14 +413,6 @@ class ROKS(CSF):
         occip = np.diag(np.einsum('ip,i,iq->pq',v,self.mo_occ[:self.nocc],v))   
         return e, cip, occip
 
-    def get_active_itegrals(self):
-        """
-        Get active space one- and two-electron integrals in MO basis
-        """
-        Cact = self.mo_coeff[:,self.ncore:self.nocc]
-        h1e_act = np.linalg.multi_dot([Cact.T, self.integrals.oei_matrix(True), Cact])
-        tei_act = self.integrals.tei_ao_to_mo(Cact,Cact,Cact,Cact,True,False)
-        return h1e_act, tei_act
 
     def canonicalize(self):
         """
