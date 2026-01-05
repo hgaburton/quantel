@@ -825,3 +825,12 @@ class CSF(Wavefunction):
         # Update generalised Fock matrix and diagonal approximations
         self.gen_fock, self.Ipqpq, self.Ipqqp = self.get_generalised_fock()
         return Q
+
+    def mo_cubegen(self,idx,fname=""): 
+        """ Generate and store cube files for specified MOs
+                idx : list of MO indices 
+        """
+        # Saves MOs as cubegen files
+        for mo in idx: 
+            cubegen.orbital(self.integrals.mol, fname+f".mo.{mo}.cube", self.mo_coeff[:,mo])
+

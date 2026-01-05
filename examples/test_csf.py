@@ -5,10 +5,10 @@ from quantel.wfn.csf import CSF
 
 molxyz = "formaldehyde.xyz"
 
-# Test RHF object with a range of optimisers
+# Test CSF object with a range of optimisers
 print("Test CSF object with a range of optimisers")
 
-for driver in ("libint", "pyscf"):
+for driver in ["pyscf"]:
     print("\n===============================================")
     print(f" Testing '{driver}' integral method")
     print("===============================================")
@@ -17,7 +17,7 @@ for driver in ("libint", "pyscf"):
         mol  = quantel.Molecule(molxyz, "angstrom")
         ints = quantel.LibintInterface("6-31g", mol) 
     elif(driver == "pyscf"):
-        mol  = PySCFMolecule(molxyz, "6-31g", "angstrom")
+        mol  = PySCFMolecule(molxyz, "aug-ccpvtz", "angstrom")
         ints = PySCFIntegrals(mol)
 
     # Initialise CSF object for an open-shell singlet state
@@ -36,3 +36,7 @@ for driver in ("libint", "pyscf"):
         wfn.canonicalize()
         # Test Hessian index
         wfn.get_davidson_hessian_index()
+
+
+
+

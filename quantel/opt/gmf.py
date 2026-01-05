@@ -61,7 +61,9 @@ class GMF:
         dim = obj.dim
         grad = obj.gradient
         prec = obj.get_preconditioner()
-        eigval, evec = Davidson(nreset=50).run(obj.approx_hess_on_vec,prec,index,tol=1e-4,plev=0)
+        # Print here to see if this is the slow step
+        # what is this doing then - what are the different Davidson values taking in 
+        eigval, evec = Davidson(nreset=50).run(obj.approx_hess_on_vec,prec,index,maxit=300,tol=1e-4,plev=1)
         gmod, evec = self.get_gmf_gradient(obj,grad,index,eigval,evec)
 
         if plev>0:
@@ -84,7 +86,7 @@ class GMF:
         for istep in range(maxit+1):
             # Get gradient and check convergence
             #conv = np.linalg.norm(grad) * np.sqrt(1.0/grad.size)
-            conv = np.linalg.norm(grad,ord=np.inf)
+            conv = np.linalg.norm(grad,ord=np.inf) #stationary point check 
             ecur = obj.energy
 
             if istep > 0 and plev > 0:
@@ -160,6 +162,9 @@ class GMF:
         kernel_end_time = datetime.datetime.now()
         computation_time = kernel_end_time - kernel_start_time
         if plev>0: print("  Generalised mode following walltime: ", computation_time.total_seconds(), " seconds")
+
+        obj.get_davidson_hessian_index(guess=evec)
+
 
         return converged
 

@@ -69,7 +69,6 @@ class Function(metaclass=ABCMeta):
             self.take_step(x2)
             f2 = self.value
             self.restore_last_step()
-
             grad[i] = (f1 - f2) / (2 * eps)
 
         return grad
@@ -131,7 +130,8 @@ class Function(metaclass=ABCMeta):
             else:         nzero +=1 
         return (ndown, nzero, nuphl)
 
-    def get_davidson_hessian_index(self, ntarget=5, eps=1e-5):
+# altered this to take on an xguess
+    def get_davidson_hessian_index(self, ntarget=5, eps=1e-5, guess=None):
         """Iteratively compute Hessian index from gradient only. 
            This approach uses the Davidson algorithm."""
         # Get approximate diagonal terms
@@ -141,10 +141,14 @@ class Function(metaclass=ABCMeta):
         nv = ntarget
         david = Davidson(nreset=50)
         # Initialise from the lowest diagonal elements
-        x = np.zeros((diag.size, nv),order='F')
-        for i, j in enumerate(np.argsort(diag)[:nv]):
-            x[j,i] = 1.0
-
+        if guess is None:
+            x = np.zeros((diag.size, nv),order='F')
+            for i, j in enumerate(np.argsort(diag)[:nv]):
+                x[j,i] = 1.0
+        else: 
+            x = guess
+            nv = guess.shape[1]
+        
         while True:
             # Get lowest eigenvalues through Davidson algorithm
             eigs, x = david.run(self.approx_hess_on_vec,diag,nv,

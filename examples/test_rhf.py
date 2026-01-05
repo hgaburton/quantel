@@ -16,7 +16,7 @@ for driver in ("libint", "pyscf"):
         ints = quantel.LibintInterface("6-31g", mol) 
     elif(driver == "pyscf"):
         mol  = PySCFMolecule("formaldehyde.xyz", "6-31g", "angstrom")
-        ints = PySCFIntegrals(mol)
+        ints = PySCFIntegrals(mol) # so here we dont put an exchange correlation functional in so it doesnt matter...
 
     # Initialise RHF object
     wfn = RHF(ints)
@@ -32,9 +32,7 @@ for driver in ("libint", "pyscf"):
 
         from quantel.opt.diis import DIIS
         wfn.get_orbital_guess(method="gwh")
-        DIIS().run(wfn)
-        
-        # Test canonicalisation and Hessian eigenvalue
+        DIIS().run(wfn,plev= 0)
         wfn.canonicalize()
-        # Test Hessian index
         wfn.get_davidson_hessian_index()
+
