@@ -458,10 +458,9 @@ class GHF(Wavefunction):
         # Save current position
         self.save_last_step()
         # Get forward gradient
-        self.take_step(eps * vec)
-        g1 = self.gradient.copy()
-        # Restore to origin
-        self.restore_last_step()
+        them = self.copy(integrals=False)
+        them.take_step(eps * vec)
+        g1 = them.gradient.copy()
         # Parallel transport back to current position
         g1 = self.transform_vector(g1, - eps * vec)
         # Get approximation to H @ sk
