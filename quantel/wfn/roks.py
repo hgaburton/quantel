@@ -300,7 +300,7 @@ class ROKS(CSF):
         # Get the guess for the molecular orbital coefficients
         Cguess = orbital_guess(self.integrals,method,avas_ao_labels=avas_ao_labels,rohf_ms=0.5*self.nopen)
         # Optimise the order of the CSF orbitals and return
-        if(reorder and (not self.spin_coupling is '')):
+        if(reorder and (self.spin_coupling != '')):
             Cguess[:,self.ncore:self.nocc] = csf_reorder_orbitals(self.integrals,self.exchange_matrix,
                                                                   np.copy(Cguess[:,self.ncore:self.nocc]))
 

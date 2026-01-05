@@ -108,7 +108,7 @@ class CSF(Wavefunction):
 
     def initialise(self, mo_guess, spin_coupling=None, mat_ci=None, integrals=True):
         """ Initialise the CSF object with a set of MO coefficients"""
-        if(spin_coupling is None):
+        if(spin_coupling == None):
             spin_coupling = self.spin_coupling
         self.setup_spin_coupling(spin_coupling)
 
@@ -480,7 +480,6 @@ class CSF(Wavefunction):
             raise ValueError("Insufficient orbitals in file to represent occupied orbitals")
         if mo_read.shape[1] > self.nmo:
             raise ValueError("Too many orbitals in file")
-        return gen_fock_diag
 
 
     def copy(self,integrals=True):
@@ -563,7 +562,7 @@ class CSF(Wavefunction):
         #kappa = Q.T @ kappa
 
         # Also apply horizontal transform
-        if not X is None:
+        if X != None:
             kappa = kappa @ X
             kappa = X.T @ kappa
 
@@ -811,12 +810,12 @@ class CSF(Wavefunction):
             np.ones((self.nopen, self.nopen), dtype=bool), k=-1)
         
         # Modify for genealogical coupling
-        if self.spin_coupling is not None:
+        if self.spin_coupling != None:
             mask[self.ncore:self.nocc, self.ncore:self.nocc] = self.edit_mask_by_gcoupling(
                 mask[self.ncore:self.nocc,self.ncore:self.nocc])
             
         # Account for any frozen orbitals   
-        if frozen is not None:
+        if frozen != None:
             if isinstance(frozen, (int, np.integer)):
                 mask[:frozen] = mask[:, :frozen] = False
             else:
