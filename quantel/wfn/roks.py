@@ -60,14 +60,14 @@ class ROKS(CSF):
         # Nuclear repulsion
         En = self.integrals.scalar_potential()
         # One-electron energy
-        E1 = np.einsum('pq,qp',self.dj,self.integrals.oei_matrix(True))
+        E1 = np.einsum('pq,qp',self.dj,self.integrals.oei_matrix(True),optimize='optimal')
         # Coulomb energy
-        EJ = 0.5 * np.einsum('pq,qp',self.dj,self.J)
+        EJ = 0.5 * np.einsum('pq,qp',self.dj,self.J,optimize='optimal')
         # Exchange energy
-        EK = - 0.25 * np.einsum('pq,qp',self.dj,self.K[0])
+        EK = - 0.25 * np.einsum('pq,qp',self.dj,self.K[0],optimize='optimal')
         for w in range(self.nshell):
             EK += 0.5 * np.einsum('pq,qp',self.K[1+w], 
-                        np.einsum('v,vpq->pq',self.beta[w],self.dk[1:]) - 0.5 * self.dk[0])
+                        np.einsum('v,vpq->pq',self.beta[w],self.dk[1:],optimize='optimal') - 0.5 * self.dk[0],optimize='optimal')
         # xc-potential energy
         Exc = self.exc
         # Save components
@@ -273,7 +273,7 @@ class ROKS(CSF):
         for W, shell in enumerate(self.shell_indices):
             self.gen_fock_xc[shell,:] += np.linalg.multi_dot([self.mo_coeff[:,shell].T, self.vxc[W+1], self.mo_coeff])
         # Add XC contribution to overall Fock matrix
-        self.fock += np.einsum('Lxpq,L->pq',self.vxc_ensemble,self.ensemble_coeff)
+        self.fock += np.einsum('Lxpq,L->pq',self.vxc_ensemble,self.ensemble_coeff,optimize='optimal')
 
 
     def copy(self,integrals=True):
@@ -321,9 +321,9 @@ class ROKS(CSF):
             occ = np.asarray(get_det_occupation(detL, self.shell_indices, self.ncore, self.nmo))            
             # Get corresponding vxc in MO basis
             vxc_mo = self.mo_transform(self.vxc_ensemble[Idet])
-            diag_vxc_mo = np.einsum('xpp->xp',vxc_mo)
+            diag_vxc_mo = np.einsum('xpp->xp',vxc_mo,optimize='optimal')
             # Contribution from xc potential (2nd order orbital and density term)
-            Q_xc += 2 * cL * np.einsum('xpq,xpq->pq',occ[:,:,None]-occ[:,None,:], diag_vxc_mo[:,None,:]-diag_vxc_mo[:,:,None])
+            Q_xc += 2 * cL * np.einsum('xpq,xpq->pq',occ[:,:,None]-occ[:,None,:], diag_vxc_mo[:,None,:]-diag_vxc_mo[:,:,None],optimize='optimal')
 
             # Contribution from xc kernel (2nd order functional term).
             # This is an expensive computation, so only include if requested (see include_fxc flag)
@@ -359,7 +359,7 @@ class ROKS(CSF):
         # Convert ionization orbitals to MO basis
         cip = self.mo_coeff[:,:self.nocc].dot(v)
         # Compute occupation of ionization orbitals
-        occip = np.diag(np.einsum('ip,i,iq->pq',v,self.mo_occ[:self.nocc],v))   
+        occip = np.diag(np.einsum('ip,i,iq->pq',v,self.mo_occ[:self.nocc],v,optimize='optimal'))   
         return e, cip, occip
 
 

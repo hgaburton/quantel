@@ -270,9 +270,9 @@ class CSF(Wavefunction):
             return {k:self.mo_transform(Mi) for k, Mi in M.items()}
         elif(type(M) is np.ndarray):
             if(len(M.shape)==3):
-                return np.einsum('mp,imn,nq->ipq',self.mo_coeff,M,self.mo_coeff)
+                return np.einsum('mp,imn,nq->ipq',self.mo_coeff,M,self.mo_coeff,optimize='optimal')
             elif(len(M.shape)==2):
-                return np.einsum('mp,mn,nq->pq',self.mo_coeff,M,self.mo_coeff)
+                return np.einsum('mp,mn,nq->pq',self.mo_coeff,M,self.mo_coeff,optimize='optimal')
             else:
                 raise ValueError("Matrix must be rank 2 or 3 for MO transformation")
 
