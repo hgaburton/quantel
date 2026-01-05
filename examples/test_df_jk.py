@@ -20,11 +20,13 @@ if __name__ == "__main__":
     dm = wfn.dens
     # Time the JK builds with and without density fitting
     t0 = datetime.datetime.now()
-    JK = ints.build_JK(dm)
+    J,K = ints.build_JK(dm,dm)
+    JK = J - 0.5 * K
     t1 = datetime.datetime.now()
     print("Conventional JK build time: ",(t1-t0).total_seconds())
     t0 = datetime.datetime.now()
-    dfJK = df_ints.build_JK(dm)
+    dfJ,dfK = df_ints.build_JK(dm,dm)
+    dfJK = dfJ - 0.5 * dfK
     t1 = datetime.datetime.now()
     print("Density-fitted JK build time: ",(t1-t0).total_seconds())
     print(f"JK difference norm = {np.linalg.norm(JK - dfJK)}")

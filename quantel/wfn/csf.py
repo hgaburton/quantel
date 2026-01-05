@@ -41,6 +41,9 @@ class CSF(Wavefunction):
                 spin_coupling : genealogical coupling pattern
                 verbose       : verbosity level
         """
+        if(type(self)==CSF and (integrals.xc != None)):
+            raise ValueError("CSF class cannot be used with DFT functionals - use ROKS class instead")
+
         # How noisy am I?
         self.verbose       = verbose
         # Initialise integrals object
@@ -70,7 +73,7 @@ class CSF(Wavefunction):
             raise ValueError("Number of inactive and active orbitals must be <= total number of orbitals")
 
     def setup_spin_coupling(self, spin_coupling): 
-
+        """ Setup the spin coupling pattern for the CSF wave function """
         if(spin_coupling == 'cs'):
             spin_coupling = ''
 
@@ -477,7 +480,7 @@ class CSF(Wavefunction):
             raise ValueError("Insufficient orbitals in file to represent occupied orbitals")
         if mo_read.shape[1] > self.nmo:
             raise ValueError("Too many orbitals in file")
-        return
+        return gen_fock_diag
 
 
     def copy(self,integrals=True):
@@ -887,5 +890,5 @@ class CSF(Wavefunction):
         self.mo_coeff = self.mo_coeff @ Q
         
         # Update generalised Fock matrix and diagonal approximations
-        self.gen_fock, self.Ipqpq, self.Ipqqp = self.get_generalised_fock()
+        self.update_integrals()
         return Q

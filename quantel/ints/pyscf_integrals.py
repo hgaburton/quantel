@@ -2,14 +2,13 @@
 
 from quantel.utils.linalg import orthogonalisation_matrix, utri_idx
 from quantel import MOintegrals
-import pyscf
 from pyscf.df import DF, make_auxbasis
 from pyscf.scf.hf import SCF
 import numpy as np
 import scipy.special
-from pyscf import fci
+from pyscf import dft, gto, ao2mo, fci
 
-class PySCFMolecule(pyscf.gto.Mole):
+class PySCFMolecule(gto.Mole):
     """Wrapper class to call molecule functions from PySCF"""
     def __init__(self,_atom,_basis,_unit,charge=0,spin=0):
         """Initialise the PySCF molecule
@@ -74,9 +73,9 @@ class PySCFIntegrals:
         self.xc = xc
         if(self.xc is not None):
             # Initialise the grid for numerical integration
-            self.grid = pyscf.dft.gen_grid.Grids(self.mol)
+            self.grid = dft.gen_grid.Grids(self.mol)
             # Initialise numerical integration
-            self.ni = pyscf.dft.numint.NumInt()
+            self.ni = dft.numint.NumInt()
             # Get range-separation and hybrid coefficients
             self.omega, self.alpha, self.hybrid_K = self.ni.rsh_and_hybrid_coeff(self.xc)
         else:
@@ -250,7 +249,7 @@ class PySCFIntegrals:
         """
         self.eri = self.mol.intor("int2e", aosym="s1")
         # NOTE, need to convert from physicists to chemists notation <12|34> = (13|24)
-        mo_eri = pyscf.ao2mo.incore.general(self.eri, (C1,C3,C2,C4), compact=False)
+        mo_eri = ao2mo.incore.general(self.eri, (C1,C3,C2,C4), compact=False)
         mo_eri = mo_eri.transpose(0,2,1,3)
         # Return antisymmetrised two-electron integrals as appropriate
         if(alpha1 == alpha2):
@@ -475,7 +474,7 @@ class PySCF_CIspace:
         self.m_nbeta = nbeta
         self.nelec = (nalfa, nbeta)
         # Initialise FCI solver
-        self.fcisolver = pyscf.fci.direct_spin1
+        self.fcisolver = fci.direct_spin1
 
 
     def ndeta(self):

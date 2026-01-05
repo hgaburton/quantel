@@ -7,7 +7,7 @@ if __name__ == "__main__":
     print("===============================================")
     # Setup molecule and integrals
     mol  = PySCFMolecule("mol/formaldehyde.xyz", "6-31g", "angstrom")
-    ints = PySCFIntegrals(mol,xc="PBE0")
+    ints = PySCFIntegrals(mol,xc='PBE0')
 
     # Initialise RHF object
     wfn = RHF(ints)

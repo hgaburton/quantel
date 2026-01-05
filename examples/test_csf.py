@@ -7,7 +7,7 @@ if __name__ == "__main__":
     print("===============================================")
        # Setup molecule and integrals
     mol  = PySCFMolecule("mol/formaldehyde.xyz", "def2svp", "angstrom")
-    ints = PySCFIntegrals(mol,xc='pbe0')
+    ints = PySCFIntegrals(mol)
 
     # Initialise CSF object for an open-shell singlet state
     wfn = CSF(ints, '+-')
