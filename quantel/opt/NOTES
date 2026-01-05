@@ -1,0 +1,69 @@
+Notes on the various implementations of the algorithms in this folder
+
+##############################################################################
+Davidson algorithm:
+
+The implementation follows the one summarised in the Jonsson GMF paper. 
+
+1. Rather than constructing the full Hessian matrix to calculate the matrix-vector product Hk, where k is a (Krylov) subspace vector, we compute this via a forward finite differences approximation.Contained in the function approx_hess_on_vec() function. 
+ 
+2. The diagonal approximation of the Hessian is used to compute the residue correction vectors, which is the absolute value of the Hessian diagonal Fock matrix terms. 
+
+---> why are we using this positive definite hessian diagonal term? -> is because we often working with BFGS which requires a positive definite Hessian?  
+
+takes on the following keywords 
+1. nreset = is the maximum size of the projected matrix before we do reset the Krylov subspace to be the last subspace vector.  
+2. xguess = is the initial guess of subspace vectors, as at each iteration we add on 5 random vectors as a guess. 
+3. Hv_args just includes the eps value? 
+4. fun_Hv is approx_hess_on_vector()!!
+5. maxit is the maximum number of davidson iterations, this is different to n as this is about how many increasing Krylov subspace steps we accept to evaluate in order to reach convergence on the n number of residual vectors we get. 
+
+
+
+
+########
+Davidson wrapper is the get_davidson_hessian_index():
+##########
+-This takes the keywords
+1. ntarget = is the number of eigenvalues and eigenvectors we want to target. 
+2. eps = ? 
+
+-generates an approximation of for the Krylov subspace using the lowest energy eigenvectors of the Hessian diagonal. This is put into a davidson run
+
+-If postive eigenvalues are found the while loop is broken, until then the subspace is increased by 5 random vectors and substituted back into a davidson run. 
+
+-at last counts the Hessian index 
+
+
+#############################
+LBFGS implementation: 
+#
+minstep = ? 
+maxstep = ? 
+max_subspace = ? 
+backtrack-scale = ? 
+with_transport = ? 
+with_canonical = ? 
+canonical_interval = ? 
+gamma_preconditioner = ? 
+
+#############################
+#############################
+GDM is what we use for our normal LBFGS routine, and Hugh's new stuff is GDM for a CSF. If we then have GMF, we can do GMF with GDM for a CSF to get excited state solutions of a CSF. 
+###
+###
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
