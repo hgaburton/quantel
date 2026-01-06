@@ -1,39 +1,30 @@
-import quantel
 import numpy as np
 from quantel.ints.pyscf_integrals import PySCFMolecule, PySCFIntegrals
 from quantel.wfn.ghf import GHF
+from quantel.opt.lbfgs import LBFGS
+from quantel.opt.diis import DIIS
 
-# Test GHF object with a range of optimisers
-print("Test RHF object with a range of optimisers")
-
-for driver in ("libint", "pyscf"):
+if __name__ == "__main__":
     print("\n===============================================")
-    print(f" Testing '{driver}' integral method")
+    print(f" Testing GHF optimisation method")
     print("===============================================")
     # Setup molecule and integrals
-    if(driver == "libint"):
-        mol  = quantel.Molecule("formaldehyde.xyz", "angstrom")
-        ints = quantel.LibintInterface("6-31g", mol) 
-    elif(driver == "pyscf"):
-        mol  = PySCFMolecule("formaldehyde.xyz", "6-31g", "angstrom")
-        ints = PySCFIntegrals(mol) 
+    mol  = PySCFMolecule("mol/h3.xyz", "cc-pvdz", "angstrom",spin=1,charge=0)
+    ints = PySCFIntegrals(mol)
 
-    # Initialise UHF object
-    wfn = GHF(ints)
+    # Initialise GHF object
+    wfn = GHF(ints,mom_method='IMOM')
+    # Set initial coefficients from identity
+    wfn.initialise(np.eye(wfn.nmo,wfn.nmo))
+    # Test LBFGS
+    LBFGS().run(wfn)
 
-    # Setup optimiser
-    for guess in ("gwh", "core"):
-        print("\n************************************************")
-        print(f" Testing '{guess}' initial guess method")
-        print("************************************************")
-        from quantel.opt.lbfgs import LBFGS
-        wfn.get_orbital_guess(method="gwh")
-        LBFGS().run(wfn)
+    # Test canonicalisation and Hessian eigenvalue
+    wfn.canonicalize()
+    # Test Hessian index
+    wfn.get_davidson_hessian_index(approx_hess=False)
+    
+    # Test DIIS
+    wfn.initialise(np.eye(wfn.nmo,wfn.nmo))
+    DIIS().run(wfn)
 
-        from quantel.opt.diis import DIIS
-        wfn.get_orbital_guess(method="gwh")
-        DIIS().run(wfn,plev= 0)
-        wfn.canonicalize()
-        wfn.get_davidson_hessian_index()
-        
-        wfn.print()

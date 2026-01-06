@@ -282,20 +282,6 @@ void LibintInterface::oei_ao_to_mo(
     oei_transform(C1,C2,oei,oei_mo,d1,d2,m_nbsf);
 }
 
-void LibintInterface::molden_orbs(
-    std::vector<double> &C, std::vector<double> &occ, std::vector<double> &evals)
-{
-    // Convert arrays to Eigen format
-    Map<Matrix<double,Dynamic,Dynamic,RowMajor> > coeff(C.data(),m_nbsf,m_nmo);
-    Map<VectorXd> mo_occ(occ.data(),m_nmo);
-    Map<VectorXd> mo_energy(evals.data(),m_nmo);
-    // Export orbitals
-    molden::Export xport(m_mol.atoms, m_basis, coeff, mo_occ, mo_energy);
-    std::ofstream molden_file("hf++.molden");
-    xport.write(molden_file);
-}
-
-
 void LibintInterface::build_JK(std::vector<double> &dens, std::vector<double> &JK)
 {
     // Get size of n2 for indexing later
@@ -608,4 +594,73 @@ void LibintInterface::tei_ao_to_mo(
             }
         }
     }
+}
+
+MOintegrals LibintInterface::mo_integrals(
+    std::vector<double> &C, size_t ncore, size_t nactive)
+{
+    // Handle default values
+    if(nactive == 0) nactive = m_nmo - ncore;
+    // Raise error if no orbitals are given
+    if(C.size() == 0)
+        throw std::runtime_error("LibintInterface::mo_integrals: Cannot build MO integrals with no active orbitals");
+    // Check dimensions of orbital coefficients
+    if(C.size() != m_nbsf * m_nmo)
+        throw std::runtime_error("LibintInterface::mo_integrals: Orbital coefficients have wrong dimensions");
+    // Check we have a valid number of orbitals
+    if(ncore + nactive > m_nmo)
+        throw std::runtime_error("LibintInterface::mo_integrals: Invalid number of orbitals");
+    
+    // Access active orbital coefficients
+    std::vector<double> Cact(m_nbsf*nactive);
+    std::fill(Cact.begin(),Cact.end(),0.0);
+    #pragma omp parallel for collapse(2)
+    for(size_t mu=0; mu<m_nbsf; mu++)
+    for(size_t p=0; p<nactive; p++)
+        Cact[mu*nactive+p] = C[mu*m_nmo+(p+ncore)];
+    
+    // Compute core density
+    std::vector<double> Pcore(m_nbsf*m_nbsf);
+    std::fill(Pcore.begin(),Pcore.end(),0.0);
+    #pragma omp parallel for collapse(2)
+    for(size_t p=0; p<m_nbsf; p++)
+    for(size_t q=0; q<m_nbsf; q++)
+    {
+        for(size_t i=0; i<ncore; i++)
+            Pcore[p*m_nbsf+q] += C[p*m_nmo+i] * C[q*m_nmo+i];
+    }
+
+    // Compute core potential
+    std::vector<double> Veff(nactive*nactive);
+    double Vmo = scalar_potential();
+    if(ncore > 0)
+    {
+        // Compute inactive JK matrix (2J-K) in AO basis
+        std::vector<double> JK(m_nbsf*m_nbsf,0.0);
+        build_JK(Pcore,JK);
+
+        // Compute scalar core energy
+        double *Hao = oei_matrix(true);
+        #pragma omp parallel for reduction(+:Vmo)
+        for(size_t pq=0; pq<m_nbsf*m_nbsf; pq++)
+            Vmo += 2 * (Hao[pq] + 0.5 * JK[pq]) * Pcore[pq];
+
+        // Transform to active orbital basis to give core one-electron potential
+        oei_transform(Cact,Cact,JK,Veff,nactive,nactive,m_nbsf);
+    }
+
+    // Compute 1e integrals in active space
+    std::vector<double> h1e_mo(nactive*nactive);
+    oei_ao_to_mo(Cact,Cact,h1e_mo,true);
+    // Add core potential
+    if(ncore > 0)
+        for(size_t pq=0; pq<nactive*nactive; pq++)
+            h1e_mo[pq] += Veff[pq];
+
+    // Compute 2e integrals in active space
+    std::vector<double> eri_mo;
+    tei_ao_to_mo(Cact,Cact,Cact,Cact,eri_mo,true,false);
+
+    // Return MO integrals
+    return MOintegrals(Vmo,h1e_mo,eri_mo,nactive);
 }

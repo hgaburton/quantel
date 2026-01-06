@@ -31,6 +31,11 @@ def ci_guess(ints, config):
     elif config["wavefunction"]["method"] == "csf":
         errstr = "CI guess is not compatible with CSF wavefunction"
         raise ValueError(errstr)
+    elif config["wavefunction"]["method"] == "roks":
+        errstr = "CI guess is not compatible with ROKS wavefunction"
+        raise ValueError(errstr)
+    else:
+        raise ValueError("Wavefunction method not recognised")
         
     # Select the optimiser
     optconfig = config["optimiser"][config["optimiser"]["algorithm"]]

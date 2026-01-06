@@ -8,6 +8,7 @@ import quantel
 from quantel.utils.linalg import orthogonalise
 from quantel.gnme.esmf_noci import esmf_coupling
 from .wavefunction import Wavefunction
+from quantel.ints.pyscf_integrals import PySCFIntegrals, PySCF_MO_Integrals
 
 class ESMF(Wavefunction):
     """ Excited-state mean-field method
@@ -31,7 +32,7 @@ class ESMF(Wavefunction):
         self.nalfa     = integrals.molecule().nalfa()
         self.nbeta     = integrals.molecule().nbeta()
         # Initialise molecular integrals object
-        self.mo_ints   = quantel.MOintegrals(integrals)
+        self.mo_ints   = PySCF_MO_Integrals(integrals)
         # Get number of basis functions and linearly independent orbitals
         self.nbsf      = integrals.nbsf()
         self.nmo       = integrals.nmo()
@@ -108,7 +109,7 @@ class ESMF(Wavefunction):
     def get_ci_gradient(self):
         """Compute the CI component of the energy gradient"""
         if(self.ndet > 1):
-            return 2.0 * self.mat_ci[:,1:].T.dot(self.sigma)
+            return 2.0 * self.mat_ci[:,1:].T @ (self.sigma - self.energy * self.mat_ci[:,0])
         else:
             return np.zeros((0))
 
@@ -143,7 +144,6 @@ class ESMF(Wavefunction):
         self.rotate_ci(step[self.nrot:])
 
         # Finally, update our integrals for the new coefficients
-        self.canonicalize()
         self.update_integrals()
 
     def rotate_orb(self,step): 
@@ -153,11 +153,13 @@ class ESMF(Wavefunction):
         orb_step[self.rot_idx] = step
         self.mo_coeff = np.dot(self.mo_coeff, scipy.linalg.expm(orb_step - orb_step.T))
 
+
     def rotate_ci(self,step): 
         """Take rotation step in the CIS space"""
         S       = np.zeros((self.ndet,self.ndet))
         S[1:,0] = step
         self.mat_ci = np.dot(self.mat_ci, scipy.linalg.expm(S - S.T))
+
 
     def save_to_disk(self,tag):
         """Save object to disk with prefix 'tag'"""
@@ -197,12 +199,14 @@ class ESMF(Wavefunction):
         self.initialise(mo_read, ci_read)
         return
 
+
     def copy(self):
         # Return a copy of the current object
         newcas = ESMF(self.integrals, spin=self.spin, with_ref=self.with_ref)
         newcas.initialise(self.mo_coeff, self.mat_ci, integrals=False)
         return newcas
-    
+
+
     def update_integrals(self):
         # Update integral object
         self.mo_ints.update_orbitals(self.mo_coeff,0,self.nmo)
@@ -237,6 +241,7 @@ class ESMF(Wavefunction):
         ovlp  = self.integrals.overlap_matrix()
         return esmf_coupling(self, them, ovlp, with_ref=self.with_ref)[0]
 
+
     def hamiltonian(self, them):
         """Compute the many-body Hamiltonian coupling with another CAS wavefunction (them)"""
         hcore = self.integrals.oei_matrix(True)
@@ -244,6 +249,7 @@ class ESMF(Wavefunction):
         ovlp  = self.integrals.overlap_matrix()
         enuc  = self.integrals.scalar_potential()
         return esmf_coupling(self, them, ovlp, hcore, eri, enuc, with_ref=self.with_ref)
+
 
     def deallocate(self):
         # Reduce the memory footprint for storing 
@@ -253,6 +259,9 @@ class ESMF(Wavefunction):
         self.ref_fock = None
         self.F_cas    = None
         self.ham      = None
+
+    def get_preconditioner(self):
+        return np.abs(np.diag(self.hessian))
     
     def get_ham(self):
         '''Build the full Hamiltonian in the CIS space'''
@@ -312,6 +321,7 @@ class ESMF(Wavefunction):
 
         return 2 * dm1
 
+
     def get_rdm12(self):
         '''Compute the total 1RDM and 2RDM for the current state'''
         ne = self.nalfa
@@ -347,11 +357,11 @@ class ESMF(Wavefunction):
         # ijka block
         dm2[:ne,:ne,:ne,ne:] += 4 * c0 * np.einsum('ij,ka->ijka', kron[:ne,:ne], t)
         dm2[:ne,:ne,:ne,ne:] -= 2 * c0 * np.einsum('kj,ia->ijka', kron[:ne,:ne], t)
-        dm2[:ne,ne:,:ne,:ne] = np.einsum('ijka->kaij',dm2[:ne,:ne,:ne,ne:])
+        dm2[:ne,ne:,:ne,:ne]  = np.einsum('ijka->kaij',dm2[:ne,:ne,:ne,ne:])
         # ijak block
         dm2[:ne,:ne,ne:,:ne] += 4 * c0 * np.einsum('ij,ak->ijak', kron[:ne,:ne], t.T)
         dm2[:ne,:ne,ne:,:ne] -= 2 * c0 * np.einsum('ik,aj->ijak', kron[:ne,:ne], t.T)
-        dm2[ne:,:ne,:ne,:ne] = np.einsum('ijak->akij',dm2[:ne,:ne,ne:,:ne])
+        dm2[ne:,:ne,:ne,:ne]  = np.einsum('ijak->akij',dm2[:ne,:ne,ne:,:ne])
         # ijab block
         dm2[:ne,:ne,ne:,ne:] += 4 * np.einsum('ij,ab->ijab', kron[:ne,:ne], ttVir)
         dm2[:ne,:ne,ne:,ne:] -= 2 * np.einsum('ib,ja->ijab', t, t)
@@ -442,6 +452,12 @@ class ESMF(Wavefunction):
                 tia = np.linalg.multi_dot((u.T, tia, vt.T))
                 self.mat_ci[:,k] = np.reshape(tia,(self.nalfa * (self.nmo - self.nalfa)))
 
+        self.update_integrals()
+        # Build transformation matrix for later
+        Q = np.zeros((self.nmo,self.nmo))
+        Q[:self.nalfa,:self.nalfa] = u
+        Q[self.nalfa:,self.nalfa:] = vt.T
+        return Q
 
     def get_gen_fock(self, v1, v2, transition=False):
         """Build generalised Fock matrix
@@ -604,3 +620,32 @@ class ESMF(Wavefunction):
                 frozen = np.asarray(frozen)
                 mask[frozen] = mask[:,frozen] = False
         return mask
+    
+    def transform_vector(self,_vec,step,X):
+        """Transform tangent vectors after canonicalisation"""
+        vec = np.copy(_vec)
+        if(not X is None):
+            u = X[:self.nalfa,:self.nalfa]
+            v = X[self.nalfa:,self.nalfa:]
+            
+            # Rotate orbital part
+            kia = np.reshape(vec[:self.nrot].copy(), (self.nalfa,self.nmo-self.nalfa))
+            kia = np.linalg.multi_dot((u.T, kia, v))
+            vec[:self.nrot] = kia.flatten()
+
+            # Rotate CI part
+            vec_ci = vec[self.nrot:]
+            # Convert to determinant basis
+            vec_ci_det = np.einsum('ip,p->i', self.mat_ci[:,1:], vec_ci, optimize="optimal")
+            # Perform the rotation
+            if(self.with_ref):
+                zia = np.reshape(vec_ci_det[1:],(self.nalfa,self.nmo-self.nalfa))
+                vec_ci_det[1:] = np.linalg.multi_dot((u.T, zia, v)).flatten()
+            else:
+                zia = np.reshape(vec_ci_det, (self.nalfa,self.nmo-self.nalfa))
+                vec_ci_det = np.linalg.multi_dot((u.T, zia, v)).flatten()
+            # Convert back to CI basis
+            vec[self.nrot:] = np.einsum('ip,i->p', self.mat_ci[:,1:], vec_ci_det, optimize="optimal")
+            return vec
+        else:
+            return vec

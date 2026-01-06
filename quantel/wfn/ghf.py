@@ -5,6 +5,7 @@ import numpy as np
 import scipy.linalg
 import h5py
 from quantel.utils.linalg import orthogonalise, matrix_print
+from quantel.utils.scf_utils import mom_select
 from .wavefunction import Wavefunction
 import quantel
 from pyscf.tools import cubegen
@@ -20,13 +21,15 @@ class GHF(Wavefunction):
             - save_last_step
             - restore_step
     """
-    def __init__(self, integrals, verbose=0):
+    def __init__(self, integrals, verbose=0, mom_method=None):
         """Initialise Restricted Hartree-Fock wave function
                integrals : quantel integral interface
                verbose   : verbosity level
         """
         self.integrals = integrals
         self.nelec     = integrals.molecule().nalfa() + integrals.molecule().nbeta()
+        if(self.integrals.xc is not None):
+            raise NotImplementedError("GHF not compatible with exchange-correlation functional")
 
         # Get number of basis functions and linearly independent orbitals
         self.nbsf      = integrals.nbsf()
@@ -37,6 +40,7 @@ class GHF(Wavefunction):
         # For now, we assume that the number of alpha and beta electrons are the same
         self.nocc      = self.nelec
         self.verbose   = verbose
+        self.mom_method = mom_method
 
         # Setup the indices for relevant orbital rotations
         self.rot_idx   = self.uniq_var_indices() # Indices for orbital rotations
@@ -54,6 +58,9 @@ class GHF(Wavefunction):
         """Initialise the wave function with a set of molecular orbital coefficients"""
         # Make sure orbitals are orthogonal
         self.mo_coeff = orthogonalise(mo_guess, self.ghf_overlap)
+        # Set initial orbital occupation
+        if(self.mom_method == 'IMOM'):
+            self.Cinit = self.mo_coeff.copy()
         # Update the density and Fock matrices
         self.update()
 
@@ -75,8 +82,6 @@ class GHF(Wavefunction):
         E1 += np.einsum('pq,pq', self.integrals.oei_matrix(False), Db, optimize="optimal")
         # Two-electron energy
         E2 = 0.5 * np.einsum('pq,pq', self.JK, self.dens, optimize="optimal")
-        # Exchange correlation
-        #Exc = self.exc
         # Save components
         self.energy_components = dict(Nuclear=En, One_Electron=E1, Two_Electron=E2, Exchange_Correlation=0)
         return En + E1 + E2
@@ -93,9 +98,9 @@ class GHF(Wavefunction):
     
     @property
     def s2(self):
-        """Get the spin of the current RHF state"""
+        """Get the spin of the current GHF state"""
         raise NotImplementedError("Spin S^2 not implemented for GHF")
-        return 0 # All RHF states have spin 0
+    
 
     @property
     def gradient(self):
@@ -108,6 +113,7 @@ class GHF(Wavefunction):
         """Compute the internal RHF orbital Hessian"""
         # Number of occupied and virtual orbitals
         no = self.nocc
+        nv = self.nmo - no
 
         # Compute Fock matrix in MO basis 
         Fmo = np.linalg.multi_dot([self.mo_coeff.T, self.fock, self.mo_coeff])
@@ -129,21 +135,53 @@ class GHF(Wavefunction):
                     + self.integrals.tei_ao_to_mo(Cbv,Cbo,Cbv,Cbo,True,False))
 
         # Initialise Hessian matrix
-        hessian = np.zeros((self.nmo,self.nmo,self.nmo,self.nmo))
+        hessian = np.zeros((nv,no,nv,no))
 
         # Compute Fock contributions
         for i in range(no):
-            hessian[no:,i,no:,i] += 2 * Fmo[no:,no:]
-        for a in range(no,self.nmo):
-            hessian[a,:no,a,:no] -= 2 * Fmo[:no,:no]
+            hessian[:,i,:,i] += 2 * Fmo[no:,no:]
+        for a in range(nv):
+            hessian[a,:,a,:] -= 2 * Fmo[:no,:no]
 
         # Compute two-electron contributions
-        hessian[no:,:no,no:,:no] += 4 * np.einsum('abij->aibj', eri_abij, optimize="optimal")
-        hessian[no:,:no,no:,:no] -= 2 * np.einsum('aibj->aibj', eri_aibj, optimize="optimal")
-        hessian[no:,:no,no:,:no] -= 2 * np.einsum('abji->aibj', eri_abij, optimize="optimal")
+        hessian += 4 * np.einsum('abij->aibj', eri_abij, optimize="optimal")
+        hessian -= 2 * np.einsum('aibj->aibj', eri_aibj, optimize="optimal")
+        hessian -= 2 * np.einsum('abji->aibj', eri_abij, optimize="optimal")
 
         # Return suitably shaped array
-        return (hessian[:,:,self.rot_idx])[self.rot_idx,:]
+        return np.reshape(hessian,(nv*no,-1))
+
+
+    def hess_on_vec(self,X):
+        """ Compute the action of Hessian on a vector X"""
+        # Reshape X into matrix form
+        Xai = np.reshape(X, (self.nmo-self.nocc,self.nocc))
+        # Access occupied and virtual orbitals
+        Ci = self.mo_coeff[:,:self.nocc]
+        Ca = self.mo_coeff[:,self.nocc:]
+
+        # First order density change
+        Dia = np.einsum('pa,ai,qi->pq', Ca, Xai, Ci, optimize="optimal")
+        Daa = Dia[:self.nbsf,:self.nbsf]
+        Dab = Dia[:self.nbsf,self.nbsf:]
+        Dba = Dia[self.nbsf:,:self.nbsf]
+        Dbb = Dia[self.nbsf:,self.nbsf:]
+        # First order JK integrals
+        (Jaa,_,_,Jbb), (Kaa,Kab,Kba,Kbb) = self.integrals.build_JK([Daa,Dab,Dba,Dbb],[Daa,Dab,Dba,Dbb],hermi=0,Kxc=False)
+        Jia = np.zeros((2*self.nbsf, 2*self.nbsf))
+        Jia[:self.nbsf,:self.nbsf] = Jaa + Jbb
+        Jia[self.nbsf:,self.nbsf:] = Jaa + Jbb
+        Kia = np.block([[Kaa,Kab],
+                        [Kba,Kbb]])
+        
+        # Fock contributions
+        Fba = Ca.T @ self.fock @ Ca
+        Fij = Ci.T @ self.fock @ Ci
+        HX = 2 * (Fba @ Xai - Xai @ Fij)
+        kernel = 4 * Jia  - 2 * (Kia + Kia.T)
+        HX += np.einsum('pa,qp,qi->ai', Ca, kernel, Ci, optimize="optimal")
+        return HX.ravel()
+
 
     def print(self,verbose=1):
         """ Print details about the state energy and orbital coefficients
@@ -213,7 +251,8 @@ class GHF(Wavefunction):
 
     def hamiltonian(self, them):
         """Compute the (nonorthogonal) many-body Hamiltonian coupling with another RHF wavefunction (them)"""
-        raise NotImplementedError("RHF Hamiltonian not implemented")
+        raise NotImplementedError("R" \
+        "HF Hamiltonian not implemented")
 
     def update(self):
         """Update the 1RDM and Fock matrix for the current state"""
@@ -235,7 +274,7 @@ class GHF(Wavefunction):
     def get_fock(self):
         """Compute the Fock matrix for the current state"""
         # Get JK integrals
-        self.vJ, self.vK = self.integrals.build_multiple_JK(self.vd,self.vd,3,3)
+        self.vJ, self.vK = self.integrals.build_JK(self.vd,self.vd,Kxc=False)
         # Construct the Coulomb matrix
         self.J = np.zeros((2*self.nbsf, 2*self.nbsf))
         self.J[:self.nbsf,:self.nbsf] = self.vJ[0] + self.vJ[2]
@@ -250,7 +289,7 @@ class GHF(Wavefunction):
         self.fock = np.kron(np.eye(2), self.integrals.oei_matrix(True)) + self.J - self.K
         self.JK = self.J - self.K
         # Vectorised format of the Fock matrix 
-        self.fock_vec = self.fock.T.reshape((-1))
+        return self.fock.T.reshape((-1))
 
 
     def canonicalize(self):
@@ -298,9 +337,21 @@ class GHF(Wavefunction):
         # Project to linearly independent orbitals
         Ft = np.linalg.multi_dot([self.ghf_X.T, self.fock, self.ghf_X])
         # Diagonalise the Fock matrix
-        self.mo_energy, Ct = np.linalg.eigh(Ft)
+        Et, Ct = np.linalg.eigh(Ft)
         # Transform back to the original basis
-        self.mo_coeff = np.dot(self.ghf_X, Ct)
+        Cnew = np.dot(self.ghf_X, Ct)
+        
+        # Select occupied orbitals using MOM if specified
+        if(self.mom_method =='MOM'):
+            Cold = self.mo_coeff.copy()
+            self.mo_coeff = mom_select(Cold[:,:self.nocc],Cnew,self.ghf_overlap)
+        elif(self.mom_method == 'IMOM'):
+            self.mo_coeff = mom_select(self.Cinit[:,:self.nocc],Cnew,self.ghf_overlap)
+        else:
+            self.mo_coeff = Cnew.copy()
+
+        # Save current orbital energies
+        self.mo_energy = self.mo_coeff.T @ self.fock @ self.mo_coeff
         # Update density and Fock matrices
         self.update()
 
@@ -317,15 +368,10 @@ class GHF(Wavefunction):
             kappa = X.T @ kappa
         return kappa[self.rot_idx]
 
-    def try_fock(self, fock):
+    def try_fock(self, fock_vec):
         """Try an extrapolated Fock matrix and update the orbital coefficients"""
-        self.fock = fock
+        self.fock = fock_vec.reshape((2*self.nbsf,2*self.nbsf))
         self.diagonalise_fock()
-
-    def try_fock_vec(self, fock_vec): 
-        """Wrapper for try_fock() to handle Fock vectors from DIIS"""
-        fock = fock_vec.reshape((2*self.nbsf,2*self.nbsf)).T
-        self.try_fock(fock) 
 
     def get_diis_error(self):
         """Compute the DIIS error vector and DIIS error"""
@@ -393,8 +439,14 @@ class GHF(Wavefunction):
         else:
             raise NotImplementedError(f"Orbital guess method {method} not implemented")
         
+        # Project to linearly independent orbitals
+        Ft = np.linalg.multi_dot([self.ghf_X.T, self.fock, self.ghf_X])
+        # Diagonalise the Fock matrix
+        Et, Ct = np.linalg.eigh(Ft)
+        # Transform back to the original basis
+        Cinit = np.dot(self.ghf_X, Ct)
         # Get orbital coefficients by diagonalising Fock matrix
-        self.diagonalise_fock()
+        self.initialise(Cinit)
 
     def deallocate(self):
         pass
@@ -404,13 +456,12 @@ class GHF(Wavefunction):
         # Get current gradient
         g0 = self.gradient.copy()
         # Save current position
-        mo_save = self.mo_coeff.copy()
+        self.save_last_step()
         # Get forward gradient
         self.take_step(eps * vec)
         g1 = self.gradient.copy()
         # Restore to origin
-        self.mo_coeff = mo_save.copy()
-        self.update()
+        self.restore_last_step()
         # Parallel transport back to current position
         g1 = self.transform_vector(g1, - eps * vec)
         # Get approximation to H @ sk
@@ -459,20 +510,21 @@ class GHF(Wavefunction):
             
         return self.nelec - ev[-1]
     
-    def excite(self):
-        # Perform HOMO-LUMO excitation 
-        self.mo_coeff[:,[self.nocc-1, self.nocc]] = self.mo_coeff[:,[self.nocc,self.nocc-1]]
-        self.update() 
-
-    def mom_update(self, old_C): 
-        """ Construct the MOM determinant from an old set of orbitals """
-        # Compute projection onto previous  occupied space 
-        old_Cocc = old_C[:,:self.nocc]
-        p = np.einsum('ij,jk,kl->l', old_Cocc.T, self.ghf_overlap, self.mo_coeff )
-        # Order MOs according to largest projection 
-        idx = list(reversed(np.argsort(np.abs(p))))
-        self.mo_coeff = self.mo_coeff[:,idx]
-        self.update()
+    def excite(self,occ_idx,vir_idx,mom_method=None):
+        """ Perform orbital excitation on both spins
+            Args:
+                occ_idx : list of occupied orbital indices to be excited
+                vir_idx : list of virtual orbital indices to be occupied
+        """
+        if(len(occ_idx)!=len(vir_idx)):
+            raise ValueError("Occupied and virtual index lists must have the same length")
+        source = occ_idx + vir_idx
+        dest   = vir_idx + occ_idx
+        coeff_new = self.mo_coeff.copy()
+        coeff_new[:,dest] = self.mo_coeff[:,source]
+        them = GHF(self.integrals, verbose=self.verbose,mom_method=mom_method)
+        them.initialise(coeff_new)
+        return them
 
     def mo_cubegen(self,idx,fname=""): 
         """ Generate and store cube files for specified MOs

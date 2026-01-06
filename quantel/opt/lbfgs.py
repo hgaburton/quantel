@@ -23,6 +23,7 @@ class LBFGS:
         self.control["with_canonical"] = True
         self.control["canonical_interval"] = 10
         self.control['gamma_preconditioner'] = False
+        self.control['preconditioner_interval'] = 1
 
         for key in kwargs:
             if not key in self.control.keys():
@@ -60,6 +61,7 @@ class LBFGS:
             print(f"    > Num. MOs       = {obj.nmo: 6d}")
             print(f"    > Num. params    = {dim: 6d}")
             print(f"    > Max subspace   = {max_subspace: 6d}")
+            print(f"    > Max step size   = {self.control['maxstep']: 6.3f}")
             print(f"    > Backtracking   = {self.control['backtrack_scale']: 6.3f}")
             print(f"    > Parallel tr.   = {self.control['with_transport']}")
             print(f"    > Pseudo-canon.  = {self.control['with_canonical']}")
@@ -74,11 +76,10 @@ class LBFGS:
         if plev>0: print("       {:^16s}    {:^8s}    {:^8s}".format("   Energy / Eh","Step Len","Max(|G_i|)"))
         if plev>0: print("  ================================================================")
 
-        zero_step = np.zeros(obj.dim) 
-        converged = False 
-        n_rescale = 0 
-        qn_count = 0 
-        reset = False 
+        zero_step = np.zeros(obj.dim)
+        converged = False
+        qn_count = 0
+        reset = False
         for istep in range(maxit+1):
             # Get energy, gradient and check convergence
             ecur = obj.energy
@@ -148,10 +149,10 @@ class LBFGS:
                 v_grad.append(grad.copy())
 
                 # Get L-BFGS quasi-Newton step
-                prec = obj.get_preconditioner()
-                # this is the step that gets our step and does the wolfe line search? 
-                step =self.get_lbfgs_step(v_grad,v_step,prec)#step is with alpha = 1
-                qn_count += 1 #qn_count is then our step counter
+                if(np.mod(istep,self.control["preconditioner_interval"])==0):
+                    prec = obj.get_preconditioner()
+                step = self.get_lbfgs_step(v_grad,v_step,prec)
+                qn_count += 1
 
                 # stepT.gradient < 0 i.e. the step is a descent step.  
                 # Need to make sure s.g < 0 to maintain positive-definite L-BFGS Hessian 
