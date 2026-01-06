@@ -79,7 +79,7 @@ class ROKS(CSF):
     @property
     def gradient(self):
         # 1. Get wavefunction part from parent CSF class
-        grad = CSF.gradient.fget(self)
+        grad = super().gradient.copy()
 
         # 2. Compute XC contribution
         grad_xc = np.zeros((self.nmo,self.nmo))
@@ -229,10 +229,12 @@ class ROKS(CSF):
         vxc_shell = np.zeros((self.nshell+1,self.nbsf,self.nbsf))
         if(self.nopen == 0):
             # Restricted case
+            vxc_ensemble = np.zeros((1,2,self.nbsf,self.nbsf))
             rho = self.dk[0]
             exc, vxc = self.integrals.build_vxc(rho,hermi=1)
             vxc_shell[0] = vxc[0] + vxc[1]
-            vxc_ensemble = vxc_shell[0]
+            vxc_ensemble[0,0,:,:] = vxc[0]
+            vxc_ensemble[0,1,:,:] = vxc[1]
         else:
             # loop over determinants in the ensemble
             vxc_ensemble = np.zeros((len(self.ensemble_dets),2,self.nbsf,self.nbsf))
@@ -309,7 +311,7 @@ class ROKS(CSF):
         return
 
 
-    def get_preconditioner(self,abs=True,include_fxc=False):
+    def get_preconditioner(self,abs=True,include_fxc=True):
         """Compute approximate diagonal of Hessian"""
          # Initialise with diagonal from wfn part
         Q = CSF.get_preconditioner(self,abs=False)
