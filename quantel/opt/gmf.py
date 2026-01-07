@@ -162,9 +162,7 @@ class GMF:
         kernel_end_time = datetime.datetime.now()
         computation_time = kernel_end_time - kernel_start_time
         if plev>0: print("  Generalised mode following walltime: ", computation_time.total_seconds(), " seconds")
-
         obj.get_davidson_hessian_index(guess=evec)
-
 
         return converged
 

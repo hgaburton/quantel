@@ -12,6 +12,14 @@ from quantel.utils.orbital_guess import orbital_guess
 from quantel.ints.pyscf_integrals import PySCFIntegrals
 from pyscf.tools import cubegen
 
+"""
+    Changes made 
+        1. changed update_integrals() to update() to be more consistent with other wave functions  
+"""
+
+
+
+
 def flag_transport(A,T,mask,max_order=50,tol=1e-4):
    tA = A.copy()
    M  = A.copy()
@@ -129,7 +137,7 @@ class CSF(Wavefunction):
         self.nrot       = np.sum(self.rot_idx)
 
         # Initialise integrals
-        if (integrals): self.update_integrals()
+        if (integrals): self.update()
 
     def deallocate(self):
         pass
@@ -330,7 +338,7 @@ class CSF(Wavefunction):
             vxc_pol = 0 * (vxca - vxcb)
         return exc, vxc, vxc_pol
 
-    def update_integrals(self):
+    def update(self):
         """ Update the integrals with current set of orbital coefficients"""
         # Update density matrices (AO basis)
         self.dj, self.dk, self.vd = self.get_density_matrices()
@@ -472,7 +480,7 @@ class CSF(Wavefunction):
     def restore_last_step(self):
         """ Restore MO coefficients to previous step"""
         self.mo_coeff = self.mo_coeff_save.copy()
-        self.update_integrals()
+        self.update()
 
 
     def save_last_step(self):
@@ -484,7 +492,7 @@ class CSF(Wavefunction):
         """ Take a step in the orbital space"""
         self.save_last_step()
         self.rotate_orb(step[:self.nrot])
-        self.update_integrals()
+        self.update()
 
 
     def rotate_orb(self, step):

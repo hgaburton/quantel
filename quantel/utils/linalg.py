@@ -144,8 +144,7 @@ def gram_schmidt(mat, metric=None):
         vj  = mat[:,:i]
         # Perform the projection
         vi -= vj @ (vj.conj().T @ Sv[:,i])
-        vi /= vi_norm
-    
+        vi /= norm(vi,metric)
     return mat
 
 def test_gram_schmidt(mat, metric=None):
@@ -162,7 +161,6 @@ def test_gram_schmidt(mat, metric=None):
         # Perform the projection
         vi -= vj @ (vj.conj().T @ Sv[:,i])
         vi_norm = norm(vi, metric)
-        print("Norm: ", vi_norm) 
         if vi_norm > 1e-10: 
             # Check norm
             vi /= vi_norm
