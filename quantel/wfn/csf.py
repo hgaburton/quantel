@@ -9,8 +9,7 @@ from quantel.gnme.csf_noci import csf_coupling, csf_coupling_slater_condon
 from .wavefunction import Wavefunction
 from quantel.utils.csf_utils import csf_reorder_orbitals
 from quantel.utils.orbital_guess import orbital_guess
-from quantel.ints.pyscf_integrals import PySCFIntegrals
-from pyscf.tools import cubegen
+
 
 def flag_transport(A,T,mask,max_order=50,tol=1e-4):
    tA = A.copy()
@@ -42,6 +41,9 @@ class CSF(Wavefunction):
                 spin_coupling : genealogical coupling pattern
                 verbose       : verbosity level
         """
+        if(type(self)==CSF and (integrals.xc != None)):
+            raise ValueError("CSF class cannot be used with DFT functionals - use ROKS class instead")
+
         # How noisy am I?
         self.verbose       = verbose
         # Initialise integrals object
@@ -71,7 +73,7 @@ class CSF(Wavefunction):
             raise ValueError("Number of inactive and active orbitals must be <= total number of orbitals")
 
     def setup_spin_coupling(self, spin_coupling): 
-
+        """ Setup the spin coupling pattern for the CSF wave function """
         if(spin_coupling == 'cs'):
             spin_coupling = ''
 
@@ -106,7 +108,7 @@ class CSF(Wavefunction):
 
     def initialise(self, mo_guess, spin_coupling=None, mat_ci=None, integrals=True):
         """ Initialise the CSF object with a set of MO coefficients"""
-        if(spin_coupling is None):
+        if(spin_coupling == None):
             spin_coupling = self.spin_coupling
         self.setup_spin_coupling(spin_coupling)
 
@@ -177,18 +179,18 @@ class CSF(Wavefunction):
         # Get generalised Fock and symmetrise
         F = self.gen_fock + self.gen_fock.T
         # Get one-electron matrix elements 
-        h1e = np.linalg.multi_dot([self.mo_coeff.T, self.integrals.oei_matrix(True), self.mo_coeff])
+        h1e = self.mo_transform(self.integrals.oei_matrix(True))
         # Combine intermediates (Eq. 10.8.53 in Helgaker book) 
         Hess = 2 * self.get_Y_intermediate()
         for i in range(self.nmo):
             Hess[i,:,i,:] += 2 * self.mo_occ[i] * h1e
             Hess[:,i,:,i] -= F
-               # Apply permutation symmetries
+        # Apply permutation symmetries
         Hess = Hess - Hess.transpose(1,0,2,3)
         Hess = Hess - Hess.transpose(0,1,3,2)
         # Reshape and return
         return (Hess[:, :, self.rot_idx])[self.rot_idx, :]
-
+    
     @property
     def exchange_matrix(self):
         """ Compute the exchange matrix in the MO basis"""
@@ -211,7 +213,7 @@ class CSF(Wavefunction):
         # Return the combination
         return nucl_dip - np.einsum('xij,ji->x',ao_dip,self.dj)
 
-
+        
     def print(self,verbose=1):
         """ Print details about the state energy and orbital coefficients
 
@@ -247,7 +249,6 @@ class CSF(Wavefunction):
         """ Compute the approximate Hess * vec product using forward finite difference """
         # Get current gradient
         g0 = self.gradient.copy()
-
         # Get forward gradient
         # First copy CSF but don't initialise integrals
         them = self.copy(integrals=False)
@@ -256,12 +257,84 @@ class CSF(Wavefunction):
         g1 = them.gradient.copy()
         # Parallel transport back to current position
         g1 = self.transform_vector(g1, - eps * vec)
-        
         # Return approximation to H @ sk
         return (g1 - g0) / eps
+    
+    def mo_transform(self, M):
+        """ Transform a matrix from AO to MO basis """
+        if(type(M) is tuple):
+            return (self.mo_transform(Mi) for Mi in M)
+        elif(type(M) is list):
+            return [self.mo_transform(Mi) for Mi in M]
+        elif(type(M) is dict):
+            return {k:self.mo_transform(Mi) for k, Mi in M.items()}
+        elif(type(M) is np.ndarray):
+            if(len(M.shape)==3):
+                return np.einsum('mp,imn,nq->ipq',self.mo_coeff,M,self.mo_coeff,optimize='optimal')
+            elif(len(M.shape)==2):
+                return np.einsum('mp,mn,nq->pq',self.mo_coeff,M,self.mo_coeff,optimize='optimal')
+            else:
+                raise ValueError("Matrix must be rank 2 or 3 for MO transformation")
 
     def hess_on_vec(self, vec):
-        return self.hessian @ vec
+        """ Compute the Hessian @ vec product directly, without forming the full Hessian matrix 
+            This is more memory efficient and avoids any ERI computation.
+
+            Inputs:
+                vec : vector to be multiplied by the Hessian
+            Returns:
+                Hvec : result of Hessian @ vec product
+        """
+        # Antisymmetric step
+        step = np.zeros((self.nmo,self.nmo))
+        step[self.rot_idx] = vec
+        step -= step.T
+
+        ## 0. Initialize H @ vec
+        Hvec = np.zeros_like(step)
+
+        ## 1. One-electron part
+        h1e = self.mo_transform(self.integrals.oei_matrix(True))
+        Hvec += 2 * h1e @ np.einsum('sq,q->sq',step,self.mo_occ)
+
+        ## 2. Generalised Fock part
+        Ft = 0.5 * (self.gen_fock + self.gen_fock.T)
+        Hvec -= step @ Ft + Ft @ step
+
+        ## 3. Zeroth-order J/K part
+        Jmo, Kmo = self.mo_transform((self.J,self.K))
+        Hvec += 2 * np.einsum('p,ps->ps',self.mo_occ,step) @ Jmo
+        # Core contribution
+        for I in range(Kmo.shape[0]):
+            Hvec[:self.ncore,:] -= 2 * step[:self.ncore,:] @ Kmo[I]
+        for P, Pinds in enumerate(self.shell_indices):
+            Hvec[Pinds,:] += step[Pinds,:] @ (2 * np.einsum('r,rqs->qs',self.beta[P],Kmo[1:]) - Kmo[0])
+            
+        ## 4. J/K part
+        # Build first-order densities
+        vd = np.zeros((self.nshell+1,self.nbsf,self.nbsf))
+        vd[0] = np.linalg.multi_dot([self.mo_coeff,np.einsum('r,rs->rs',self.mo_occ,step),self.mo_coeff.T])
+        # Symmetrise for efficiency
+        vd[0] = 0.5 * (vd[0] + vd[0].T)
+        for P in range(self.nshell):
+            # Core contribution
+            vd[P+1] -= np.linalg.multi_dot([self.mo_coeff[:,:self.ncore],step[:self.ncore,:],self.mo_coeff.T])
+            # Active contribution
+            for R, Rinds in enumerate(self.shell_indices):
+                vd[P+1] += self.beta[P,R] * np.linalg.multi_dot([self.mo_coeff[:,Rinds],step[Rinds,:],self.mo_coeff.T])
+            vd[P+1] = 0.5 * (vd[P+1] + vd[P+1].T)
+        # Build J and K matrices from first-order densities
+        J1, _, K1 = self.mo_transform(self.integrals.build_JK(vd,vd,hermi=1,Kxc=True))
+        # Contribution to Hvec
+        Hvec += 4 * np.einsum('p,qp->pq',self.mo_occ,J1[0]) 
+        # Don't include transpose as density was symmetrised
+        Hvec[:self.ncore,:] -= 4 * K1[0][:self.ncore,:]
+        for P, Pinds in enumerate(self.shell_indices):
+            Hvec[Pinds,:] += 4 * K1[P+1][Pinds,:]
+        
+        ## 5. Antisymmetrise and return
+        Hvec = Hvec - Hvec.T
+        return Hvec[self.rot_idx]
 
     def get_rdm12(self,only_occ=True):
         """ Compute the 1- and 2-electron reduced matrices from the shell coupling in occupied space
@@ -319,7 +392,7 @@ class CSF(Wavefunction):
         # Get Fock matrix (AO basis)
         self.fock = self.integrals.oei_matrix(True) + self.J - 0.5 * np.einsum('mpq->pq',self.K)
         # Get generalized Fock matrices
-        self.gen_fock, self.Ipqpq, self.Ipqqp = self.get_generalised_fock()
+        self.gen_fock, self.Ipqpq, self.Ipqqp, self.gen_fock_diag = self.get_generalised_fock()
         return 
 
     def save_to_disk(self, tag):
@@ -407,7 +480,6 @@ class CSF(Wavefunction):
             raise ValueError("Insufficient orbitals in file to represent occupied orbitals")
         if mo_read.shape[1] > self.nmo:
             raise ValueError("Too many orbitals in file")
-        return
 
 
     def copy(self,integrals=True):
@@ -577,14 +649,14 @@ class CSF(Wavefunction):
         F = np.zeros((self.nmo, self.nmo)) 
 
         # Memory for diagonal elements
-        self.gen_fock_diag = np.zeros((self.nmo,self.nmo))
+        gen_fock_diag = np.zeros((self.nmo,self.nmo))
         # Core contribution
         Fcore_ao = 2 * (self.integrals.oei_matrix(True) + self.J 
                       - 0.5 * np.sum(self.K[i] for i in range(self.nshell+1)))
         # AO-to-MO transformation
         Fcore_mo = np.linalg.multi_dot([self.mo_coeff.T, Fcore_ao, self.mo_coeff])
         for i in range(self.ncore):
-            self.gen_fock_diag[i,:] = Fcore_mo.diagonal()
+            gen_fock_diag[i,:] = Fcore_mo.diagonal()
         F[:self.ncore,:] = Fcore_mo[:self.ncore,:]
 
         # Open-shell contributions
@@ -598,7 +670,7 @@ class CSF(Wavefunction):
             # AO-to-MO transformation
             Fw_mo = np.linalg.multi_dot([self.mo_coeff.T, Fw_ao, self.mo_coeff])
             for w in shell:
-                self.gen_fock_diag[w,:] = Fw_mo.diagonal()
+                gen_fock_diag[w,:] = Fw_mo.diagonal()
             F[shell,:] = Fw_mo[shell,:]
         
         # Get diagonal J/K terms
@@ -609,7 +681,7 @@ class CSF(Wavefunction):
             Ki = self.mo_coeff.T @ self.vK[1+i] @ self.mo_coeff
             Ipqpq[i] = np.diag(Ji)
             Ipqqp[i] = np.diag(Ki)
-        return F, Ipqpq, Ipqqp
+        return F, Ipqpq, Ipqqp, gen_fock_diag
 
 
     def get_Y_intermediate(self):
@@ -634,15 +706,15 @@ class CSF(Wavefunction):
         Y = np.zeros((nmo,nmo,nmo,nmo))
         # Y_imjn
         Y[:ncore,:,:ncore,:] += 8 * np.einsum('mnij->imjn',ppoo[:,:,:ncore,:ncore]) 
-        Y[:ncore,:,:ncore,:] -= 2 * np.einsum('mnji->imjn',ppoo[:,:,:ncore,:ncore])
-        Y[:ncore,:,:ncore,:] -= 2 * np.einsum('mjni->imjn',popo[:,:ncore,:,:ncore])
+        Y[:ncore,:,:ncore,:] -= 2 * self.integrals.hybrid_K * np.einsum('mnji->imjn',ppoo[:,:,:ncore,:ncore])
+        Y[:ncore,:,:ncore,:] -= 2 * self.integrals.hybrid_K * np.einsum('mjni->imjn',popo[:,:ncore,:,:ncore])
         for i in range(ncore):
             Y[i,:,i,:] += 2 * Jmn - Kmn
 
         # Y_imwn
         Y[:ncore,:,ncore:nocc,:] = (4 * ppoo[:,:,:ncore,ncore:nocc].transpose(2,0,3,1)
-                                      - ppoo[:,:,ncore:nocc,:ncore].transpose(3,0,2,1)
-                                      - popo[:,ncore:nocc,:,:ncore].transpose(3,0,1,2))
+                                      - self.integrals.hybrid_K * ppoo[:,:,ncore:nocc,:ncore].transpose(3,0,2,1)
+                                      - self.integrals.hybrid_K * popo[:,ncore:nocc,:,:ncore].transpose(3,0,1,2))
         Y[ncore:nocc,:,:ncore,:] = Y[:ncore,:,ncore:nocc,:].transpose(2,3,0,1)
 
         # Y_wmvn
@@ -651,14 +723,15 @@ class CSF(Wavefunction):
             for V in range(W,self.nshell):
                 for w in self.shell_indices[W]:
                     for v in self.shell_indices[V]:
-                        Y[w,:,v,:] = 2 * ppoo[:,:,w,v] + self.beta[W,V] * (ppoo[:,:,v,w] + popo[:,v,:,w])
+                        Y[w,:,v,:] = 2 * ppoo[:,:,w,v] + self.integrals.hybrid_K * self.beta[W,V] * (ppoo[:,:,v,w] + popo[:,v,:,w])
                         if(w==v):
                             Y[w,:,w,:] = Y[w,:,w,:] + Jmn - 0.5 * vKmn[0] + wKmn
                         else:
                             Y[v,:,w,:] = Y[w,:,v,:].T
         return Y
 
-    def get_preconditioner(self):
+    
+    def get_preconditioner(self,abs=True):
         """Compute approximate diagonal of Hessian"""
         # Initialise approximate preconditioner
         Q = np.zeros((self.nmo,self.nmo))
@@ -668,7 +741,7 @@ class CSF(Wavefunction):
             for q in range(p):
                 Q[p,q] = 2 * ( (self.gen_fock_diag[p,q] - self.gen_fock_diag[q,q]) 
                              + (self.gen_fock_diag[q,p] - self.gen_fock_diag[p,p]) )
-           
+                
         # Compute two-electron corrections involving active orbitals
         Acoeff = self.Ipqqp
         for q in range(self.ncore,self.nocc):
@@ -677,7 +750,7 @@ class CSF(Wavefunction):
             for p in range(q+1,self.nmo):
                 Q[p,q] += 4 * (self.mo_occ[p]-self.mo_occ[q])**2 * Acoeff[q-self.ncore,p]
 
-        Bcoeff = self.Ipqpq + self.Ipqqp
+        Bcoeff = self.integrals.hybrid_K * (self.Ipqpq + self.Ipqqp)
         for W in range(self.nshell):
             for q in self.shell_indices[W]:
                 # Core-Active
@@ -691,7 +764,7 @@ class CSF(Wavefunction):
                 for p in range(self.nocc,self.nmo):
                     Q[p,q] -= 2 * (self.mo_occ[p] + self.mo_occ[q]) * Bcoeff[q-self.ncore,p]
 
-        return np.abs(Q[self.rot_idx])
+        return np.abs(Q[self.rot_idx]) if abs else Q[self.rot_idx]
 
     def edit_mask_by_gcoupling(self, mask):
         r"""
@@ -737,12 +810,12 @@ class CSF(Wavefunction):
             np.ones((self.nopen, self.nopen), dtype=bool), k=-1)
         
         # Modify for genealogical coupling
-        if self.spin_coupling is not None:
+        if self.spin_coupling != None:
             mask[self.ncore:self.nocc, self.ncore:self.nocc] = self.edit_mask_by_gcoupling(
                 mask[self.ncore:self.nocc,self.ncore:self.nocc])
             
         # Account for any frozen orbitals   
-        if frozen is not None:
+        if frozen != None:
             if isinstance(frozen, (int, np.integer)):
                 mask[:frozen] = mask[:, :frozen] = False
             else:
@@ -816,7 +889,7 @@ class CSF(Wavefunction):
         self.mo_coeff = self.mo_coeff @ Q
         
         # Update generalised Fock matrix and diagonal approximations
-        self.gen_fock, self.Ipqpq, self.Ipqqp = self.get_generalised_fock()
+        self.update_integrals()
         return Q
 
     def mo_cubegen(self,idx,fname=""): 

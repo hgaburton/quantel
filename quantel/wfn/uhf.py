@@ -157,21 +157,21 @@ class UHF(Wavefunction):
 
         # Compute two-electron contributions
         # Alpha-Alpha terms 
-        hess_aa += 4 * np.einsum('jabi->iajb', eri_aa_rqsp, optimize="optimal") 
+        hess_aa += 4 * np.einsum('ajib->aibj', eri_aa_rqsp, optimize="optimal") 
         hess_aa -= 2 * self.integrals.hybrid_K * np.einsum('jaib->iajb', eri_aa_rqps, optimize="optimal") 
         hess_aa -= 2 * self.integrals.hybrid_K * np.einsum('abji->iajb', eri_aa_qsrp, optimize="optimal") 
         # Beta-Beta terms
-        hess_bb += 4 * np.einsum('jabi->iajb', eri_bb_rqsp, optimize="optimal")
+        hess_bb += 4 * np.einsum('ajib->aibj', eri_bb_rqsp, optimize="optimal")
         hess_bb -= 2 * self.integrals.hybrid_K * np.einsum('jaib->iajb', eri_bb_rqps, optimize="optimal")
         hess_bb -= 2 * self.integrals.hybrid_K * np.einsum('abji->iajb', eri_bb_qsrp, optimize="optimal")        
         # Cross spin terms 
-        hess_ab += 4 * np.einsum('rqsp->pqrs', eri_ab_rqsp, optimize="optimal")
+        hess_ab += 4 * np.einsum('ajib->aibj', eri_ab_rqsp, optimize="optimal")
 
         # Contribution from xc correlation
         if(not (self.integrals.xc is None)):
             # Build ground-state density and xc kernel
             rho0, vxc, fxc = self.integrals.cache_xc_kernel(self.mo_coeff,self.mo_occ,spin=1)
-
+            
             # Loop over contributions per orbital pair
             for i in range(no_a):
                 for a in range(nv_a):
@@ -182,7 +182,6 @@ class UHF(Wavefunction):
                     fxc_ia = self.integrals.uks_fxc([Dia,np.zeros_like(Dia)],rho0,vxc,fxc)
                     # Compute contribution to Hessian diagonal
                     hess_aa[a,i,:,:] += 4 * np.linalg.multi_dot([Cvir_a.T, fxc_ia[0], Cocc_a])
-                    hess_ab[a,i,:,:] += 2 * np.linalg.multi_dot([Cvir_b.T, fxc_ia[1], Cocc_b])
             for i in range(no_b):
                 for a in range(nv_b):
                     # Build the first-order density matrix for this orbital pair
@@ -191,7 +190,6 @@ class UHF(Wavefunction):
                     fxc_ia = self.integrals.uks_fxc([np.zeros_like(Dia), Dia],rho0,vxc,fxc)
                     # Compute contribution to Hessian diagonal
                     hess_bb[a,i,:,:] += 4 * np.linalg.multi_dot([Cvir_b.T, fxc_ia[1], Cocc_b])
-                    hess_ab[:,:,a,i] += 2 * np.linalg.multi_dot([Cvir_a.T, fxc_ia[0], Cocc_a])
 
         # Return suitably shaped array
         hess_aa = np.reshape(hess_aa, (nv_a*no_a, -1))
@@ -512,17 +510,17 @@ class UHF(Wavefunction):
         """Compute the Hamiltonian coupling with another wavefunction of this type"""
         pass
     
-    def approx_hess_on_vec(self, vec, eps=1e-3): 
+    
+    def approx_hess_on_vec(self, vec, eps=1e-3):
         """ Compute the approximate Hess * vec product using forward finite difference """
         # Get current gradient
         g0 = self.gradient.copy()
         # Save current position
         self.save_last_step()
         # Get forward gradient
-        self.take_step(eps * vec)
-        g1 = self.gradient.copy()
-        # Restore to origin
-        self.restore_last_step()
+        them = self.copy(integrals=False)
+        them.take_step(eps * vec)
+        g1 = them.gradient.copy()
         # Parallel transport back to current position
         g1 = self.transform_vector(g1, - eps * vec)
         # Get approximation to H @ sk

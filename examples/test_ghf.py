@@ -13,7 +13,7 @@ if __name__ == "__main__":
     ints = PySCFIntegrals(mol)
 
     # Initialise GHF object
-    wfn = GHF(ints,mom_method='IMOM')
+    wfn = GHF(ints)
     # Set initial coefficients from identity
     wfn.initialise(np.eye(wfn.nmo,wfn.nmo))
     # Test LBFGS
