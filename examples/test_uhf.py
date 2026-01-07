@@ -1,5 +1,3 @@
-import quantel
-import numpy as np
 from quantel.ints.pyscf_integrals import PySCFMolecule, PySCFIntegrals
 from quantel.wfn.uhf import UHF
 
@@ -11,12 +9,8 @@ for driver in ("libint", "pyscf"):
     print(f" Testing '{driver}' integral method")
     print("===============================================")
     # Setup molecule and integrals
-    if(driver == "libint"):
-        mol  = quantel.Molecule("formaldehyde.xyz", "angstrom")
-        ints = quantel.LibintInterface("6-31g", mol) 
-    elif(driver == "pyscf"):
-        mol  = PySCFMolecule("formaldehyde.xyz", "6-31g", "angstrom")
-        ints = PySCFIntegrals(mol) # so here we dont put an exchange correlation functional in so it doesnt matter...
+    mol  = PySCFMolecule("mol/formaldehyde.xyz", "6-31g", "angstrom")
+    ints = PySCFIntegrals(mol,xc="PBE0")
 
     # Initialise UHF object
     wfn = UHF(ints)
@@ -29,14 +23,15 @@ for driver in ("libint", "pyscf"):
         from quantel.opt.lbfgs import LBFGS
         wfn.get_orbital_guess(method="gwh")
         LBFGS().run(wfn)
+        wfn.print()
 
         from quantel.opt.diis import DIIS
         wfn.get_orbital_guess(method="gwh")
-        DIIS().run(wfn,plev= 0)
+        DIIS().run(wfn)
 
         # Test canonicalisation and Hessian eigenvalue
         wfn.canonicalize()
         # Test Hessian index
-        wfn.get_davidson_hessian_index()
+        wfn.get_davidson_hessian_index(approx_hess=False)
         wfn.print()
         

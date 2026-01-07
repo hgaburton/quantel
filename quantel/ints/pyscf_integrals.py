@@ -1,14 +1,16 @@
 #!/usr/bin/python
 
-from quantel.utils.linalg import orthogonalisation_matrix
-import pyscf
+from quantel.utils.linalg import orthogonalisation_matrix, utri_idx
+from quantel import MOintegrals
+from pyscf.df import DF, make_auxbasis
+from pyscf.scf.hf import SCF
 import numpy as np
 import scipy.special
-from pyscf import fci
+from pyscf import dft, gto, ao2mo, fci
 
-class PySCFMolecule(pyscf.gto.Mole):
+class PySCFMolecule(gto.Mole):
     """Wrapper class to call molecule functions from PySCF"""
-    def __init__(self,_atom,_basis,_unit,_charge=0,_spin=0):
+    def __init__(self,_atom,_basis,_unit,charge=0,spin=0):
         """Initialise the PySCF molecule
                 _atom  : str
                     The path to the atom file
@@ -23,7 +25,7 @@ class PySCFMolecule(pyscf.gto.Mole):
         """
         # Get spin from 2nd line of atom file
         # Initialise underlying PySCF molecule
-        super().__init__(atom=_atom,basis=_basis,unit=_unit,spin=_spin,charge=_charge)
+        super().__init__(atom=_atom,basis=_basis,unit=_unit,spin=spin,charge=charge)
         self.atom = _atom
         self.unit = _unit
         self.build()
@@ -53,7 +55,7 @@ class PySCFMolecule(pyscf.gto.Mole):
 class PySCFIntegrals:
     """Wrapper class to call integral functions from PySCF"""
     #"MGGA_C_TPSS"
-    def __init__(self,mol,xc=None,kscale=1.0):
+    def __init__(self,mol,xc=None,kscale=1.0,with_df=False,auxbasis=None):
         """ Initialise the PySCF interface from PySCF molecule
                 mol : PySCFMolecule
                     The PySCF molecule object
@@ -71,10 +73,33 @@ class PySCFIntegrals:
         self.xc = xc
         if(self.xc is not None):
             # Initialise the grid for numerical integration
-            self.grid = pyscf.dft.gen_grid.Grids(self.mol)
+            self.grid = dft.gen_grid.Grids(self.mol)
             # Initialise numerical integration
-            self.ni = pyscf.dft.numint.NumInt()
+            self.ni = dft.numint.NumInt()
+            # Get range-separation and hybrid coefficients
+            self.omega, self.alpha, self.hybrid_K = self.ni.rsh_and_hybrid_coeff(self.xc)
+        else:
+            self.grid = None
+            self.ni = None
+            self.omega = 0.0
+            self.alpha = 0.0
+            self.hybrid_K = 1.0
         
+        # Add support for density fitting
+        self.with_df = with_df
+        if(self.with_df):
+            self.df = DF(self.mol)
+            self.df.auxbasis = make_auxbasis(self.mol)
+            self.df.build()
+            self.get_jk = self.df.get_jk
+        else:
+            self.scf = SCF(self.mol)
+            self.get_jk = self.scf.get_jk
+    
+    def __str__(self):
+        """Return a string representation of the integral object"""
+        return f"<quantel.ints.pyscf_integrals.PySCFIntegrals: nbsf={self.nbsf()}, xc={self.xc}, with_df={self.with_df}>"
+    
     def molecule(self):
         """Return the molecule object"""
         return self.mol
@@ -119,48 +144,59 @@ class PySCFIntegrals:
         ao_dip = self.mol.intor_symmetric('int1e_r', comp=3)
         return nucl_dip, ao_dip 
 
-    def build_fock(self,dm):
-        """ Build the Fock matrix
+    def build_J(self,vdJ,hermi=0):
+        """ Build Coulomb matrices for multiple sets of densities
             Args:
-                dm : ndarray
-                    The density matrix
+                vdJ : ndarray
+                    The Coulomb matrices
             Returns:
-                ndarray : The Fock matrix (h + 2 * J - K)
+                ndarray : The Coulomb matrix
         """
-        vJ, vK = pyscf.scf.hf.get_jk(self.mol, dm)
-        return self.oei + 2 * vJ - vK
+        vJ, _ = self.get_jk(dm=(vdJ,vdJ), hermi=hermi, with_k=False)
+        return vJ[0]
     
-    def build_multiple_JK(self,vdJ,vdK,nj,nk):
+    def build_JK(self,vdJ,vdK,hermi=0,Kxc=False):
         """ Build Coulomb and Exchange matrices for multiple sets of densities
             Args:
                 vdJ : ndarray
                     The Coulomb matrices
                 vdK : ndarray
                     The Exchange matrices
-                nj  : int
-                    The number of Coulomb densities
-                nk  : int
-                    The number of exchange densities
+                hermi : int
+                    0 if dm is not Hermitian, 1 if it is.
+                Kxc : bool
+                    Return the scaled exchange matrix for the xc functional if true
             Returns:
                 ndarray : The Coulomb matrix
-                ndarray : The Exchange matrix
+                ndarray : The pure Exchange matrix
+                ndarray : The scaled Exchange matrix for xc functional
         """
-        vJ, vK = pyscf.scf.hf.get_jk(self.mol, (vdJ,vdK), hermi=0)
-        return vJ[0], vK[1]
+        vJ, vK = self.get_jk(dm=(vdJ,vdK), hermi=hermi)
+        vKfunc = vK
+        if (self.xc is None):
+            pass
+        elif self.ni.libxc.is_hybrid_xc(self.xc):
+            if(self.omega == 0):
+                vKfunc = vK * self.hybrid_K
+            elif self.alpha == 0: # LR=0, only SR exchange
+                _, vKfunc = self.get_jk(dm=(vdJ,vdK), hermi=hermi, omega=-self.omega, with_j=False)
+                vKfunc *= self.hybrid_K
+            elif self.hybrid_K == 0: # SR=0, only LR exchange
+                _, vKfunc = self.get_jk(dm=(vdJ,vdK), hermi=hermi, omega=self.omega, with_j=False)
+                vKfunc *= (self.alpha)
+            else: # SR and LR different ratios
+                _, vKlr = self.get_jk(dm=(vdJ,vdK), hermi=hermi, omega=self.omega, with_j=False)
+                vKfunc = vK * self.hybrid_K + (self.alpha - self.hybrid_K) * vKlr
+        else:
+            vKfunc *= 0
+
+        if Kxc:
+            return vJ[0], vK[1], vKfunc[1]
+        else:
+            return vJ[0], vK[1]
+
     
-    def build_JK(self,dm):
-        """ Build the Coulomb and Exchange matrices
-            Args:
-                dm : ndarray
-                    The density matrix
-            Returns:
-                ndarray : The Coulomb matrix
-                ndarray : The Exchange matrix
-        """
-        vJ, vK = pyscf.scf.hf.get_jk(self.mol, dm)
-        return 2 * vJ - vK
-    
-    def build_vxc(self,dma,dmb):
+    def build_vxc(self,dms,hermi=0):
         """ Build the exchange-correlation potential
             Args:
                 dma : ndarray
@@ -172,8 +208,9 @@ class PySCFIntegrals:
                 ndarray : The alpha exchange-correlation potential
                 ndarray : The beta exchange-correlation potential   
         """
-        n, exc, vxc = self.ni.nr_uks(self.mol, self.grid, self.xc, (dma,dmb))
-        return exc, vxc[0], vxc[1]
+        if(self.xc is None):
+            return 0, (np.zeros_like(dms[0]), np.zeros_like(dms[1]))
+        return self.ni.nr_uks(self.mol, self.grid, self.xc, dms, hermi=hermi)[1:]
     
     def oei_ao_to_mo(self, C1, C2, spin=None):
         """ Transform the one-electron integrals from AO to MO basis
@@ -212,13 +249,39 @@ class PySCFIntegrals:
         """
         self.eri = self.mol.intor("int2e", aosym="s1")
         # NOTE, need to convert from physicists to chemists notation <12|34> = (13|24)
-        mo_eri = pyscf.ao2mo.incore.general(self.eri, (C1,C3,C2,C4), compact=False)
+        mo_eri = ao2mo.incore.general(self.eri, (C1,C3,C2,C4), compact=False)
         mo_eri = mo_eri.transpose(0,2,1,3)
         # Return antisymmetrised two-electron integrals as appropriate
         if(alpha1 == alpha2):
             return mo_eri - mo_eri.transpose(0,1,3,2)
         else:
             return mo_eri
+        
+    def cache_xc_kernel(self, mo_coeff, mo_occ, spin):
+        """ Cache the exchange-correlation kernel for given densities
+            Args:
+                dma : ndarray
+                    The alpha density matrix
+                dmb : ndarray
+                    The beta density matrix
+        """
+        return self.ni.cache_xc_kernel(self.mol, self.grid, self.xc, mo_coeff, mo_occ, spin)
+    
+    def uks_fxc(self, dm1, rho0, vxc, fxc, hermi=0):
+        """ Compute the fxc kernel for first-order density dm1 with precomputed rho0, vxc, fxc.
+            Args:
+                dm1 : 2 x ndarray
+                    The first-order density matrix [dm1a,dm1b]
+                rho0 : ndarray
+                    The zeroth-order density on the grid (used to define the kernel)
+                vxc : ndarray
+                    The exchange-correlation potential on the grid
+                fxc : ndarray
+                    The exchange-correlation kernel on the grid
+            Returns:
+                ndarray : The fxc contribution to the Fock matrix as [alpha,beta]
+        """
+        return self.ni.nr_uks_fxc(self.mol,self.grid,self.xc,None,dm1,0,hermi=hermi,rho0=rho0,vxc=vxc,fxc=fxc)
 
 class PySCF_MO_Integrals:
     """Wrapper class to call integral functions from PySCF"""
@@ -229,9 +292,6 @@ class PySCF_MO_Integrals:
         """
         # Save the integral object
         self.ints = ints
-        self.Vnuc = self.ints.scalar_potential()
-        # Initialise number of active orbitals to 0
-        self.m_nact = 0
 
     def nbsf(self):
         """Return the number of basis functions"""
@@ -243,11 +303,13 @@ class PySCF_MO_Integrals:
     
     def nact(self):
         """Return the number of active orbitals"""
-        return self.nact
+        if not hasattr(self, 'm_nact'):
+            raise ValueError("Active orbitals have not been initalised")
+        return self.m_nact
     
     def scalar_potential(self):
         """Return the nuclear repulsion energy"""
-        return self.m_V
+        return self.Vc
     
     def oei_matrix(self, alfa1):
         """ Return the one-electron integrals in MO basis
@@ -278,45 +340,41 @@ class PySCF_MO_Integrals:
         else:
             raise ValueError("Invalid spin combination")
         
-    def compute_core_potential(self):
+    def compute_core_potential(self,Ccore,Cact):
         """ Compute the core potential
             Returns:
                 ndarray : The core potential
         """
-        if(self.m_ncore > 0):
-            # Get core coefficients
-            self.m_Ccore = self.m_C[:,:self.m_ncore]
+        if(Ccore.shape[1] > 0):
             # Compute core density
-            self.m_Pcore = self.m_Ccore @ self.m_Ccore.T
+            Pcore = Ccore @ Ccore.T
             # Compute inactive JK matrix (2J-K) in AO basis
-            JK = self.ints.build_JK(self.m_Pcore)
+            JK = self.ints.build_JK(Pcore)
 
             # Compute scalar core energy 
             Hao = self.ints.oei_matrix()
-            self.Vc = 2 * np.einsum('pq,pq', Hao + 0.5 * JK, self.m_Pcore)
+            Vc = 2 * np.einsum('pq,pq', Hao + 0.5 * JK, Pcore)
 
             # Compute core potential in MO basis
-            self.Vc_oei = self.m_Cact.T @ (JK @ self.m_Cact)
+            Vc_oei = Cact.T @ (JK @ Cact)
         else:
-            self.Vc = 0.0
-            self.Vc_oei = np.zeros((self.m_nact,self.m_nact))
+            Vc = 0.0
+            Vc_oei = np.zeros((Cact.shape[1],Cact.shape[1]))
+        return Vc, Vc_oei
 
     def compute_scalar_potential(self):
         """ Compute the scalar potential """
-        self.m_V = self.ints.scalar_potential() + self.Vc
+        return self.ints.scalar_potential()
 
-    def compute_oei(self, alpha):
+    def compute_oei(self,C,alpha):
         """ Compute the one-electron integrals
             Args:
                 alpha : bool
                     The spin of the electron
         """
-        hao = self.ints.oei_matrix(alpha)
-        hmo = np.linalg.multi_dot([self.m_Cact.T, hao, self.m_Cact])
-        if(alpha): self.oei_a = hmo + self.Vc_oei
-        else: self.oei_b = hmo + self.Vc_oei
-
-    def compute_tei(self, alpha1, alpha2):
+        return C.T @ (self.ints.oei_matrix(alpha) @ C)
+        
+    def compute_tei(self, C, alpha1, alpha2):
         """ Compute the two-electron integrals
             Args:
                 alpha1 : bool
@@ -324,16 +382,35 @@ class PySCF_MO_Integrals:
                 alpha2 : bool
                     The spin of the second electron
         """
-        # Get the active MO coefficients
-        C = self.m_Cact
-        if(alpha1 and alpha2):
-            self.tei_aa = self.ints.tei_ao_to_mo(C,C,C,C,alpha1,alpha2)
-        elif(alpha1 and not alpha2):
-            self.tei_ab = self.ints.tei_ao_to_mo(C,C,C,C,alpha1,alpha2)
-        elif((not alpha1) and (not alpha2)):
-            self.tei_bb = self.ints.tei_ao_to_mo(C,C,C,C,alpha1,alpha2)
+        return self.ints.tei_ao_to_mo(C,C,C,C,alpha1,alpha2)
+    
+    def compute_tei_from_JK(self, C, antisym=False):
+        """ Compute the two-electron integrals from JK build
+            Args:
+                antisym : bool
+                    Whether to return antisymmetrised integrals for same-spin
+        """
+        # Get dimensions
+        nmo = C.shape[1]
+        npair = nmo*(nmo+1)//2
+        # Initialize eri array
+        tei = np.zeros((nmo,nmo,nmo,nmo))
+        # Build density matrices for each pair of MOs
+        vd = np.zeros((npair,self.ints.nbsf(),self.ints.nbsf()))
+        for p in range(nmo):
+            for q in range(p,nmo):
+                vd[utri_idx(p,q,nmo)] = np.outer(C[:,p],C[:,q])
+        # Build JK matrices
+        vJ = self.ints.build_multiple_J(vd,hermi=0)
+        for p in range(nmo):
+            for q in range(p,nmo):
+                tei[p,:,q,:] = C.T @ (vJ[utri_idx(p,q,nmo)] @ C)
+                tei[q,:,p,:] = tei[p,:,q,:].T
+        if(antisym):
+            tei = tei - tei.transpose(0,1,3,2)
+        return tei
 
-    def update_orbitals(self, C, ncore, nactive):
+    def update_orbitals(self, C, ncore, nactive, with_JK=False):
         """ Update the active orbitals and integrals
             Args:
                 C : ndarray
@@ -346,15 +423,34 @@ class PySCF_MO_Integrals:
         self.m_ncore = ncore
         self.m_nact  = nactive
         self.m_C = C.copy()
-        self.m_Cact = C[:,ncore:ncore+nactive]
+        self.m_Ccore = C[:,:ncore].copy()
+        self.m_Cact = C[:,ncore:ncore+nactive].copy()
 
-        self.compute_core_potential()
-        self.compute_scalar_potential()
-        self.compute_oei(True)
-        self.compute_oei(False)
-        self.compute_tei(True,True)
-        self.compute_tei(True,False)
-        self.compute_tei(False,True)
+        self.Vc, self.Vc_oei = self.compute_core_potential(self.m_Ccore, self.m_Cact)
+        self.Vc += self.compute_scalar_potential()
+        self.oei_a  = self.compute_oei(self.m_Cact,True) + self.Vc_oei
+        self.oei_b  = self.compute_oei(self.m_Cact,False) + self.Vc_oei
+        if(with_JK):
+            self.tei_aa = self.compute_tei_from_JK(self.m_Cact,antisym=True)
+            self.tei_ab = self.compute_tei_from_JK(self.m_Cact,antisym=False)
+            self.tei_bb = self.compute_tei_from_JK(self.m_Cact,antisym=True)
+        else:
+            self.tei_aa = self.compute_tei(self.m_Cact,True,True)
+            self.tei_ab = self.compute_tei(self.m_Cact,True,False)
+            self.tei_bb = self.compute_tei(self.m_Cact,False,False)
+            
+    def get_quantel_ints(self):
+        """ Convert to quantel MOintegrals object
+            Returns:
+                MOintegrals : The quantel MOintegrals object
+        """
+        if not hasattr(self, 'Vc'):
+            raise ValueError("Molecular integrals have not been computed yet")
+        if not hasattr(self, 'oei_a'):
+            raise ValueError("Molecular integrals have not been computed yet")
+        if not hasattr(self, 'tei_ab'):
+            raise ValueError("Molecular integrals have not been computed yet")
+        return MOintegrals(self.Vc, self.oei_a, self.tei_ab, self.m_nact)
 
 class PySCF_CIspace:
     """Class to compute the CI space for a given molecule"""
@@ -378,7 +474,7 @@ class PySCF_CIspace:
         self.m_nbeta = nbeta
         self.nelec = (nalfa, nbeta)
         # Initialise FCI solver
-        self.fcisolver = pyscf.fci.direct_spin1
+        self.fcisolver = fci.direct_spin1
 
 
     def ndeta(self):

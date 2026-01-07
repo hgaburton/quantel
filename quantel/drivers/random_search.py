@@ -50,6 +50,8 @@ def random_search(ints, config):
         from quantel.wfn.csf import CSF as WFN
     elif config["wavefunction"]["method"] == "rhf":
         from quantel.wfn.rhf import RHF as WFN
+    elif config["wavefunction"]["method"] == "roks":
+        from quantel.wfn.roks import ROKS as WFN
     else:
         raise ValueError("Wavefunction method not recognised")
         

@@ -1,47 +1,28 @@
-import quantel
-import numpy as np
+from quantel.ints.pyscf_integrals import PySCF_MO_Integrals, PySCFIntegrals, PySCFMolecule
 from quantel.wfn.rhf import RHF
 from quantel.wfn.cisolver import FCI
-from quantel.opt.lbfgs import LBFGS
-import datetime
+from quantel.opt.diis import DIIS
 
-np.set_printoptions(linewidth=10000,precision=6,suppress=True)
-np.random.seed(7)
+if __name__ == "__main__":
+    # Setup molecule
+    mol = PySCFMolecule("mol/h6.xyz", "sto-3g", "angstrom",spin=0,charge=0)
+    ints = PySCFIntegrals(mol)
 
-# Initialise molecular structure (square H4)
-R = 3
-mol = quantel.Molecule([["Li",0.0,0.0,0.0*R],
-                        ["H",0.0,0.0,1.0*R]
-                       ],"bohr")
-print("Molecule:")
-mol.print()
+    # Run RHF to get MO coefficients
+    wfn = RHF(ints)
+    wfn.get_orbital_guess(method="gwh")
+    DIIS().run(wfn)
 
-# Initialise interface to Libint2
-ints = quantel.LibintInterface("6-31g", mol)
+    # Build the integrals
+    Ccore = wfn.mo_coeff[:,0:0]
+    Cact = wfn.mo_coeff[:,0:ints.nmo()]
+    mo_ints = PySCF_MO_Integrals(ints)
+    mo_ints.update_orbitals(wfn.mo_coeff,0,ints.nmo())
 
-# Initialise RHF object from integrals
-wfn = RHF(ints)
-wfn.get_orbital_guess()
-
-# Find the RHF minimum
-LBFGS().run(wfn)
-
-# Setup the MO integral space
-mo_ints = quantel.MOintegrals(ints)
-# Argument order is coeff, ncore, nact
-mo_ints.update_orbitals(wfn.mo_coeff.copy(),0,ints.nmo())
-
-# Setup FCI solver object
-nelec = (mol.nalfa(), mol.nbeta())
-fci = FCI(mo_ints, nelec)
-
-# Solve for nroots = 5
-nroots = 5
-e,x = fci.solve(nroots,verbose=5)
-
-# Print the converged eigenvalues
-print()
-print(" FCI dimension = ", fci.ndet)
-print(" Converged eigenvalues (Eh):")
-for ev in e:
-    print(f"  {ev: 16.10f}")
+    # Setup and solve FCI
+    ci = FCI(mo_ints, (mol.nalfa(), mol.nbeta()), version=1)
+    x, eci = ci.solve(3,verbose=5)
+    
+    # Verify solution
+    if abs(-2.84719213 - x[0]) > 1e-6:
+        raise ValueError("FCI energy does not match reference value")

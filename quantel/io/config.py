@@ -59,6 +59,9 @@ class Config(dict):
 
         elif self["wavefunction"]["method"] == "csf":
             self["wavefunction"]["csf"] = dict(spin_coupling = getvalue(self.lines,"genealogical_coupling",str,True))
+        
+        elif self["wavefunction"]["method"] == "roks":
+            self["wavefunction"]["roks"] = dict(spin_coupling = getvalue(self.lines,"genealogical_coupling",str,True))
 
 
     def parse_optimiser(self):

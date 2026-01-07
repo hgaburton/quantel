@@ -19,19 +19,18 @@ wfn = RHF(ints)
 wfn.get_orbital_guess(method="core")
 LBFGS().run(wfn,plev= 1)
 wfn.canonicalize()
-wfn.get_davidson_hessian_index()
+wfn.get_davidson_hessian_index(approx_hess=False)
 
 ## Generate MO cubefiles 
 #wfn.mo_cubegen([wfn.alfa.nocc-1, wfn.alfa.nocc], [wfn.beta.nocc-1,wfn.beta.nocc],fname="ground")
 
 for selector in ["mom", "imom"]:
-    excite_wfn = copy.deepcopy(wfn)
-    # Excite ground state  
-    excite_wfn.excite()
+    # Excite ground state
+    excite_wfn = wfn.excite([wfn.nocc-1],[wfn.nocc],mom_method=selector)
     # Perform MOM optimisation
-    DIIS(occupation_selector=selector).run(excite_wfn,plev= 1)
+    DIIS().run(excite_wfn,plev= 1)
     excite_wfn.canonicalize()
-    excite_wfn.get_davidson_hessian_index()
+    excite_wfn.get_davidson_hessian_index(approx_hess=False)
     
     ## Generate MO cubefiles 
     #wfn.mo_cubegen([wfn.nalfa-1, excite_wfn.nalfa],fname=selector)

@@ -1,16 +1,17 @@
 from quantel.ints.pyscf_integrals import PySCFMolecule, PySCFIntegrals
-from quantel.wfn.csf import CSF
+from quantel.wfn.roks import ROKS
+from quantel.opt.lbfgs import LBFGS
 
 if __name__ == "__main__":
     print("===============================================")
-    print(f" Testing CSF optimisation method")
+    print(f" Testing ROKS optimisation method")
     print("===============================================")
-       # Setup molecule and integrals
+    # Setup molecule and integrals
     mol  = PySCFMolecule("mol/formaldehyde.xyz", "def2svp", "angstrom")
-    ints = PySCFIntegrals(mol)
+    ints = PySCFIntegrals(mol,xc='pbe0')
 
     # Initialise CSF object for an open-shell singlet state
-    wfn = CSF(ints, '+-')
+    wfn = ROKS(ints, '+-')
     wfn.get_orbital_guess(method="gwh")
 
     # Setup optimiser

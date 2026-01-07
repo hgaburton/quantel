@@ -25,13 +25,12 @@ class DIIS:
         if plev>0: print("  ==========================================")
         converged = False
 
-        #Save initial MO coefficients for IMOM 
-        obj.get_fock()
+        # Save initial MO coefficients for IMOM 
         init_C = obj.mo_coeff.copy()
         
         for istep in range(maxit+1):
             # Get Fock matrix
-            obj.get_fock()   
+            fock_new = obj.get_fock()
             # Save MO coefficients  
             prev_C = obj.mo_coeff.copy()
             # Get error vector
@@ -47,30 +46,17 @@ class DIIS:
             # Append error vector to list
             self.err_vecs.append(errvec)
             # Append Fock vector to list
-            self.fock_vecs.append(obj.fock_vec)
+            self.fock_vecs.append(fock_new)
             
             # Remove oldest error vector and Fock matrix if we have too many
             if len(self.err_vecs) > self.max_vec:
                 self.err_vecs.pop(0)
                 self.fock_vecs.pop(0)
-
+ 
             # Perform DIIS extrapolation
             if len(self.err_vecs) >= 1:
                 new_fock_vec = self.diis_extrapolate()  
-                obj.try_fock_vec(new_fock_vec) 
-  
-                # Perform orbital selection
-                if self.occupation_selector.lower() == "aufbau": 
-                    pass 
-
-                elif self.occupation_selector.lower() == "mom":     
-                    obj.mom_update(prev_C) 
-
-                elif self.occupation_selector.lower() == "imom":     
-                    obj.mom_update(init_C)
- 
-                else:
-                    raise NotImplementedError(f"Occupation selector {self.occupation_selector} not implemented") 
+                obj.try_fock(new_fock_vec) 
 
         if plev>0: print("  ==========================================")
         kernel_end_time = datetime.datetime.now() # Save end time
@@ -103,8 +89,8 @@ class DIIS:
         # Solve the linear equations
         coeffs = np.linalg.solve(B, rhs) 
         
-        # Get the new Fock vector
-        fock_vec  = np.zeros((self.fock_vecs[0].shape))
+        # Get the new Fock matrix
+        fock_vec = np.zeros_like(self.fock_vecs[0])
         for i in range(nerr):
             fock_vec += coeffs[i] * self.fock_vecs[i]
         return fock_vec
