@@ -152,14 +152,14 @@ class GMF:
                 v_gmod.pop(0)
                 v_step.pop(0)
 
-        if plev>0: print(" ================================================================")
+        if plev>0: print("  ================================================================")
 
         # Save end time and report duration
         kernel_end_time = datetime.datetime.now()
         computation_time = kernel_end_time - kernel_start_time
         if plev>0: 
             print("  Generalised mode following walltime: ", computation_time.total_seconds(), " seconds")
-            print("Check convergence: ", converged)
+            print("  Converged: ", converged)
             sys.stdout.flush()
         return converged
 

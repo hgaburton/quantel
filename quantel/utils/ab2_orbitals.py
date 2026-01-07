@@ -7,57 +7,59 @@ from pyscf.mp import mp2
 import sys
 from quantel.utils.linalg import orthogonalise, matrix_print 
 
-def local_orbs(wfn):    
+def localise_orbs(wfn):    
     """
-       Wrapper for PYSCF orbital localisation via  Pipek-Mezey scheme
+       Wrapper for PYSCF orbital localisation via Pipek-Mezey scheme
         Input: 
             - wfn object (change to just what we need or update the wfn)
         Output: 
-            - local_coeffs : Array of localised MO coefficients 
             - ds : array atomic mulliken populations 
+            (on site changes update the wfn object with localised MO coefficients) 
     """
+    # We can only perform rotations within shells so will need spin coupling vector for open shell systems 
+    # again this would be better in a driver format? - try and figure out what that really means  
+    occno = wfn.nocc
+
     # Localise occupied orbitals
-    pm = pipek.PM(wfn.integrals.mol, wfn.mo_coeff[:,:wfn.nocc].copy())
+    pm = pipek.PM(wfn.integrals.mol, wfn.mo_coeff[:,:occno].copy())
     pm.pop_method = "mulliken" 
     _ = pm.kernel()
     
     # Perform Stability analysis 
     isstable, local_coeffs  = pm.stability_jacobi()
-    print("Stability analysis: ", isstable)
+    print("  Stability analysis: ", isstable)
     if not isstable:
         _ = pm.kernel(local_coeffs)
         isstable, local_coeffs  = pm.stability_jacobi()
-        print("Stability analysis two: ", isstable)
+        print("  Stability analysis two: ", isstable)
         assert( isstable ) 
     sys.stdout.flush() 
     
     # Compute Mulliken atomic populations 
     ds =[]
-    for idx in range(wfn.nocc): 
+    for idx in range(occno): 
         pop, chg = hf.mulliken_pop(mol=wfn.integrals.mol, dm=np.outer(local_coeffs[:,idx], local_coeffs[:,idx]), verbose=0)
         # Compute mulliken atomic populations 
         chg += - wfn.integrals.mol.atom_charges()
         ds.append(1/np.sum(chg**2))
-    
-    return local_coeffs, np.array(ds) 
- 
-# Not working
+   
+    wfn.mo_coeff[:,:occno] = local_coeffs
+    wfn.update()  
+    return np.array(ds) 
+#have changed this to only return the atomic populations for the bonding analysis - but here and localised the orbitals in situ
+
 def get_ab2_orbs(wfn):
     """
     Implementation of method to construct 1:1 Antibonding orbitals as proposed in (Aldossary, 2022)
     """
-    print("\n")
-    print("\n=============================")
-    print(" AB2 Construction")
-    print("=============================")
+    print("\n  =============================")
+    print("  AB2 Construction")
+    print("  =============================")
     
     # Localise and select occupied orbitals 
-    local_coeff, ds = local_orbs(wfn)  
+    ds = localise_orbs(wfn)  
     bond_indices = np.argwhere(ds>1.5).flatten()
     
-    # Update wfn and Fock matrices 
-    wfn.mo_coeff[:,:wfn.nocc] = local_coeff
-    wfn.update()  
     # Store Fock matrix in new MO basis 
     fock_mo = np.linalg.multi_dot((wfn.mo_coeff.T, wfn.fock, wfn.mo_coeff))
     
@@ -65,7 +67,7 @@ def get_ab2_orbs(wfn):
     ab2_orbs = np.zeros((wfn.nbsf,len(bond_indices)))
     for idx,BO in enumerate(bond_indices):
         # Construct the MO exchange matrix with localised occupied orbitals  
-        dens = np.outer(local_coeff[:,BO],local_coeff[:,BO].T)
+        dens = np.outer(wfn.mo_coeff[:,BO],wfn.mo_coeff[:,BO].T)
         
         ao_exchange = np.einsum('pqrs,qs->pr', wfn.integrals.tei_array(True, False) , dens, optimize="optimal")
         vir_mo_exchange = np.linalg.multi_dot((wfn.mo_coeff[:,wfn.nocc:].T, ao_exchange, wfn.mo_coeff[:,wfn.nocc:]))
@@ -89,10 +91,10 @@ def get_ab2_orbs(wfn):
         orbital = eigvecs[:,np.argmin(eigs)] 
         ab2_orbs[:,idx] = np.ndarray.flatten(np.dot(wfn.mo_coeff[:,wfn.nocc:], orbital))
    
-    #print("Energy scalings negative: ", scaling)
-    #print("Exchange matrix negative definite: ", neg_defin) 
+    #print("  Energy scalings negative: ", scaling)
+    #print("  Exchange matrix negative definite: ", neg_defin) 
     sys.stdout.flush()
-    return local_coeff, ab2_orbs, bond_indices
+    return ab2_orbs, bond_indices
 
 def update_vir_orbs(wfn, ab2_orbs):
     # Reconstruct virtual MO basis 
@@ -111,8 +113,6 @@ def update_vir_orbs(wfn, ab2_orbs):
     # Remove linear dependencies and re-orthogonalise
  
     ortho_vir = orthogonalise(vir, wfn.integrals.overlap_matrix(), fill=False, lindep=True) 
-    print("Vir shape: ", vir.shape)
-    print("Ortho vir shape: ", ortho_vir.shape)
     sys.stdout.flush()
      
     # Update wfn 
@@ -176,7 +176,6 @@ def get_comb_ab2_orbs(wfn):
     print("Energy scalings negative: ", scaling)
     print("Exchange matrix negative definite: ", neg_defin) 
     sys.stdout.flush()
-   
     
     # Localise these orbitals
     pm = pipek.PM(wfn.integrals.mol,ab2_orbs)

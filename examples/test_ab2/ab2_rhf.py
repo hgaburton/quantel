@@ -21,13 +21,10 @@ wfn.canonicalize()
 wfn.get_davidson_hessian_index()
 
 # Compute and save AB2 orbitals
-local_coeff, ab2_orbs, bond_indices = get_ab2_orbs(wfn)
+ab2_orbs, bond_indices = get_ab2_orbs(wfn)
 for idx, BO in enumerate(bond_indices): 
     cubegen.orbital(wfn.integrals.mol, f"ab2.mo.{BO}.cube", ab2_orbs[:,idx])
 
-for i in range(wfn.nocc): 
-    cubegen.orbital(wfn.integrals.mol, f"local.mo.{i}.cube", local_coeff[:,i])
-
 update_vir_orbs(wfn, ab2_orbs[:,:])
-wfn.mo_cubegen([wfn.nocc, wfn.nocc+1, wfn.nocc +2, wfn.nocc +3],fname="ovir") 
+wfn.mo_cubegen([8,9,10,11,12,13,14,15,16,17,18,19,20,21],fname="ovir") 
 
