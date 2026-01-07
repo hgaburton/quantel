@@ -149,17 +149,10 @@ class LBFGS:
                 v_grad.append(grad.copy())
 
                 # Get L-BFGS quasi-Newton step
-<<<<<<< HEAD
-                prec = obj.get_preconditioner()
-                # this is the step that gets our step and does the wolfe line search? 
-                step =self.get_lbfgs_step(v_grad,v_step,prec)#step is with alpha = 1
-                qn_count += 1 #qn_count is then our step counter
-=======
                 if(np.mod(istep,self.control["preconditioner_interval"])==0):
                     prec = obj.get_preconditioner()
                 step = self.get_lbfgs_step(v_grad,v_step,prec)
                 qn_count += 1
->>>>>>> origin/main
 
                 # stepT.gradient < 0 i.e. the step is a descent step.  
                 # Need to make sure s.g < 0 to maintain positive-definite L-BFGS Hessian 
