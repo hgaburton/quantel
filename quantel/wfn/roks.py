@@ -18,14 +18,14 @@ class ROKS(CSF):
             - save_last_step
             - restore_step
     """
-    def __init__(self, integrals, spin_coupling, verbose=0):
+    def __init__(self, integrals, spin_coupling, verbose=0, advanced_preconditioner=False):
         """ Initialise the CSF wave function
                 integrals     : quantel integral interface
                 spin_coupling : genealogical coupling pattern
                 verbose       : verbosity level
         """
         # Call the parent constructor
-        CSF.__init__(self,integrals,spin_coupling,verbose)
+        CSF.__init__(self,integrals,spin_coupling,verbose,advanced_preconditioner)
 
 
     def initialise(self, mo_guess, spin_coupling=None, mat_ci=None, integrals=True):
@@ -50,24 +50,26 @@ class ROKS(CSF):
         self.nrot       = np.sum(self.rot_idx)
 
         # Initialise integrals
-        if (integrals): self.update_integrals()
+        if (integrals): self.update()
 
     @property
     def energy(self):
         """ Compute the energy corresponding to a given set of
              one-el integrals, two-el integrals, 1- and 2-RDM
         """
+        # Total density
+        dt = np.einsum('wpq->pq',self.vd)
         # Nuclear repulsion
         En = self.integrals.scalar_potential()
         # One-electron energy
-        E1 = np.einsum('pq,qp',self.dj,self.integrals.oei_matrix(True),optimize='optimal')
+        E1 = np.einsum('pq,qp',dt,self.integrals.oei_matrix(True),optimize='optimal')
         # Coulomb energy
-        EJ = 0.5 * np.einsum('pq,qp',self.dj,self.J,optimize='optimal')
+        EJ = 0.5 * np.einsum('pq,qp',dt,self.J,optimize='optimal')
         # Exchange energy
-        EK = - 0.25 * np.einsum('pq,qp',self.dj,self.K[0],optimize='optimal')
+        EK = - 0.25 * np.einsum('pq,qp',dt,self.K[0],optimize='optimal')
         for w in range(self.nshell):
             EK += 0.5 * np.einsum('pq,qp',self.K[1+w], 
-                        np.einsum('v,vpq->pq',self.beta[w],self.dk[1:],optimize='optimal') - 0.5 * self.dk[0],optimize='optimal')
+                        np.einsum('v,vpq->pq',self.beta[w],self.vd[1:],optimize='optimal') - 0.5 * self.vd[0],optimize='optimal')
         # xc-potential energy
         Exc = self.exc
         # Save components
@@ -208,7 +210,6 @@ class ROKS(CSF):
             print(f"        <S2> = {self.s2:5.2f}")
         if(verbose > 1):
             matrix_print(self.exchange_matrix, title="Open-Shell Exchange Matrix <Ψ|Êpq Êqp|Ψ> - Np")
-            matrix_print(self.Ipqqp[:self.nocc,self.ncore:self.nocc], title="Open-Shell Exchange Integrals <pq|qp>")
         if(verbose > 2):
             matrix_print(self.mo_coeff[:,:self.nocc], title="Occupied Orbital Coefficients")
         if(verbose > 3):
@@ -230,7 +231,7 @@ class ROKS(CSF):
         if(self.nopen == 0):
             # Restricted case
             vxc_ensemble = np.zeros((1,2,self.nbsf,self.nbsf))
-            rho = self.dk[0]
+            rho = self.vd[0]
             exc, vxc = self.integrals.build_vxc(rho,hermi=1)
             vxc_shell[0] = vxc[0] + vxc[1]
             vxc_ensemble[0,0,:,:] = vxc[0]
@@ -240,12 +241,12 @@ class ROKS(CSF):
             vxc_ensemble = np.zeros((len(self.ensemble_dets),2,self.nbsf,self.nbsf))
             for Idet, (det_str, coeff) in enumerate(self.ensemble_dets):
                 # Initialise spin densities from core contribution
-                dma, dmb = 0.5 * self.dk[0], 0.5 * self.dk[0]
+                dma, dmb = 0.5 * self.vd[0], 0.5 * self.vd[0]
 
                 # Add open-shell contributions depending on spin occupation of this determinant
                 for Ishell, spinI in enumerate(det_str):
-                    if(spinI == 'a'): dma += self.dk[1+Ishell]
-                    else: dmb += self.dk[1+Ishell]
+                    if(spinI == 'a'): dma += self.vd[1+Ishell]
+                    else: dmb += self.vd[1+Ishell]
 
                 # Build the vxc for this determinant
                 exc_det, vxc_det = self.integrals.build_vxc((dma,dmb),hermi=1)
@@ -263,10 +264,10 @@ class ROKS(CSF):
         return exc, vxc_shell, vxc_ensemble
 
 
-    def update_integrals(self):
+    def update(self):
         """ Update the integrals with current set of orbital coefficients"""
         # Update density, J, K, wfn_fock and gen_fock from parent CSF class
-        CSF.update_integrals(self)
+        CSF.update(self)
         # Compute xc-potential
         self.exc, self.vxc, self.vxc_ensemble = self.get_vxc()
         # Get DFT generalised Fock matrix
@@ -275,7 +276,7 @@ class ROKS(CSF):
         for W, shell in enumerate(self.shell_indices):
             self.gen_fock_xc[shell,:] += np.linalg.multi_dot([self.mo_coeff[:,shell].T, self.vxc[W+1], self.mo_coeff])
         # Add XC contribution to overall Fock matrix
-        self.fock += np.einsum('Lxpq,L->pq',self.vxc_ensemble,self.ensemble_coeff,optimize='optimal')
+        self.fock_vir = self.fock_vir + np.einsum('Lxpq,L->pq',self.vxc_ensemble,self.ensemble_coeff,optimize='optimal')
 
 
     def copy(self,integrals=True):
@@ -311,7 +312,7 @@ class ROKS(CSF):
         return
 
 
-    def get_preconditioner(self,abs=True,include_fxc=True):
+    def get_preconditioner(self,abs=True):
         """Compute approximate diagonal of Hessian"""
          # Initialise with diagonal from wfn part
         Q = CSF.get_preconditioner(self,abs=False)
@@ -328,8 +329,8 @@ class ROKS(CSF):
             Q_xc += 2 * cL * np.einsum('xpq,xpq->pq',occ[:,:,None]-occ[:,None,:], diag_vxc_mo[:,None,:]-diag_vxc_mo[:,:,None],optimize='optimal')
 
             # Contribution from xc kernel (2nd order functional term).
-            # This is an expensive computation, so only include if requested (see include_fxc flag)
-            if((not (self.integrals.xc is None)) and include_fxc):
+            # This is an expensive computation, so only include if requested using "advanced_preconditioner" flag
+            if((not (self.integrals.xc is None)) and self.advanced_preconditioner):
                 # Build ground-state density and xc kernel
                 rho0, vxc, fxc = self.integrals.cache_xc_kernel((self.mo_coeff,self.mo_coeff),occ,spin=1)
                 # Loop over unique contributions, where s is occupied in alpha or beta space
@@ -378,13 +379,11 @@ class ROKS(CSF):
         Q = np.zeros((self.nmo,self.nmo))
 
         # Get core transformation using generalised Fock matrix
-        foo = self.gen_fock_xc[self.core_indices,:][:,self.core_indices]
+        foo = 0.5 * self.gen_fock_xc[:self.ncore,:self.ncore]
         self.mo_energy[:self.ncore], Qoo = stable_eigh(foo)
         for i, ii in enumerate(self.core_indices):
             for j, jj in enumerate(self.core_indices):
                 Q[ii,jj] = Qoo[i,j]
-        # Scale core orbital energies
-        self.mo_energy[:self.ncore] *= 0.5
 
         # Loop over shells
         for W in self.shell_indices:
@@ -395,7 +394,8 @@ class ROKS(CSF):
                     Q[ii,jj] = Qww[i,j]
 
         # Virtual transformation. Here we use the standard Fock matrix
-        fvv = np.linalg.multi_dot([self.mo_coeff[:,self.nocc:].T, self.fock, self.mo_coeff[:,self.nocc:]])
+        Cvir = self.mo_coeff[:,self.nocc:].copy()
+        fvv = np.linalg.multi_dot([Cvir.T, self.fock_vir, Cvir])
         self.mo_energy[self.nocc:], Qvv = stable_eigh(fvv)
         Q[self.nocc:,self.nocc:] = Qvv
 
@@ -404,5 +404,5 @@ class ROKS(CSF):
         self.mo_coeff = self.mo_coeff @ Q
         
         # Update integrals
-        self.update_integrals()
+        self.update()
         return Q
