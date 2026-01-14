@@ -283,16 +283,16 @@ class ROKS(CSF):
         return newcsf
 
 
-    def overlap(self, them):
-        """ Compute the overlap between two CSF objects
-        """
-        raise NotImplementedError("ROKS overlap coupling not yet implemented")
+    #def overlap(self, them):
+    #    """ Compute the overlap between two CSF objects
+    #    """
+    #    raise NotImplementedError("ROKS overlap coupling not yet implemented")
 
 
-    def hamiltonian(self, them):
-        """ Compute the Hamiltonian coupling between two CSF objects
-        """
-        raise NotImplementedError("ROKS Hamiltonian coupling not yet implemented")
+    #def hamiltonian(self, them):
+    #    """ Compute the Hamiltonian coupling between two CSF objects
+    #    """
+    #    raise NotImplementedError("ROKS Hamiltonian coupling not yet implemented")
     
 
     def get_orbital_guess(self, method="gwh",avas_ao_labels=None,reorder=True):

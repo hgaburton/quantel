@@ -562,7 +562,7 @@ class CSF(Wavefunction):
         #kappa = Q.T @ kappa
 
         # Also apply horizontal transform
-        if X != None:
+        if not X is None:
             kappa = kappa @ X
             kappa = X.T @ kappa
 

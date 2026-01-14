@@ -59,7 +59,7 @@ class GMF:
         # Initialise reference energy
         grad = obj.gradient
         prec = obj.get_preconditioner(abs=False)
-        eigval, evec = Davidson(nreset=50).run(obj.approx_hess_on_vec,prec,index+1,tol=1e-4,plev=0)
+        eigval, evec = Davidson(nreset=50).run(obj.hess_on_vec,prec,index+1,tol=1e-4,plev=0)
         gmod = self.get_gmf_gradient(obj,grad,index,eigval[:index],evec[:,:index])
 
         if plev>0:
@@ -139,8 +139,8 @@ class GMF:
                     evec[:,i] = obj.transform_vector(evec[:,i], step, X)
 
             # Compute n lowest eigenvalues
-            prec = obj.get_preconditioner(abs=True)
-            eigval, evec = Davidson(nreset=50).run(obj.approx_hess_on_vec,prec,index+1,xguess=evec,tol=1e-4,plev=1)
+            prec = obj.get_preconditioner(abs=False)
+            eigval, evec = Davidson(nreset=50).run(obj.hess_on_vec,prec,index+1,xguess=evec,tol=1e-4,plev=0)
 
             # Compute new GMF gradient (need to parallel transport Hessian eigenvector)
             grad = obj.gradient
