@@ -243,7 +243,7 @@ class RHF(Wavefunction):
         """Compute the (nonorthogonal) many-body Hamiltonian coupling with another RHF wavefunction (them)"""
         raise NotImplementedError("RHF Hamiltonian not implemented")
 
-    def update(self, with_eri=True):
+    def update(self, with_eri=False):
         """Update the 1RDM and Fock matrix for the current state"""
         self.get_density()
         self.get_fock()
