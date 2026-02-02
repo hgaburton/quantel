@@ -161,7 +161,7 @@ def test_gram_schmidt(mat, metric=None):
         # Perform the projection
         vi -= vj @ (vj.conj().T @ Sv[:,i])
         vi_norm = norm(vi, metric)
-        if vi_norm > 1e-10: 
+        if vi_norm > 1e-8: 
             # Check norm
             vi /= vi_norm
             lin_indep.append(vi)

@@ -1,11 +1,13 @@
 #!/usr/bin/python3
 # Author: Hugh G. A. Burton
+import sys
 
 import numpy as np
 import scipy.linalg
 import h5py
 from quantel.utils.linalg import orthogonalise, matrix_print
 from quantel.utils.scf_utils import mom_select
+from quantel.utils.ab2_orbitals import update_vir_orbs, localise_orbs, get_ab2_orbs 
 from .wavefunction import Wavefunction
 import quantel
 from pyscf.tools import cubegen
@@ -50,7 +52,7 @@ class RHF(Wavefunction):
         self.mo_coeff  = None
         self.mo_energy = None
     
-    def initialise(self, mo_guess, ci_guess=None):
+    def initialise(self, mo_guess, ci_guess=None, integrals=True):
         """Initialise the wave function with a set of molecular orbital coefficients"""
         # Make sure orbitals are orthogonal
         self.mo_coeff = orthogonalise(mo_guess, self.integrals.overlap_matrix())
@@ -58,7 +60,7 @@ class RHF(Wavefunction):
         if(self.mom_method == 'IMOM'):
             self.Cinit = self.mo_coeff.copy()
         # Update the density and Fock matrices
-        self.update()
+        if (integrals): self.update()
 
     @property
     def dim(self):
@@ -199,15 +201,17 @@ class RHF(Wavefunction):
             matrix_print(self.fock, title="Fock Matrix (AO basis)")
         print()
 
-    def save_to_disk(self,tag):
+    def save_to_disk(self,tag, canon=True):
         """Save object to disk with prefix 'tag'"""
-        # Canonicalise orbitals
-        self.canonicalize()
+        if canon:
+            # Canonicalise orbitals
+            self.canonicalize()
  
         # Save hdf5 file with MO coefficients, orbital energies, energy, and spin
         with h5py.File(tag+".hdf5", "w") as F:
             F.create_dataset("mo_coeff", data=self.mo_coeff)
-            F.create_dataset("mo_energy", data=self.mo_energy)
+            if canon: 
+                F.create_dataset("mo_energy", data=self.mo_energy)
             F.create_dataset("energy", data=self.energy)
             F.create_dataset("s2", data=self.s2)    
         
@@ -224,10 +228,10 @@ class RHF(Wavefunction):
         # Initialise object
         self.initialise(mo_read)
 
-    def copy(self):
+    def copy(self, integrals=True):
         """Return a copy of the current RHF object"""
         them = RHF(self.integrals, verbose=self.verbose)
-        them.initialise(self.mo_coeff)
+        them.initialise(self.mo_coeff, integrals=integrals)
         return them
 
     def overlap(self, them):
@@ -298,7 +302,7 @@ class RHF(Wavefunction):
         Q[self.nocc:,self.nocc:] = Qvir
         return Q
 
-    def get_preconditioner(self):
+    def get_preconditioner(self, abs=True):
         """Compute approximate diagonal of Hessian"""
         # Get Fock matrix in MO basis
         fock_mo = np.linalg.multi_dot([self.mo_coeff.T, self.fock, self.mo_coeff])
@@ -308,7 +312,7 @@ class RHF(Wavefunction):
         for p in range(self.nmo):
             for q in range(p):
                 Q[p,q] = 4 * (fock_mo[p,p] - fock_mo[q,q])
-        return np.abs(Q[self.rot_idx])
+        return np.abs(Q[self.rot_idx]) if abs else Q[self.rot_idx]
 
     def diagonalise_fock(self):
         """Diagonalise the Fock matrix"""
@@ -393,7 +397,7 @@ class RHF(Wavefunction):
         mask[self.nocc:,:self.nocc] = True
         return mask
     
-    def get_orbital_guess(self, method="gwh"):
+    def get_orbital_guess(self, method="gwh", avas_ao_labels=None, reorder=None):
         """Get a guess for the molecular orbital coefficients"""
         # Get one-electron integrals and overlap matrix 
         h1e = self.integrals.oei_matrix(True)
@@ -469,3 +473,19 @@ class RHF(Wavefunction):
         # Saves MOs as cubegen files
         for mo in idx: 
             cubegen.orbital(self.integrals.mol, fname+f".mo.{mo}.cube", self.mo_coeff[:,mo])
+
+    def localise(self, verbose=1): 
+        # For RHF lumo_idx = wfn.nocc 
+        isstable, bonding_indices = localise_orbs(self, np.array(range(self.nocc)))
+        if verbose>0: 
+            print("  PM stable: ", isstable)
+            sys.stdout.flush()
+        return isstable, bonding_indices
+
+    def get_AB2_orbitals(self): 
+        return get_ab2_orbs(self, self.nocc)
+
+    def update_vir_orbitals(self, new_virs): 
+        update_vir_orbs(self, self.nocc, new_virs)
+        return 
+

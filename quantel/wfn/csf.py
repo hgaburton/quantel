@@ -8,16 +8,11 @@ from quantel.utils.linalg import orthogonalise, stable_eigh, matrix_print
 from quantel.gnme.csf_noci import csf_coupling, csf_coupling_slater_condon
 from .wavefunction import Wavefunction
 from quantel.utils.csf_utils import csf_reorder_orbitals
+from quantel.utils.scf_utils import mom_select
 from quantel.utils.orbital_guess import orbital_guess
-
-
-"""
-    Changes made 
-        1. changed update_integrals() to update() to be more consistent with other wave functions  
-"""
-
-
-
+from pyscf.tools import cubegen
+from quantel.opt.max_linesearch import quadratic_model
+from quantel.wfn.sorting_shell_occupations import sorting_shells
 
 def flag_transport(A,T,mask,max_order=50,tol=1e-4):
    tA = A.copy()
@@ -417,7 +412,8 @@ class CSF(Wavefunction):
         """Save a CSF to disk with prefix 'tag'"""
         # Save hdf5 file with mo coefficients and spin coupling
         with h5py.File(tag+'.hdf5','w') as F:
-            F.create_dataset("mo_coeff", data=self.mo_coeff[:,:self.nocc])
+            #F.create_dataset("mo_coeff", data=self.mo_coeff[:,:self.nocc])
+            F.create_dataset("mo_coeff", data=self.mo_coeff)
             F.create_dataset("spin_coupling", data=self.spin_coupling)
             F.create_dataset("energy", data=self.energy)
             F.create_dataset("s2", data=self.s2)
@@ -482,14 +478,21 @@ class CSF(Wavefunction):
         if mo_read.shape[1] > self.nmo:
             raise ValueError("Too many orbitals in file")
 
-    def read_from_disk(self, tag):
+    def read_from_disk(self, tag, gcoup = False):
+        #NOTE: have added the gcoup value to tell us we are going to pick up the spin coupling vector from old file
         """Read a CSF wavefunction from disk with prefix 'tag'"""
+        # added this gcoup business in order to read from rhf wfn but really should have it here
+        # gcoup = True - we try and read the old wfns spin coupling and replace this
         with h5py.File(tag+'.hdf5','r') as F:
             mo_read = F['mo_coeff'][:]
-            spin_coupling = str(F['spin_coupling'][...])[2:-1]
+            if gcoup:
+                spin_coupling = str(F['spin_coupling'][...])[2:-1]
         
         # Initialise the wave function
-        self.initialise(mo_read, spin_coupling=spin_coupling)        
+        if gcoup: 
+            self.initialise(mo_read, spin_coupling=spin_coupling)  
+        else: 
+            self.initialise(mo_read)  
                
         # Check the input
         if mo_read.shape[0] != self.nbsf:
@@ -558,7 +561,6 @@ class CSF(Wavefunction):
         orb_step[self.rot_idx] = step
         self.mo_coeff = np.dot(self.mo_coeff, scipy.linalg.expm(orb_step - orb_step.T))
 
-
     def transform_vector(self,vec,step,X=None):
         """ Perform orbital rotation for vector in tangent space"""
         # Construct transformation matrix
@@ -586,7 +588,16 @@ class CSF(Wavefunction):
 
         # Return transformed vector
         return kappa[self.rot_idx]
-    
+   
+    def try_fock(self, fock_vec): 
+        self.generalised_coupling_operator = fock_vec.reshape((self.nmo, self.nmo)).T
+        self.diagonalise_generalised_coupling_operator()
+ 
+    def get_diis_error(self):
+        """Compute the DIIS error vector and DIIS error"""
+        err_vec  = np.linalg.multi_dot([self.generalised_coupling_operator, self.dens, self.integrals.overlap_matrix()])
+        err_vec -= err_vec.T
+        return err_vec.ravel(), np.linalg.norm(err_vec)   
 
     def get_density_matrices(self):
         """ Compute total density matrix and relevant matrices for K build"""
@@ -687,6 +698,115 @@ class CSF(Wavefunction):
         
         return F, Fshell
 
+    def get_generalised_fock_aos(self):
+        """ Compute the generalised Fock matrix in MO basis"""
+        # Build fock matrix for each shell 
+        Fshell = np.zeros((1+self.nshell,self.nbsf,self.nbsf))
+
+        # Core contribution
+        Fcore_ao = 2 * (self.integrals.oei_matrix(True) + self.J 
+                      - 0.5 * np.sum(self.K[i] for i in range(self.nshell+1)))
+        Fshell[0] = Fcore_ao
+
+        # Open-shell contributions
+        for W, shell in enumerate(self.shell_indices):
+            # One-electron matrix, Coulomb and core exchange
+            Fw_ao = self.integrals.oei_matrix(True) + self.J - 0.5 * self.K[0]
+            # Different shell exchange
+            Fw_ao += np.einsum('v,vpq->pq',self.beta[W],self.K[1:])
+            # AO-to-MO transformation
+            Fshell[W+1] = Fw_ao
+        
+        return Fshell
+
+    def get_generalised_coupling_operator(self): 
+        R = np.zeros((self.nmo, self.nmo))
+        F, Fshell = self.get_generalised_fock()
+        #Fshell = np.array(Fshell)
+        # shell indices for all the occupied shells 
+        all_shell_indices = [self.core_indices.copy()] + self.shell_indices.copy() 
+        # Start with diagonal elements: 
+        # Occupied shell contributions
+        for W, shell in enumerate(all_shell_indices):
+            R[shell, shell] = Fshell[W][shell, shell] 
+       
+        # Virtual shell contribution
+        vir_shell_indices=[i for i in range(self.ncore +self.nopen, self.nmo)] 
+        R[vir_shell_indices, vir_shell_indices] = np.sum([shell_fock[vir_shell_indices, vir_shell_indices] for shell_fock in Fshell] ) 
+
+        # Off diagonal blocks
+        # occupied - occupied
+        for W1, shell1 in enumerate(all_shell_indices): 
+            for W2 in range(W1+1, len(all_shell_indices)): 
+                shell2 = all_shell_indices[W2]
+                R[np.ix_(shell1, shell2)] = Fshell[W2][ np.ix_(shell1, shell2)] - Fshell[W1][ np.ix_(shell1, shell2)] 
+                R[np.ix_(shell2, shell1)] = Fshell[W1][ np.ix_(shell2, shell1)] - Fshell[W2][ np.ix_(shell2, shell1)] 
+                 
+        # occupied - virtual
+        for W, shell in enumerate(all_shell_indices):
+            R[np.ix_(shell, vir_shell_indices)] = Fshell[W][ np.ix_(shell, vir_shell_indices)]  
+            R[np.ix_(vir_shell_indices, shell)] = Fshell[W][ np.ix_(vir_shell_indices, shell)] 
+        self.generalised_coupling_operator = R 
+        return R       
+
+    def cascade_diagonalise_operator(self): 
+        #
+        all_shell_indices = [self.core_indices.copy()] + self.shell_indices.copy() + [[i for i in range(self.ncore + self.nopen, self.nmo)]]
+        ###
+        # Get the shell fock matrices in atomic orbital basis      
+        Fshell = self.get_generalised_fock_aos()
+        #
+        C0 = self.mo_coeff.copy()
+        #all occupied shells and virtuals - do orbital assignment according to a MOM like update no?
+        for i in range(self.nshell+1): 
+            d = Fshell[i].copy()
+            C = C0.copy()[:, all_shell_indices[i] + all_shell_indices[-1]]
+            D = np.linalg.multi_dot((C.T, d, C)) 
+            _ , U = np.linalg.eigh(D) 
+            C1 = np.dot(C, U)       
+            C0[:, all_shell_indices[i] + all_shell_indices[-1]]= C1
+        # now need to loop over all the core-active and active-active elements orbitals 
+        for first_active in range(self.nshell+1):
+            for i in range(first_active+1, self.nshell+1):
+                C = C0[:, all_shell_indices[first_active]+all_shell_indices[i]]
+                d = Fshell[first_active].copy() - Fshell[i].copy()
+                D = np.linalg.multi_dot((C.T, d, C)) 
+                eigvals, U = np.linalg.eigh(D) 
+                C1 = np.dot(C, U)       
+                C0[:, all_shell_indices[first_active] + all_shell_indices[i]] = C1
+        
+        return C0 
+    
+
+    
+    def diagonalise_generalised_coupling_operator(self, thresh=1e-8): 
+        #Do this with some MOM type update, but could just do an aufbau filling
+        self.canonicalize()
+        Rold = self.get_generalised_coupling_operator() 
+        eigvals, evecs = np.linalg.eigh(Rold)
+        Cold = self.mo_coeff.copy()
+        Cnew = np.dot(Cold, evecs)
+        ###
+        #all_shell_indices = [self.core_indices.copy()] + self.shell_indices.copy() 
+        #Cshell = [] 
+        #for shell in all_shell_indices: 
+        #    Cshell.append(Cold[:,shell]) 
+        #projections = np.zeros((self.nmo, self.nshell + 1)) 
+        # Need to compute the projection of every orbital onto each old shell. 
+        #for w in range(self.nshell+1):
+        #    projs, _ = mom_select( Cshell[w], self.integrals.overlap_matrix(), Cnew )
+        #    projections[:,w] = projs
+        #Cnew = sorting_shells(self, projections)  
+        self.mo_coeff = Cnew 
+        self.update()
+        # Do something here to check convergence - if check if its diagonal
+        self.generalised_coupling_operator = self.get_generalised_coupling_operator() 
+        count = np.sum( (self.generalised_coupling_operator - np.diag(np.diagonal(self.generalised_coupling_operator))) > thresh )
+        if count==0: 
+            converged = True 
+        else: 
+            converged = False    
+        return converged, count
 
     def get_Y_intermediate(self):
         """ Compute the Y intermediate required for Hessian evaluation
@@ -697,7 +817,7 @@ class CSF(Wavefunction):
         nocc = self.nocc
 
         # Get required two-electron MO integrals
-        Cocc = self.mo_coeff[:,:nocc].copy()
+        Cocc = self.mo_coeff[:,:nocc].copy() #exactly we dont need the occupied ones since we know the constants will be zero! 
         ppoo = self.integrals.tei_ao_to_mo(self.mo_coeff,self.mo_coeff,Cocc,Cocc,True,False)
         popo = self.integrals.tei_ao_to_mo(self.mo_coeff,Cocc,self.mo_coeff,Cocc,True,False)
 
@@ -939,3 +1059,23 @@ class CSF(Wavefunction):
             dbeta *= 0.5
 
         return dbeta
+
+##########
+    def tracking_hessian(self): 
+        #Ok find the lowest positive eigenvalue of the hessian
+        eigs, x = self.get_davidson_hessian_index(approx_hess=True, _plev=1) 
+        down=self.hess_index[-1]
+        print("  Down: ", down)
+        step = x[:, down]
+        #
+        optim_step, sufficient_increase = quadratic_model(self, step)
+        if sufficient_increase:
+            print("  Taken step to maximum") 
+            self.take_step(step)
+        else: 
+            print("  Step is too small an increase but its fine")
+            self.take_step(step)
+        return                     
+
+
+ 
