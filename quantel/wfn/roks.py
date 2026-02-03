@@ -286,12 +286,6 @@ class ROKS(CSF):
         return newcsf
 
 
-    def overlap(self, them):
-        """ Compute the overlap between two CSF objects
-        """
-        raise NotImplementedError("ROKS overlap coupling not yet implemented")
-
-
     def hamiltonian(self, them):
         """ Compute the Hamiltonian coupling between two CSF objects
         """
