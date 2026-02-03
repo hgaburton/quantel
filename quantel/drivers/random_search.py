@@ -5,7 +5,7 @@ from quantel.utils.linalg import random_rot
 from quantel.wfn.rhf import RHF
 from quantel.opt.diis import DIIS
 from quantel.opt.lbfgs import LBFGS
-from quantel.wfn.csf import CSF
+from quantel.wfn.roks import ROKS
 from quantel.gnme.utils import gen_eig_sym
 
 def random_search(ints, config):
@@ -29,7 +29,7 @@ def random_search(ints, config):
         ref_mo = mf.mo_coeff.copy()
     else:
         print(f"\nRunning initial high-spin ROHF calculation with multiplicity {ms+1: 3d}...")
-        mf = CSF(ints, '+'*ms)
+        mf = ROKS(ints, '+'*ms)
         mf.get_orbital_guess()
         LBFGS().run(mf,maxit=init_scf_cycles)
         ref_mo = mf.mo_coeff.copy()
