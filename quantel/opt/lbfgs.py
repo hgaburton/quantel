@@ -33,7 +33,7 @@ class LBFGS:
         
         self.ls = LineSearch()
 
-    def run(self, obj, thresh=1e-6, maxit=100, plev=1, ethresh=1e-8, index=0):
+    def run(self, obj, thresh=1e-6, maxit=100, plev=1, ethresh=1e-8, index=0, proj_vec=None):
         ''' Run the optimisation for a particular objective function obj.
             
             obj must have the following methods implemented:
@@ -84,6 +84,9 @@ class LBFGS:
             # Get energy, gradient and check convergence
             ecur = obj.energy
             grad = obj.gradient
+            if(proj_vec is not None):
+                # Project out unwanted directions
+                grad = grad - proj_vec @ (proj_vec.T @ grad)
             rms = np.linalg.norm(grad)/np.sqrt(grad.size)
             conv = np.linalg.norm(grad,ord=np.inf)
             
@@ -127,6 +130,9 @@ class LBFGS:
                    #conv<1e-2):
                     X = obj.canonicalize()
                     grad = obj.gradient
+                    if(proj_vec is not None):
+                        # Project out unwanted directions
+                        grad = grad - proj_vec @ (proj_vec.T @ grad)
 
                 # Save reference energy and gradient
                 eref = ecur
