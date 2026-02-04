@@ -64,7 +64,7 @@ class HybridEF:
         davidson = Davidson(basis_per_root=8)
         lbfgs = LBFGS(with_transport=False,with_canonical=False)
 
-        evec=None
+        evec_old=None
         converged = False
         for istep in range(maxit+1):
             # Get gradient and check convergence
@@ -74,9 +74,21 @@ class HybridEF:
 
             # Get lowest Hessian eigenvectors using Davidson
             prec = obj.get_preconditioner(abs=False)
-            eigval, evec = davidson.run(hv,prec,index+1,tol=1e-4,plev=plev-1,xguess=evec,maxit=50)
+            eigval, evec = davidson.run(hv,prec,index+1,tol=1e-4,plev=plev-1,xguess=evec_old,maxit=50)
+            # Sort eigenvectors to align with previous step               
+            if(evec_old is not None):
+                proj = evec_old.T.dot(evec)
+                sort = np.zeros(evec.shape[1],dtype=int)
+                for i in range(evec.shape[1]):
+                    sort[i] = np.argmax(np.abs(proj[i,:]))
+                    proj[:,sort[i]] = 0.0
+                eigval, evec = eigval[sort], evec[:,sort]
+
+            # Save old eigenvectors for next iteration
+            evec_old = evec.copy()
+            # Get current Hessian index
             cur_ind = np.sum(eigval<0)
-            st_cur_ind = "{:2s}{:<d}".format('>=' if cur_ind > index else ' ', cur_ind)
+            st_cur_ind = "{:s}{:d}".format('>=' if cur_ind > index else '', cur_ind)
 
             
             # Check if we have convergence

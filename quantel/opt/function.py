@@ -131,7 +131,7 @@ class Function(metaclass=ABCMeta):
             else:         nzero +=1 
         return (ndown, nzero, nuphl)
 
-    def get_davidson_hessian_index(self, ntarget=5, eps=1e-5, approx_hess=True):
+    def get_davidson_hessian_index(self, ntarget=5, eps=1e-5, approx_hess=True, plev=1):
         """Iteratively compute Hessian index from gradient only. 
            This approach uses the Davidson algorithm."""
         # Get approximate diagonal terms
@@ -147,15 +147,15 @@ class Function(metaclass=ABCMeta):
         while(not converged):
             if(approx_hess):
                 eigs, x = david.run(self.approx_hess_on_vec,diag,nv,xguess=xguess,
-                                    plev=2,tol=1e-4,maxit=1000, Hv_args={'eps':eps})
+                                    plev=plev,tol=1e-4,maxit=1000, Hv_args={'eps':eps})
             else:
                 eigs, x = david.run(self.hess_on_vec,diag,nv,xguess=xguess,
-                                    plev=2,tol=1e-4,maxit=1000)
+                                    plev=plev,tol=1e-4,maxit=1000)
             if(np.sum(eigs<1e-16) < nv):
                 converged = True
             else: 
-                xguess = np.hstack([x, np.random.uniform(-1.0,1.0,size=(self.dim,1))])
-                nv += 1
+                xguess = np.hstack([x, np.random.uniform(-1.0,1.0,size=(self.dim,2))])
+                nv += 2
 
         # Count the Hessian index
         ndown = 0
