@@ -1,7 +1,7 @@
 from quantel.ints.pyscf_integrals import PySCFMolecule, PySCFIntegrals
 from quantel.opt.hybrid_ef import HybridEF
-from quantel.wfn.uhf import UHF
 from quantel.wfn.rhf import RHF
+
 
 if __name__ == "__main__":
     print("===============================================")
@@ -14,10 +14,13 @@ if __name__ == "__main__":
     # Initialise the optimiser
     opt = HybridEF()
 
-    # Test for UHF wavefunction
+    # Initialise RHF wavefunction with GWH orbital guess
     wfn = RHF(ints)
     wfn.get_orbital_guess('gwh')
-    opt.run(wfn,index=2,approx_hess=False,plev=1)
 
-    # Check Hessian index
-    wfn.get_davidson_hessian_index(approx_hess=False)
+    # Here, as an example, we climb a ladder of increasing Hessian index.
+    # This demonstrates how eigenvector following can move away from a solution
+    # with the wrong target Hessian index.
+    for index in range(4):
+        opt.run(wfn,index=index,approx_hess=False,plev=1)
+        wfn.get_davidson_hessian_index(approx_hess=False)
