@@ -139,7 +139,7 @@ class Function(metaclass=ABCMeta):
 
         # Start with 5 eigenvalues
         nv = ntarget
-        david = Davidson(nreset=50)
+        david = Davidson()
 
         # Get lowest eigenvalues through Davidson algorithm
         converged = False

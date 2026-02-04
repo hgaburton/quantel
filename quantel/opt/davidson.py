@@ -9,7 +9,6 @@ class Davidson:
     def __init__(self, **kwargs):
         """Initialise the Davidson instance"""
         self.control = dict()
-        self.control["nreset"] = 50
         self.control["basis_per_root"] = 4
         self.control["collapse_per_root"] = 2
 
@@ -34,7 +33,6 @@ class Davidson:
             print(f"    > Max iterations = {maxit: 6d}")
             print(f"    > Target states  = {n: 6d}")
             print(f"    > Convergence    = {tol: 6.3e}")
-            print(f"    > Reset interval = {self.control['nreset']: 6d}")
             print(f"    > Basis per root = {self.control['basis_per_root']: 6d}")
             print(f"    > Max basis size = {self.control['basis_per_root']*n: 6d}")
         

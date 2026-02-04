@@ -59,7 +59,10 @@ class HybridEF:
             if(not hasattr(obj, "hess_on_vec")):
                 raise RuntimeError("Objective function does not have hess_on_vec() method implemented")
             hv = obj.hess_on_vec
-        davidson = Davidson(nreset=50,basis_per_root=8)
+        
+        # Initialise solvers for Davidson and LBFGS
+        davidson = Davidson(basis_per_root=8)
+        lbfgs = LBFGS(with_transport=False,with_canonical=False)
 
         evec=None
         converged = False
@@ -71,7 +74,7 @@ class HybridEF:
 
             # Get lowest Hessian eigenvectors using Davidson
             prec = obj.get_preconditioner(abs=False)
-            eigval, evec = davidson.run(hv,prec,index+1,tol=1e-4,plev=plev-1,xguess=evec)
+            eigval, evec = davidson.run(hv,prec,index+1,tol=1e-4,plev=plev-1,xguess=evec,maxit=50)
             cur_ind = np.sum(eigval<0)
             st_cur_ind = "{:2s}{:<d}".format('>=' if cur_ind > index else ' ', cur_ind)
 
@@ -114,15 +117,24 @@ class HybridEF:
                 obj.take_step(step)
 
                 # Optimise energy in directions orthogonal to uphill steps
-                LBFGS(with_transport=False,with_canonical=False).run(obj,proj_vec=evec[:,:index],maxit=10,plev=plev-1)
+                lbfgs.run(obj,proj_vec=evec[:,:index],maxit=10,plev=plev-1)
 
             # Report our progress
             if not converged:
+                if(plev>1): print("\n  ----------------------------------------------------------------")
+                if(plev>1): print("   Hybrid Eigenvector-Following step:")
+                if(plev>1): print("  ----------------------------------------------------------------")
                 print(" {: 5d} {: 16.10f}    {:^8s}    {:8.2e}    {:8.2e}    {:10s}".format(
                       istep, eref, st_cur_ind, step_length, conv, comment))
+                if(plev>1): print("  ----------------------------------------------------------------")
+
             else:
+                if(plev>1): print("\n  ----------------------------------------------------------------")
+                if(plev>1): print("   Hybrid Eigenvector-Following step:")
+                if(plev>1): print("  ----------------------------------------------------------------")
                 print(" {: 5d} {: 16.10f}    {:^8s}                {:8.2e}    {:10s}".format(
                     istep, eref, st_cur_ind, conv, comment))
+                if(plev>1): print("  ----------------------------------------------------------------")                
                 break
             sys.stdout.flush()
 
