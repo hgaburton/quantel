@@ -9,6 +9,7 @@ from quantel.gnme.csf_noci import csf_coupling, csf_coupling_slater_condon
 from .wavefunction import Wavefunction
 from quantel.utils.csf_utils import csf_reorder_orbitals
 from quantel.utils.scf_utils import mom_select, sorting_shells
+from quantel.utils.ab2_orbitals import localise_orbs
 from quantel.utils.orbital_guess import orbital_guess
 from pyscf.tools import cubegen
 from quantel.opt.max_linesearch import quadratic_model
@@ -950,7 +951,6 @@ class CSF(Wavefunction):
                 mask[frozen] = mask[:, frozen] = False
         return mask
 
-
     def koopmans(self):
         """
         Solve IP using Koopmans theory
@@ -1042,6 +1042,17 @@ class CSF(Wavefunction):
             dbeta *= 0.5
 
         return dbeta
+
+    def localise(self): 
+        """ Perform PM localisation on orbitals within occupied shells """ 
+        occ_shells = [self.core_indices] + self.shell_indices 
+        stabilities = [] 
+        ds = [] 
+        for shell in occ_shells: 
+            isstable, d = localise_orbs(self, shell)
+            stabilities.append(isstable) 
+            ds.append(d)
+        return stabilities, bond_orders
 
 ##########
     def tracking_hessian(self): 
