@@ -717,7 +717,6 @@ class CSF(Wavefunction):
         Fshell = [ np.linalg.multi_dot((metric,  self.mo_coeff, fock_shell, self.mo_coeff.T, metric  )) for fock_shell in self.fock_shell[:] ]
         # Additional Fock terms for ROKS child class   
         if additional_focks is not None:  
-            print("going through") 
             Fshell = [  fock + additional_focks[W] for W,fock in enumerate(Fshell)  ]   
         
         # Diagonal blocks 
@@ -768,13 +767,11 @@ class CSF(Wavefunction):
 
         # Select occupied orbitals using MOM if specified
         if(self.mom_method =='MOM'):
-            #self.canonicalize() 
             Cold = self.mo_coeff.copy()
             projections = self.shell_projection(Cold, Cnew)
             self.mo_coeff, order = sorting_shells(self, Cnew, projections)
         elif(self.mom_method == 'IMOM'):
             projections = self.shell_projection(self.Cinit, Cnew)
-            #projections[:,1:] *= 100 
             self.mo_coeff, order  = sorting_shells(self, Cnew, projections)
         else:
             self.mo_coeff = Cnew.copy()
@@ -1052,7 +1049,7 @@ class CSF(Wavefunction):
             isstable, d = localise_orbs(self, shell)
             stabilities.append(isstable) 
             ds.append(d)
-        return stabilities, bond_orders
+        return stabilities, ds
 
 ##########
     def tracking_hessian(self): 
