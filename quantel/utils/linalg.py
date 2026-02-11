@@ -3,7 +3,7 @@
 from functools import reduce
 import numpy as np
 from scipy.linalg import expm as scipy_expm
-
+import sys
 
 def orthogonalisation_matrix(M, thresh=1e-8):
     """Construct an orthogonalisation matrix X such that X^T M X = I for a symmetric matrix M
@@ -121,7 +121,6 @@ def inner_prod(a,b,metric=None):
     else:
         return np.dot(a.conj().T,metric.dot(b))
 
-
 def gram_schmidt(mat, metric=None):
     '''
     Perform Gram-Schmidt orthogonalisation for a set of vectors with respect to a metric S.
@@ -145,12 +144,32 @@ def gram_schmidt(mat, metric=None):
         vj  = mat[:,:i]
         # Perform the projection
         vi -= vj @ (vj.conj().T @ Sv[:,i])
-        # Renormalise
         vi /= norm(vi,metric)
     return mat
 
+def test_gram_schmidt(mat, metric=None):
+    # Copy of metric @ vector for use later
+    Sv = np.copy(mat) if (metric is None) else metric @ mat
 
-def orthogonalise(mat, metric=None, thresh=1e-10, fill=True):
+    # Orthogonalise each vector sequentially
+    lin_indep=[]
+    for i in range(0,mat.shape[1]):
+        # Target vector
+        vi  = mat[:,i] 
+        # Projection space
+        vj  = mat[:,:i]
+        # Perform the projection
+        vi -= vj @ (vj.conj().T @ Sv[:,i])
+        vi_norm = norm(vi, metric)
+        if vi_norm > 1e-8: 
+            # Check norm
+            vi /= vi_norm
+            lin_indep.append(vi)
+    
+    sys.stdout.flush() 
+    return np.array(lin_indep).T 
+
+def orthogonalise(mat, metric=None, thresh=1e-10, fill=True, lindep=False ):
     '''
     Orthogonalise the columns of mat with respect to the metric tensor.
 
@@ -180,8 +199,10 @@ def orthogonalise(mat, metric=None, thresh=1e-10, fill=True):
     # If the orthogonality test fails, we need to orthogonalise
     if ortho_test > thresh:
         # Perform Gram-Schmidt twice for stability
-        mat = gram_schmidt( gram_schmidt(mat,metric),metric )
-
+        if lindep: 
+            mat = test_gram_schmidt( test_gram_schmidt(mat,metric),metric)
+        else:
+            mat = gram_schmidt( gram_schmidt(mat,metric),metric)
         # Re-check the orthogonality
         ortho = inner_prod(mat,mat,metric)
         for i in range(mat.shape[1]):
@@ -190,9 +211,8 @@ def orthogonalise(mat, metric=None, thresh=1e-10, fill=True):
 
         if(ortho_test > thresh):
             print(f"WARNING: Gram-Schmidt orthogonalisation failed with max(abs(error)) = {ortho_test: 7.3e}")
-
     return mat
-
+ 
 def matrix_print(M, title=None, ncols=6, offset=0):
     '''Print a matrix in a nice format with ncols columns at a time'''
     # Total number of columns

@@ -1,0 +1,864 @@
+#!/usr/bin/python3
+# Modified from ss_casscf code of Antoine Marie and Hugh G. A. Burton
+# This is code for a CSF, which can be formed in a variety of ways.
+import numpy as np
+import scipy, quantel, h5py
+from quantel.utils.csf_utils import get_shells, get_shell_exchange, get_csf_vector
+from quantel.utils.linalg import orthogonalise, stable_eigh, matrix_print
+from quantel.gnme.csf_noci import csf_coupling, csf_coupling_slater_condon
+from .wavefunction import Wavefunction
+from quantel.utils.csf_utils import csf_reorder_orbitals
+from quantel.utils.orbital_guess import orbital_guess
+from quantel.ints.pyscf_integrals import PySCFIntegrals
+from pyscf.tools import cubegen
+
+def flag_transport(A,T,mask,max_order=50,tol=1e-4):
+   tA = A.copy()
+   M  = A.copy()
+   for i in range(max_order):
+       TM = T @ M
+       M = - 0.5 * (TM - TM.T) / (i+1)
+       M[mask] = 0
+       if(np.max(np.abs(M)) < tol):
+           break
+       tA += M
+   return tA
+
+class CSF(Wavefunction):
+    """ 
+        A class for a Configuration State Function (CSF) using the genealogical coupling pattern.
+
+        Inherits from the Wavefunction abstract base class with pure virtual properties:
+            - energy
+            - gradient
+            - hessian
+            - take_step
+            - save_last_step
+            - restore_step
+    """
+    def __init__(self, integrals, spin_coupling, verbose=0):
+        """ Initialise the CSF wave function
+                integrals     : quantel integral interface
+                spin_coupling : genealogical coupling pattern
+                verbose       : verbosity level
+        """
+        # How noisy am I?
+        self.verbose       = verbose
+        # Initialise integrals object
+        self.integrals  = integrals
+        self.nalfa      = integrals.molecule().nalfa()
+        self.nbeta      = integrals.molecule().nbeta()
+        # Get number of basis functions and linearly independent orbitals
+        self.nbsf       = integrals.nbsf()
+        self.nmo        = integrals.nmo()
+        # Read integral dependent factors
+        if(type(integrals) is PySCFIntegrals):
+            self.with_xc = (integrals.xc is not None)# Again here we specify if we want to include a DFT xc functional
+            self.Kscale  = integrals.kscale  # What is Kscale??
+
+            self.with_pyscf = True
+        else:
+            self.with_xc = False
+            self.Kscale  = 1.0
+        self.setup_spin_coupling(spin_coupling)
+    
+    def sanity_check(self):
+        '''Need to be run at the start of the kernel to verify that the number of 
+           orbitals and electrons in the CAS are consistent with the system '''
+        # Check number of active orbitals is positive
+        if self.nopen < 0:
+            raise ValueError("Number of active orbitals must be positive")
+        # Check number of active electrons doesn't exceed total number of electrons
+        if(self.cas_nalfa > self.nopen or self.cas_nbeta > self.nopen):
+            raise ValueError("Number of active electrons must be <= number of active orbitals")
+        # Check number of active electrons doesn't exceed total number of electrons
+        if(self.cas_nalfa > self.nalfa or self.cas_nbeta > self.nbeta):
+            raise ValueError("Number of active electrons must be <= total number of electrons")
+        # Check number of occupied orbitals doesn't exceed total number of orbitals
+        if(self.nocc > self.nmo):
+            raise ValueError("Number of inactive and active orbitals must be <= total number of orbitals")
+
+    def setup_spin_coupling(self, spin_coupling): 
+
+        if(spin_coupling == 'cs'):
+            spin_coupling = ''
+
+        # Get active space definition
+        self.nopen   = len(spin_coupling)
+        self.cas_nalfa  = sum(int(s=='+') for s in spin_coupling) #counts all the + signs in the spin coupling vector, this is only the number of electrons where M = S! 
+        self.cas_nbeta  = sum(int(s=='-') for s in spin_coupling) 
+        # Get number of core electrons
+        self.ncore = self.integrals.molecule().nalfa() + self.integrals.molecule().nbeta() - self.cas_nalfa - self.cas_nbeta
+        if(self.ncore % 2 != 0):
+            raise ValueError("Number of core electrons must be even")
+        if(self.ncore < 0):
+            raise ValueError("Number of core electrons must be positive")
+        self.ncore = self.ncore // 2 # so now this is counting the number of core orbtials really 
+        self.nalfa = self.ncore + self.cas_nalfa # refixing the number of alpha and beta electrons. 
+        self.nbeta = self.ncore + self.cas_nbeta 
+        # Get number of 'occupied' orbitals
+        self.nocc = self.ncore + self.nopen # number orbital which posses any occupancy whatsoever, since we specify an orbital config this stays the same
+        self.sanity_check() # checking we have correct numbers for all. 
+
+        # Get determinant list and CSF occupation/coupling vectors
+        self.spin_coupling = spin_coupling
+        self.core_indices, self.shell_indices = get_shells(self.ncore,self.spin_coupling) #since spin coupling vector t is going to be used to get our final M value out? 
+        # what are these shell, what is get_shells doing? i.e the groupings of successive electrons coupled in the same direction.  
+
+ 
+        self.mo_occ = np.zeros(self.nmo)
+        self.mo_occ[:self.nocc] = 2
+        self.mo_occ[self.ncore:self.nocc] = 1
+        # Get information about the electron shells
+        self.beta   = get_shell_exchange(self.ncore,self.shell_indices, self.spin_coupling)
+        # how is returning what should be a matrix as a vector?
+        self.nshell = len(self.shell_indices)
+
+    def initialise(self, mo_guess, spin_coupling=None, mat_ci=None, integrals=True):
+        """ Initialise the CSF object with a set of MO coefficients"""
+        ## so this is used in the case where we are inputing mo coefficients from a different initial guess to the one that we originally sorted out. 
+        if(spin_coupling is None):
+            spin_coupling = self.spin_coupling
+        self.setup_spin_coupling(spin_coupling)
+
+        # Orthogonalise the MO coefficients
+        mo_guess      = orthogonalise(mo_guess, self.integrals.overlap_matrix()) # this gives an MO_guess if we have one         
+        if(mo_guess.shape[1] != self.nmo):
+            raise ValueError("Number of orbitals in MO coefficient matrix is incorrect")
+        self.mo_coeff = mo_guess
+
+        # Save mapping indices for unique orbital rotations
+        self.frozen     = None
+        self.rot_idx    = self.uniq_var_indices(self.frozen)
+        self.invariant  = self.invariant_indices()
+        self.nrot       = np.sum(self.rot_idx)
+
+        # Initialise integrals
+        if (integrals): self.update_integrals()
+
+    def deallocate(self):
+        pass
+
+    @property
+    def dim(self):
+        """Number of degrees of freedom"""
+        return self.nrot
+
+    @property
+    def energy(self):
+        """ Compute the energy corresponding to a given set of
+             one-el integrals, two-el integrals, 1- and 2-RDM
+        """
+        # Nuclear repulsion
+        En = self.integrals.scalar_potential()
+        # One-electron energy
+        E1 = np.einsum('pq,qp',self.dj,self.integrals.oei_matrix(True))
+        # Coulomb energy
+        EJ = 0.5 * np.einsum('pq,qp',self.dj,self.J)
+        # Exchange energy
+        EK = - 0.25 * np.einsum('pq,qp',self.dj,self.K[0])
+        for w in range(self.nshell):
+            EK += 0.5 * np.einsum('pq,qp',self.K[1+w], 
+                        np.einsum('v,vpq->pq',self.beta[w],self.dk[1:]) - 0.5 * self.dk[0])
+        # xc-potential energy
+        Exc = self.exc
+        # Save components
+        self.energy_components = dict(Nuclear=En, One_Electron=E1, Coulomb=EJ, 
+                                      ROHF_Exchange=EK, Exchange_Correlation=Exc)
+        return En + E1 + EJ + EK + Exc
+
+    @property
+    def sz(self):
+        """<S_z> value of the current wave function"""
+        return 0.5 * np.sum([1 if s=='+' else -1 for s in self.spin_coupling])
+
+    @property
+    def s2(self):
+        """ <S^2> value of the current wave function
+            Uses the formula S^2 = S- S+ + Sz Sz + Sz, which corresponds to 
+                <S^2> = <Sz> * (<Sz> + 1) + <Nb> - sum_pq G^{ab}_{pqqp} 
+            where G^{ab}_{pqqp} is the alfa-beta component of the 2-RDM
+        """
+        return self.sz * (self.sz + 1)
+
+    @property
+    def gradient(self):
+        """ Compute the gradient of the energy with respect to the orbital rotations"""
+        return 2 * (self.gen_fock.T - self.gen_fock)[self.rot_idx]
+
+    @property
+    def hessian(self):
+        ''' This method finds orb-orb part of the Hessian '''
+        # Get generalised Fock and symmetrise
+        F = self.gen_fock + self.gen_fock.T
+        # Get one-electron matrix elements 
+        h1e = np.linalg.multi_dot([self.mo_coeff.T, self.integrals.oei_matrix(True), self.mo_coeff])
+        # Combine intermediates (Eq. 10.8.53 in Helgaker book) 
+        Hess = 2 * self.get_Y_intermediate()
+        for i in range(self.nmo):
+            Hess[i,:,i,:] += 2 * self.mo_occ[i] * h1e
+            Hess[:,i,:,i] -= F
+               # Apply permutation symmetries
+        Hess = Hess - Hess.transpose(1,0,2,3)
+        Hess = Hess - Hess.transpose(0,1,3,2)
+        # Reshape and return
+        return (Hess[:, :, self.rot_idx])[self.rot_idx, :]
+
+    @property
+    def exchange_matrix(self):
+        """ Compute the exchange matrix in the MO basis"""
+        Xb = np.zeros((self.nocc,self.nocc))
+        # Open-Open
+        for W, sW in enumerate(self.shell_indices):
+            for V, sV in enumerate(self.shell_indices):
+                for w in sW:
+                    for v in sV:
+                        Xb[w,v] = self.beta[W,V]
+        # Set diagonal to zero
+        np.fill_diagonal(Xb,0)
+        return Xb[self.ncore:,self.ncore:]
+
+    @property 
+    def dipole(self):
+        """ Compute the dipole moment of the current wave function"""
+        # Get the dipole integrals
+        nucl_dip, ao_dip = self.integrals.dipole_matrix()
+        # Return the combination
+        return nucl_dip - np.einsum('xij,ji->x',ao_dip,self.dj)
+
+
+    def print(self,verbose=1):
+        """ Print details about the state energy and orbital coefficients
+
+            Inputs:
+                verbose : level of verbosity
+                          0 = No output
+                          1 = Print energy components and spinao2mo
+                          2 = Print energy components, spin, and exchange matrices
+                          3 = Print energy components, spin, exchange matrices, and occupied orbital coefficients
+                          4 = Print energy components, spin, exchange matrices, and all orbital coefficients
+                          5 = Print energy components, spin, exchange matrices, generalised Fock matrix, and all orbital coefficients 
+        """
+        if(verbose > 0):
+            print("\n ---------------------------------------------")
+            print(f"         Total Energy = {self.energy:14.8f} Eh")
+            for key, value in self.energy_components.items():
+                print(f" {key.replace('_',' '):>20s} = {value:14.8f} Eh")
+            print(" ---------------------------------------------")
+            print(f"        <Sz> = {self.sz:5.2f}")
+            print(f"        <S2> = {self.s2:5.2f}")
+        if(verbose > 1):
+            matrix_print(self.exchange_matrix, title="Open-Shell Exchange Matrix <Ψ|Êpq Êqp|Ψ> - Np")
+            matrix_print(self.Ipqqp[:self.nocc,self.ncore:self.nocc], title="Open-Shell Exchange Integrals <pq|qp>")
+        if(verbose > 2):
+            matrix_print(self.mo_coeff[:,:self.nocc], title="Occupied Orbital Coefficients")
+        if(verbose > 3):
+            matrix_print(self.mo_coeff[:,self.nocc:], title="Virtual Orbital Coefficients", offset=self.nocc)
+        if(verbose > 4):
+            matrix_print(self.gen_fock[:self.nocc,:].T, title="Generalised Fock Matrix (MO basis)")
+        print()
+
+    def approx_hess_on_vec(self, vec, eps=1e-3):
+        """ Compute the approximate Hess * vec product using forward finite difference """
+        # Get current gradient
+        g0 = self.gradient.copy()
+
+        # Get forward gradient
+        # First copy CSF but don't initialise integrals
+        them = self.copy(integrals=False)
+        # Take step (this will evaluate necessary integrals)
+        them.take_step(eps * vec)
+        g1 = them.gradient.copy()
+        # Parallel transport back to current position
+        g1 = self.transform_vector(g1, - eps * vec)
+        
+        # Return approximation to H @ sk
+        return (g1 - g0) / eps
+
+    def hess_on_vec(self, vec):
+        return self.hessian @ vec
+
+    def get_rdm12(self):
+        """ Compute the 1- and 2-electron reduced matrices from the shell coupling in occupied space
+            returns: 
+                dm1: 1-electron reduced density matrix
+                dm2: 2-electron reduced density matrix
+        """
+        # Numbers 
+        nocc = self.nocc
+        ncore = self.ncore
+
+        # 1-RDM
+        dm1 = np.diag(self.mo_occ[:nocc])
+
+        # 2-RDM
+        dm2 = np.zeros((nocc,nocc,nocc,nocc))
+        for p in range(ncore):
+            for q in range(ncore):
+                if(p==q):
+                    dm2[p,p,p,p] = 2
+                else:
+                    dm2[p,q,p,q] = 4
+                    dm2[p,q,q,p] = - 2
+            for w in range(ncore,nocc):
+                dm2[p,w,p,w] = 2
+                dm2[p,w,w,p] = -1
+                dm2[w,p,w,p] = 2
+                dm2[w,p,p,w] = -1
+
+        for W, sW in enumerate(self.shell_indices):
+            for V, sV in enumerate(self.shell_indices):
+                for w in sW:
+                    for v in sV:
+                        if(w==v):
+                            dm2[w,w,w,w] = 0
+                        else:
+                            dm2[w,v,w,v] = 1 
+                            dm2[w,v,v,w] = self.beta[W,V]
+        return dm1, dm2
+    
+    def get_vxc(self):
+        """Compute xc-potential"""
+        # Compute alfa and beta density matrices
+        dm_tmp = np.einsum('kpq->pq',self.dk[1:])
+        rho_a, rho_b = 0.5 * self.dk[0], 0.5 * self.dk[0]
+        if(self.nopen > 0):
+            rho_a += (0.5 + self.sz / self.nopen) * dm_tmp
+            rho_b += (0.5 - self.sz / self.nopen) * dm_tmp
+        # Compute the XC potential
+        exc, vxca, vxcb = self.integrals.build_vxc(rho_a, rho_b)
+        # Compute the total and polarisation potentials
+        vxc = 0.5 * (vxca + vxcb)
+        if(self.nopen > 0): 
+            vxc_pol = (self.sz / self.nopen) * (vxca - vxcb)
+        else: 
+            vxc_pol = 0 * (vxca - vxcb)
+        return exc, vxc, vxc_pol
+
+    def update_integrals(self):
+        """ Update the integrals with current set of orbital coefficients"""
+        # Update integrals really means update the electron densities, and fock matrices and so on - this is us taking a step. 
+        # Would like to understand 
+        # Update density matrices (AO basis)
+        self.dj, self.dk, self.vd = self.get_density_matrices()
+        # Compute xc-potential
+        self.exc, self.vxc, self.vxc_pol = self.get_vxc() if(self.with_xc) else (0,0,0)
+        # Update JK matrices (AO basis)
+        # what is self.get_JF_matrices doing then? 
+        self.J, self.K = self.get_JK_matrices(self.vd)
+        # Get Fock matrix (AO basis)
+        self.fock = self.integrals.oei_matrix(True) + self.J - 0.5 * np.einsum('mpq->pq',self.K)
+        # Get generalized Fock matrices
+        self.gen_fock, self.Ipqpq, self.Ipqqp = self.get_generalised_fock()
+        return 
+
+    def save_to_disk(self, tag):
+        """Save a CSF to disk with prefix 'tag'"""
+        # Save hdf5 file with mo coefficients and spin coupling
+        with h5py.File(tag+'.hdf5','w') as F:
+            F.create_dataset("mo_coeff", data=self.mo_coeff[:,:self.nocc])
+            F.create_dataset("spin_coupling", data=self.spin_coupling)
+            F.create_dataset("energy", data=self.energy)
+            F.create_dataset("s2", data=self.s2)
+        
+        # Save numpy txt file with energy and Hessian index
+        hindices = self.hess_index
+        with open(tag+".solution", "w") as F:
+            F.write(f"{self.energy:18.12f} {hindices[0]:5d} {hindices[1]:5d} {self.s2:12.6f} {self.spin_coupling:s}\n")
+
+        # Save the civector dump
+        self.write_cidump(tag)
+        return 
+
+    def write_fcidump(self, tag):
+        """ Write an FCIDUMP file for the current CSF object """
+        if(not (type(self.integrals) is quantel.ints.pyscf_integrals.PySCFIntegrals)):
+            raise ValueError("FCIDUMP file can only be written for PySCF integrals")
+        
+        # Write the FCIDUMP using PySCF
+        from pyscf.tools import fcidump
+        mol = self.integrals.molecule().copy()
+        mol.spin = int(2 * self.sz)
+        fcidump.from_mo(mol, tag+'.fcid', self.mo_coeff, ms=self.sz)
+
+    def write_cidump(self, tag):
+        # Write the CI vector dump
+        from quantel.utils.ci_utils import write_cidump
+        write_cidump(get_csf_vector(self.spin_coupling),self.ncore,self.nbsf,tag+'_civec.txt')
+
+
+    def read_from_orca(self,json_file):
+        """ Read a set of CSF coefficients from ORCA gbw file.
+            This requires the orca_2json executable to be available and spin_coupling 
+            must be set in the Quantel input file.
+        """
+        import json
+        # Read ORCA Json file
+        with open(json_file, 'r') as f:
+            data = json.load(f)
+        mo_read = np.array([value['MOCoefficients'] for value in data['Molecule']['MolecularOrbitals']['MOs']]).T
+        
+        # TODO: For now, we have a temporary fix to change the sign of the f+3 and f-3 orbitals, 
+        #       which appear to be inconsistent between Libint and ORCA
+        orb_labels = data['Molecule']['MolecularOrbitals']['OrbitalLabels']
+        phase_shift = []
+        for i, l in enumerate(orb_labels):
+            if (r'f+3' in l) or (r'f-3' in l):
+                phase_shift.append(i)
+        mo_read[phase_shift,:] *= -1
+         
+        # Initialise the wave function
+        self.initialise(mo_read, spin_coupling=self.spin_coupling)   
+
+        # Check the input
+        if mo_read.shape[0] != self.nbsf:
+            raise ValueError("Inccorect number of AO basis functions in file")
+        if mo_read.shape[1] < self.nocc:
+            raise ValueError("Insufficient orbitals in file to represent occupied orbitals")
+        if mo_read.shape[1] > self.nmo:
+            raise ValueError("Too many orbitals in file")
+
+    def read_from_disk(self, tag):
+        """Read a CSF wavefunction from disk with prefix 'tag'"""
+        with h5py.File(tag+'.hdf5','r') as F:
+            mo_read = F['mo_coeff'][:]
+            spin_coupling = str(F['spin_coupling'][...])[2:-1]
+        
+        # Initialise the wave function
+        self.initialise(mo_read, spin_coupling=spin_coupling)        
+               
+        # Check the input
+        if mo_read.shape[0] != self.nbsf:
+            raise ValueError("Inccorect number of AO basis functions in file")
+        if mo_read.shape[1] < self.nocc:
+            raise ValueError("Insufficient orbitals in file to represent occupied orbitals")
+        if mo_read.shape[1] > self.nmo:
+            raise ValueError("Too many orbitals in file")
+        return
+
+
+    def copy(self,integrals=True):
+        """Return a copy of the current object"""
+        newcsf = CSF(self.integrals, self.spin_coupling, verbose=self.verbose)
+        newcsf.initialise(self.mo_coeff,spin_coupling=self.spin_coupling,integrals=integrals)
+        return newcsf
+
+
+    def overlap(self, them):
+        """ Compute the overlap between two CSF objects
+        """
+        ovlp = self.integrals.overlap_matrix()
+        return csf_coupling(self, them, ovlp)[0]
+
+
+    def hamiltonian(self, them):
+        """ Compute the Hamiltonian coupling between two CSF objects
+        """
+        return csf_coupling_slater_condon(self, them, self.integrals)
+        n2 = self.nbsf * self.nbsf
+        hcore = self.integrals.oei_matrix(True)
+        eri   = self.integrals.tei_array().reshape((n2,n2))
+        ovlp  = self.integrals.overlap_matrix()
+        enuc  = self.integrals.scalar_potential()
+        return csf_coupling(self, them, ovlp, hcore, eri, enuc)
+    
+
+    def get_orbital_guess(self, method="gwh",avas_ao_labels=None,reorder=True):
+        """Get a guess for the molecular orbital coefficients"""
+        # Get the guess for the molecular orbital coefficients
+        Cguess = orbital_guess(self.integrals,method,avas_ao_labels=avas_ao_labels,rohf_ms=0.5*self.nopen)#these other labels are just telling us what the parameters would be for these other guesses - ROHF considers all the electrons as alpha electrons i.e. 0.5*self.nopen
+        # Optimise the order of the CSF orbitals and return
+        if(reorder and (not self.spin_coupling is '')): #reorder the orbitals to minimise the exchange - this may be good for a ground state as its variational but not necessarily appropriate for an excited state - case in point with three electrons in three orbitals. 
+            Cguess[:,self.ncore:self.nocc] = csf_reorder_orbitals(self.integrals,self.exchange_matrix,
+                                                                  np.copy(Cguess[:,self.ncore:self.nocc]))
+
+        # Initialise the CSF object with the guess coefficients.
+        self.initialise(Cguess, spin_coupling=self.spin_coupling)
+        return
+
+
+    def restore_last_step(self):
+        """ Restore MO coefficients to previous step"""
+        self.mo_coeff = self.mo_coeff_save.copy()
+        self.update_integrals()
+
+
+    def save_last_step(self):
+        """ Save MO coefficients"""
+        self.mo_coeff_save = self.mo_coeff.copy()
+
+
+    def take_step(self, step):
+        """ Take a step in the orbital space"""
+        self.save_last_step()
+        self.rotate_orb(step[:self.nrot]) # rotate orbs is just going to be applying that exponential operator
+        self.update_integrals()
+
+
+    def rotate_orb(self, step):
+        """ Rotate molecular orbital coefficients with a step"""
+        orb_step = np.zeros((self.nmo, self.nmo))
+        orb_step[self.rot_idx] = step # giving us the non-redudundant rotation operator (only one half)
+        self.mo_coeff = np.dot(self.mo_coeff, scipy.linalg.expm(orb_step - orb_step.T)) # puts the other half in according to anti-hermitian properties and then applies the rotation.
+
+
+    def transform_vector(self,vec,step,X=None):
+        """ Perform orbital rotation for vector in tangent space"""
+        # Construct transformation matrix
+        orb_step = np.zeros((self.nmo, self.nmo))
+        orb_step[self.rot_idx] = step
+        orb_step = orb_step - orb_step.T
+
+        # Build vector in antisymmetric form
+        kappa = np.zeros((self.nmo, self.nmo))
+        kappa[self.rot_idx] = vec
+        kappa = kappa - kappa.T
+
+        # Apply transformation
+        kappa = flag_transport(kappa,orb_step,self.invariant)
+
+        # 05/10/2024 - This is the old formula, only applicable for a small step
+        #Q = scipy.linalg.expm(0.5 * (orb_step - orb_step.T))
+        #kappa = kappa @ Q
+        #kappa = Q.T @ kappa
+
+        # Also apply horizontal transform
+        if not X is None:
+            kappa = kappa @ X
+            kappa = X.T @ kappa
+
+        # Return transformed vector
+        return kappa[self.rot_idx]
+    
+
+    def get_density_matrices(self):
+        """ Compute total density matrix and relevant matrices for K build"""
+        # Density matrices are of course in atomic orbital basis but the coefficients are coming from fixing them in the expression for the generalised fock matrix 
+        #   
+        # Initialise densities
+        vd = np.zeros((1+self.nopen,self.nbsf,self.nbsf)) # has dimensions for core + all open shell electrons density matrices
+        # Core contribution       
+        vd[0] = 2 * self.mo_coeff[:,:self.ncore] @ self.mo_coeff[:,:self.ncore].T
+        # two comes from doubly occupying the core orbitals
+        # Contribution from each active orbital
+        for id, i in enumerate(range(self.ncore,self.nocc)):
+            # this summation runs over all the active electrons
+            vd[id+1] = self.mo_occ[i] * np.outer(self.mo_coeff[:,i],self.mo_coeff[:,i])
+            # what is the self.mo_occ vector and why are we constructing density matrices for each one - i guess cause we dont know which shell it will be in so its easiest to keep them separate for now.
+            # self.mo_occ is the vector of spatial orbtial occupation numbers.  
+
+        # Extract shell densities
+        dj  = np.einsum('kpq->pq',vd) # gives us the total density by summing over all density matrices - this is our total density of the form 2D(core) + D(active)
+        dk = np.zeros((self.nshell+1,self.nbsf,self.nbsf))
+        # self.nshell only tells us the number of open-shell electron shells - hence we need to add one in order to include the core. 
+        dk[0] = vd[0].copy() # first places the core shell
+        for Ishell in range(self.nshell): # so index runs over all active electron shells
+            shell = [1+i-self.ncore for i in self.shell_indices[Ishell]]
+            # this just gets us a new list of indices for each shell. 
+            dk[Ishell+1] += np.einsum('vpq->pq',vd[shell]) # then we sum along these indices to get density matrices for each shell. 
+        return dj, dk, vd
+
+    def get_spin_density(self):
+        """ Compute the alfa and beta density matrices"""
+        dm_tmp = np.einsum('kpq->pq',self.dk[1:])
+        rho_a, rho_b = 0.5 * self.dk[0], 0.5 * self.dk[0]
+        if(self.nopen > 0):
+            rho_a += (0.5 + self.sz / self.nopen) * dm_tmp
+            rho_b += (0.5 - self.sz / self.nopen) * dm_tmp
+        return rho_a, rho_b
+
+
+    def get_JK_matrices(self, vd):
+        ''' Compute the JK matrices and diagonal two-electron integrals
+
+            This function also computes the density matrices (maybe redundant)
+
+            Input:
+                vd: Density matrices for core and each open orbital
+
+            Returns:
+                J: Total Coulomb matrix
+                K: Exchange matrices for each shell
+                Ipqpq: Diagonal elements of J matrix
+                Ipqqp: Diagonal elements of K matrix
+        '''
+        # Build the integrals
+        self.vJ, self.vK = self.integrals.build_multiple_JK(vd,vd,self.nopen+1,self.nopen+1)
+        # vd is a an array of density matrices with vd[0]= 2*D(core), vd[1:] = D(active) but actually each active orbital has its own density matrix
+        # then these vJ and vK matrices are arrays of corresponding J K matrices.  - we can use these to build the core component of the generalised fock matrix 
+
+        # Get the total J matrix
+        J = np.einsum('kpq->pq',self.vJ) # sum over all the densities 
+        # Get exchange matrices for each shell # Best to keep them separate - why not use the shell densities directly?
+        K = np.zeros((self.nshell+1,self.nbsf,self.nbsf))
+        K[0] = self.vK[0].copy()
+        for Ishell in range(self.nshell):
+            shell = [1+i-self.ncore for i in self.shell_indices[Ishell]]
+            K[Ishell+1] += np.einsum('vpq->pq',self.vK[shell])
+        # Rescale exchange matrices as appropriate
+        K *= self.Kscale #what is this Kscale term for - i presume its for some hybrid functional thing? 
+        return J, K
+
+
+    def get_generalised_fock(self):
+        """ Compute the generalised Fock matrix in AO basis"""
+        # the choice of which orbitals are occupied is built into the self.ncore (number of core orbitals btw) and then self.nelec or whatever - this is telling us the nmber of open shell electrons - and hence the MOs is purely only the Coefficient matrix structure C(mu i) its the nth i columns that are occupied. 
+        # so we can go and change the initial guess just based on this alone and it will construct the same matrix.
+        # Initialise memory
+        F = np.zeros((self.nmo, self.nmo)) 
+
+        # Memory for diagonal elements
+        self.gen_fock_diag = np.zeros((self.nmo,self.nmo))
+        # Core contribution
+        Fcore_ao = 2 * (self.integrals.oei_matrix(True) + self.J 
+                      - 0.5 * np.sum(self.K[i] for i in range(self.nshell+1)))
+        ### Comes from the generalised Fock matrix
+
+        # XC potential contribution
+        Fcore_ao += 2 * self.vxc
+        # AO-to-MO transformation
+        Fcore_mo = np.linalg.multi_dot([self.mo_coeff.T, Fcore_ao, self.mo_coeff])
+        for i in range(self.ncore):
+            self.gen_fock_diag[i,:] = Fcore_mo.diagonal()
+        F[:self.ncore,:] = Fcore_mo[:self.ncore,:] # why is it no adding on all the rows - this is because the generalised Fock matrix has that weird factor that only depends on left index MO occupancy. 
+        # thats how they are building it! 
+
+
+        # Open-shell contributions
+        # so the a and b coupling constants are zero if included any virtual orbtials. 
+        # if the first orbital is virtual then one-electron term also zero by occupancy constant
+        for W in range(self.nshell):
+            # Need to sit on this, dont quite get this construction yet - figure out what is happening to the virtual orbital constructions?
+            # Get shell indices and coefficients
+            shell = self.shell_indices[W]
+            # One-electron matrix, Coulomb and core exchange
+            Fw_ao = self.integrals.oei_matrix(True) + self.J - 0.5 * self.K[0] #so then the exchange between the core electrons and the active and open shell electron is included
+            # why is the columb matrix no different - because just has the first term on top
+            # Different shell exchange
+            Fw_ao += np.einsum('v,vpq->pq',self.beta[W],self.K[1:])
+            # self.beta is a matrix and so then self.beta[W] returns the Wth row of the matrix as a vector - this is summed along to get the correct exchange contributions. 
+
+            # XC potential contribution
+            Fw_ao += self.vxc + self.vxc_pol
+            # AO-to-MO transformation
+            Fw_mo = np.linalg.multi_dot([self.mo_coeff.T, Fw_ao, self.mo_coeff])
+            for w in shell:
+                self.gen_fock_diag[w,:] = Fw_mo.diagonal()
+            F[shell,:] = Fw_mo[shell,:] #yes we only input in the open shell and virtual block?
+        
+        # Get diagonal J/K terms
+        Ipqpq = np.zeros((self.nopen,self.nmo))
+        Ipqqp = np.zeros((self.nopen,self.nmo))
+        for i in range(self.nopen):
+            Ji = self.mo_coeff.T @ self.vJ[1+i] @ self.mo_coeff
+            Ki = self.mo_coeff.T @ self.vK[1+i] @ self.mo_coeff
+            Ipqpq[i] = np.diag(Ji)
+            Ipqqp[i] = np.diag(Ki)
+        return F, Ipqpq, Ipqqp
+
+
+    def get_Y_intermediate(self):
+        """ Compute the Y intermediate required for Hessian evaluation
+        """
+        # Get required constants
+        nmo   = self.nmo
+        ncore = self.ncore
+        nocc = self.nocc
+
+        # Get required two-electron MO integrals
+        Cocc = self.mo_coeff[:,:nocc].copy()
+        ppoo = self.integrals.tei_ao_to_mo(self.mo_coeff,self.mo_coeff,Cocc,Cocc,True,False)
+        popo = self.integrals.tei_ao_to_mo(self.mo_coeff,Cocc,self.mo_coeff,Cocc,True,False)
+
+        # K and J in MO basis
+        Jmn  = np.einsum('pm,pq,qn->mn',self.mo_coeff, self.J, self.mo_coeff)
+        vKmn = np.einsum('pm,wpq,qn->wmn',self.mo_coeff, self.K, self.mo_coeff)
+        Kmn  = np.einsum('wpq->pq', vKmn)
+
+        # Build Ypqrs
+        Y = np.zeros((nmo,nmo,nmo,nmo))
+        # Y_imjn
+        Y[:ncore,:,:ncore,:] += 8 * np.einsum('mnij->imjn',ppoo[:,:,:ncore,:ncore]) 
+        Y[:ncore,:,:ncore,:] -= 2 * self.Kscale * np.einsum('mnji->imjn',ppoo[:,:,:ncore,:ncore])
+        Y[:ncore,:,:ncore,:] -= 2 * self.Kscale * np.einsum('mjni->imjn',popo[:,:ncore,:,:ncore])
+        for i in range(ncore):
+            Y[i,:,i,:] += 2 * Jmn - Kmn
+
+        # Y_imwn
+        Y[:ncore,:,ncore:nocc,:] = (4 * ppoo[:,:,:ncore,ncore:nocc].transpose(2,0,3,1)
+                                      - self.Kscale * ppoo[:,:,ncore:nocc,:ncore].transpose(3,0,2,1)
+                                      - self.Kscale * popo[:,ncore:nocc,:,:ncore].transpose(3,0,1,2))
+        Y[ncore:nocc,:,:ncore,:] = Y[:ncore,:,ncore:nocc,:].transpose(2,3,0,1)
+
+        # Y_wmvn
+        for W in range(self.nshell):
+            wKmn = np.einsum('v,vmn->mn',self.beta[W], vKmn[1:])
+            for V in range(W,self.nshell):
+                for w in self.shell_indices[W]:
+                    for v in self.shell_indices[V]:
+                        Y[w,:,v,:] = 2 * ppoo[:,:,w,v] + self.Kscale * self.beta[W,V] * (ppoo[:,:,v,w] + popo[:,v,:,w])
+                        if(w==v):
+                            Y[w,:,w,:] = Y[w,:,w,:] + Jmn - 0.5 * vKmn[0] + wKmn
+                        else:
+                            Y[v,:,w,:] = Y[w,:,v,:].T
+        return Y
+
+    def get_preconditioner(self):
+        """Compute approximate diagonal of Hessian"""
+        # Initialise approximate preconditioner
+        Q = np.zeros((self.nmo,self.nmo))
+
+        # Include dominate generalised Fock matrix terms
+        for p in range(self.nmo):
+            for q in range(p):
+                Q[p,q] = 2 * ( (self.gen_fock_diag[p,q] - self.gen_fock_diag[q,q]) 
+                             + (self.gen_fock_diag[q,p] - self.gen_fock_diag[p,p]) )
+           
+        # Compute two-electron corrections involving active orbitals
+        Acoeff = self.Ipqqp
+        for q in range(self.ncore,self.nocc):
+            for p in range(q):
+                Q[q,p] += 4 * (self.mo_occ[p]-self.mo_occ[q])**2 * Acoeff[q-self.ncore,p]
+            for p in range(q+1,self.nmo):
+                Q[p,q] += 4 * (self.mo_occ[p]-self.mo_occ[q])**2 * Acoeff[q-self.ncore,p]
+
+        Bcoeff = self.Kscale * (self.Ipqpq + self.Ipqqp)
+        for W in range(self.nshell):
+            for q in self.shell_indices[W]:
+                # Core-Active
+                for p in range(self.ncore):
+                    Q[q,p] -= 2 * Bcoeff[q-self.ncore,p]
+                # Active-Active
+                for V in range(W):
+                    for p in self.shell_indices[V]:
+                        Q[q,p] -= 4 * (1 + self.beta[V,W]) * Bcoeff[q-self.ncore,p]
+                # Virtual-Active
+                for p in range(self.nocc,self.nmo):
+                    Q[p,q] -= 2 * (self.mo_occ[p] + self.mo_occ[q]) * Bcoeff[q-self.ncore,p]
+
+        return np.abs(Q[self.rot_idx])
+
+    def edit_mask_by_gcoupling(self, mask):
+        r"""
+        This function looks at the genealogical coupling scheme and modifies a given mask.
+        The mask restricts the number of free parameters.
+
+        The algorithm works by looking at each column and traversing downwards the columns.
+        """
+        g_coupling_arr = list(self.spin_coupling)
+        n_dim = len(g_coupling_arr)
+        for i, gfunc in enumerate(g_coupling_arr):  # This is for the columns
+            for j in range(i + 1, n_dim):  # This is for the rows
+                if gfunc == g_coupling_arr[j]:
+                    mask[j, i] = False
+                else:
+                    break
+        return mask
+
+    def invariant_indices(self):
+        """ This function creates a matrix of boolean of size (norb,norb).
+            A True element means that this rotation should be taken into
+            account during the optimization. Taken from pySCF.mcscf.casscf
+        """
+        mask = np.zeros((self.nmo, self.nmo), dtype=bool)
+        mask[:self.ncore,:self.ncore] = True
+        for W in self.shell_indices:
+            mask[W,W] = True
+        mask[self.nocc:,self.nocc:] = True
+        return mask
+
+    def uniq_var_indices(self, frozen):
+        """ This function creates a matrix of boolean of size (norb,norb).
+            A True element means that this rotation should be taken into
+            account during the optimization. Taken from pySCF.mcscf.casscf
+        """
+        mask = np.zeros((self.nmo, self.nmo), dtype=bool)
+        # Active-core rotations
+        mask[self.ncore:self.nocc, :self.ncore] = True
+        # Virtual-Core and Virtual-Active rotations
+        mask[self.nocc:, :self.nocc] = True
+        # Active-Active rotations
+        mask[self.ncore:self.nocc, self.ncore:self.nocc] = np.tril(
+            np.ones((self.nopen, self.nopen), dtype=bool), k=-1)
+        
+        # Modify for genealogical coupling
+        if self.spin_coupling is not None:
+            mask[self.ncore:self.nocc, self.ncore:self.nocc] = self.edit_mask_by_gcoupling(
+                mask[self.ncore:self.nocc,self.ncore:self.nocc])
+            
+        # Account for any frozen orbitals   
+        if frozen is not None:
+            if isinstance(frozen, (int, np.integer)):
+                mask[:frozen] = mask[:, :frozen] = False
+            else:
+                frozen = np.asarray(frozen)
+                mask[frozen] = mask[:, frozen] = False
+        return mask
+
+
+    def koopmans(self):
+        """
+        Solve IP using Koopmans theory
+        """
+        from scipy.linalg import eigh
+        # Transform gen Fock matrix to MO basis
+        gen_fock = self.gen_fock[:self.nocc,:self.nocc]
+        gen_dens = np.diag(self.mo_occ[:self.nocc])
+        e, v = eigh(-gen_fock, gen_dens)
+        # Normalize ionization orbitals wrt standard metric
+        for i in range(self.nocc):
+            v[:,i] /= np.linalg.norm(v[:,i])
+        # Convert ionization orbitals to MO basis
+        cip = self.mo_coeff[:,:self.nocc].dot(v)
+        # Compute occupation of ionization orbitals
+        occip = np.diag(np.einsum('ip,i,iq->pq',v,self.mo_occ[:self.nocc],v))   
+        return e, cip, occip
+
+
+    def canonicalize(self):
+        """
+        Forms the canonicalised MO coefficients by diagonalising invariant 
+        subblocks of the generalised Fock matrix.
+        
+        For the virtual orbitals, we must use the standard Fock matrix as generalised Fock 
+        matrix is all zero.
+        """
+        # Initialise transformation matrix
+        self.mo_energy = np.zeros(self.nmo)
+        Q = np.zeros((self.nmo,self.nmo))
+
+        # Get core transformation using generalised Fock matrix
+        foo = self.gen_fock[self.core_indices,:][:,self.core_indices]
+        self.mo_energy[:self.ncore], Qoo = stable_eigh(foo)
+        for i, ii in enumerate(self.core_indices):
+            for j, jj in enumerate(self.core_indices):
+                Q[ii,jj] = Qoo[i,j]
+
+        # Loop over shells
+        for W in self.shell_indices:
+            fww = self.gen_fock[W,:][:,W]
+            self.mo_energy[W], Qww = stable_eigh(fww)
+            for i, ii in enumerate(W):
+                for j, jj in enumerate(W):
+                    Q[ii,jj] = Qww[i,j]
+
+        # Virtual transformation
+        # Here we use the standard Fock matrix
+        fvv = np.linalg.multi_dot([self.mo_coeff[:,self.nocc:].T, self.fock, self.mo_coeff[:,self.nocc:]])
+        self.mo_energy[self.nocc:], Qvv = stable_eigh(fvv)
+        Q[self.nocc:,self.nocc:] = Qvv
+
+        # Apply transformation
+        if(np.linalg.det(Q) < 0): Q[:,0] *= -1
+        self.mo_coeff = self.mo_coeff @ Q
+        
+        # Update generalised Fock matrix and diagonal approximations
+        self.gen_fock, self.Ipqpq, self.Ipqqp = self.get_generalised_fock()
+        return Q
+
+    def excite(self):
+        self.mo_coeff[:,[self.ncore+self.nopen-1,self.ncore+self.nopen]] = self.mo_coeff[:,[self.ncore+self.nopen,self.ncore+self.nopen-1]]
+        self.update_integrals()      
+        
+
+

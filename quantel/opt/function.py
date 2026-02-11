@@ -69,7 +69,6 @@ class Function(metaclass=ABCMeta):
             self.take_step(x2)
             f2 = self.value
             self.restore_last_step()
-
             grad[i] = (f1 - f2) / (2 * eps)
 
         return grad

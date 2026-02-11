@@ -9,7 +9,11 @@ from quantel.utils.linalg import orthogonalise, stable_eigh, matrix_print
 from quantel.gnme.csf_noci import csf_coupling, csf_coupling_slater_condon
 from .wavefunction import Wavefunction
 from quantel.utils.csf_utils import csf_reorder_orbitals
+from quantel.utils.scf_utils import mom_select, sorting_shells
+from quantel.utils.ab2_orbitals import localise_orbs
 from quantel.utils.orbital_guess import orbital_guess
+from pyscf.tools import cubegen
+from quantel.opt.max_linesearch import quadratic_model
 from quantel.utils.orbital_utils import localise_orbitals
 
 def flag_transport(A,T,mask,max_order=50,tol=1e-4):
@@ -36,7 +40,7 @@ class CSF(Wavefunction):
             - save_last_step
             - restore_step
     """
-    def __init__(self, integrals, spin_coupling, verbose=0, advanced_preconditioner=False):
+    def __init__(self, integrals, spin_coupling, verbose=0, advanced_preconditioner=False, mom_method=None, scale_core_dens = True):
         """ Initialise the CSF wave function
                 integrals     : quantel integral interface
                 spin_coupling : genealogical coupling pattern
@@ -59,6 +63,10 @@ class CSF(Wavefunction):
         self.advanced_preconditioner = advanced_preconditioner
         # Initialise spin coupling 
         self.setup_spin_coupling(spin_coupling)
+
+        # DIIS parameters 
+        self.scale_core_dens = scale_core_dens 
+        self.mom_method = mom_method 
     
     def sanity_check(self):
         '''Need to be run at the start of the kernel to verify that the number of 
@@ -129,6 +137,10 @@ class CSF(Wavefunction):
         self.rot_idx    = self.uniq_var_indices(self.frozen)
         self.invariant  = self.invariant_indices()
         self.nrot       = np.sum(self.rot_idx)
+        
+        if(self.mom_method == 'IMOM'):
+            self.Cinit = self.mo_coeff.copy()
+        
         # Initialise integrals
         if (integrals): self.update()
 
@@ -410,7 +422,8 @@ class CSF(Wavefunction):
         """Save a CSF to disk with prefix 'tag'"""
         # Save hdf5 file with mo coefficients and spin coupling
         with h5py.File(tag+'.hdf5','w') as F:
-            F.create_dataset("mo_coeff", data=self.mo_coeff[:,:self.nocc])
+            #F.create_dataset("mo_coeff", data=self.mo_coeff[:,:self.nocc])
+            F.create_dataset("mo_coeff", data=self.mo_coeff)
             F.create_dataset("spin_coupling", data=self.spin_coupling)
             F.create_dataset("energy", data=self.energy)
             F.create_dataset("s2", data=self.s2)
@@ -479,10 +492,13 @@ class CSF(Wavefunction):
         """Read a CSF wavefunction from disk with prefix 'tag'"""
         with h5py.File(tag+'.hdf5','r') as F:
             mo_read = F['mo_coeff'][:]
-            spin_coupling = str(F['spin_coupling'][...])[2:-1]
-        
-        # Initialise the wave function
-        self.initialise(mo_read, spin_coupling=spin_coupling)        
+            try: 
+                spin_coupling = str(F['spin_coupling'][...])[2:-1]
+            except: 
+                spin_coupling = "cs"  
+            
+            # Initialise wave function    
+            self.initialise(mo_read, spin_coupling=spin_coupling)  
                
         # Check the input
         if mo_read.shape[0] != self.nbsf:
@@ -526,12 +542,10 @@ class CSF(Wavefunction):
         self.initialise(Cguess, spin_coupling=self.spin_coupling)
         return
 
-
     def restore_last_step(self):
         """ Restore MO coefficients to previous step"""
         self.mo_coeff = self.mo_coeff_save.copy()
         self.update()
-
 
     def save_last_step(self):
         """ Save MO coefficients"""
@@ -544,13 +558,11 @@ class CSF(Wavefunction):
         self.rotate_orb(step[:self.nrot])
         self.update()
 
-
     def rotate_orb(self, step):
         """ Rotate molecular orbital coefficients with a step"""
         orb_step = np.zeros((self.nmo, self.nmo))
         orb_step[self.rot_idx] = step
         self.mo_coeff = np.dot(self.mo_coeff, scipy.linalg.expm(orb_step - orb_step.T))
-
 
     def transform_vector(self,vec,step,X=None):
         """ Perform orbital rotation for vector in tangent space"""
@@ -579,8 +591,19 @@ class CSF(Wavefunction):
 
         # Return transformed vector
         return kappa[self.rot_idx]
+   
+    def try_fock(self, fock_vec):
+        """ Diagonalise extrapolated generalised coupling operator, update coefficients and integrals """ 
+        self.gen_coupling = fock_vec.reshape((self.nmo, self.nmo)).T  
+        self.diagonalise_gen_coupling()
     
-
+    def get_diis_error(self): 
+        X = self.integrals.orthogonalization_matrix()
+        R = self.offdiag_gen_coupling.copy() 
+        err_vec = np.linalg.multi_dot(( X.T, R, X )) 
+        err_vec -= err_vec.T
+        return err_vec.ravel(), np.linalg.norm(err_vec)
+ 
     def get_density_matrices(self):
         """ Compute total density matrix and relevant matrices for K build"""
         # Initialise memory
@@ -650,9 +673,7 @@ class CSF(Wavefunction):
 
         # Get the total J matrix
         J = np.einsum('kpq->pq',vJ)
-
         return J, vK
-
 
     def get_generalised_fock(self):
         """ Compute the generalised Fock matrix in MO basis"""
@@ -679,7 +700,96 @@ class CSF(Wavefunction):
             F[shell,:] = Fshell[W+1][shell,:]
         
         return F, Fshell
+    
+    def get_fock(self, additional_focks=None): 
+        """ Compute generalised coupling operator in AO basis for DIIS extrapolation """
+        metric = self.integrals.overlap_matrix()  
+        X = self.integrals.orthogonalization_matrix()
+        # 
+        R = np.zeros((self.nbsf, self.nbsf), dtype=float)
+        self.offdiag_gen_coupling = np.zeros((self.nbsf, self.nbsf), dtype=float)
+        # Get scaled shell densities and compute virtual density
+        Q = np.linalg.multi_dot(( self.mo_coeff[:,self.nopen+self.ncore:].copy(), self.mo_coeff[:, self.nopen+self.ncore:].copy().T  ))
+        # Scale the core density to cancel out additional factor of 2 
+        Pi = [ p.copy() for p in self.vd ]
+        if self.scale_core_dens: 
+            Pi[0] *= 0.5
+        
+        # Focks in AO basis
+        Fshell = [ np.linalg.multi_dot((metric,  self.mo_coeff, fock_shell, self.mo_coeff.T, metric  )) for fock_shell in self.fock_shell[:] ]
+        # Additional Fock terms for ROKS child class   
+        if additional_focks is not None:  
+            Fshell = [  fock + additional_focks[W] for W,fock in enumerate(Fshell)  ]   
+        
+        # Diagonal blocks 
+        # Occupied shell contributions
+        for W in range(self.nshell+1):
+            R += np.linalg.multi_dot(( Pi[W], Fshell[W], Pi[W] ))  
+        # Virtual shell contribution
+        for shell in Fshell[:]: 
+            R += np.linalg.multi_dot(( Q , shell , Q  ))  
+        
+        # Off diagonal blocks
+        # (core/active, core/active)
+        for W1 in range(self.nshell+1):
+            for W2 in range(W1+1,self.nshell+1):
+                upper = np.linalg.multi_dot(( Pi[W1], Fshell[W1] - Fshell[W2] , Pi[W2]  )) 
+                lower= np.linalg.multi_dot((  Pi[W2], Fshell[W1] - Fshell[W2] , Pi[W1] ))  
+                R += upper + lower
 
+                #self.offdiag_gen_coupling += upper  
+                if self.scale_core_dens and ( W1==0 or W2==0 ): 
+                    self.offdiag_gen_coupling += 2*upper
+                else: 
+                    self.offdiag_gen_coupling += upper  
+        # (core/active, virtual)
+        for W in range(self.nshell+1):
+            upper = np.linalg.multi_dot(( Pi[W], Fshell[W] , Q ))  
+            lower = np.linalg.multi_dot(( Q, Fshell[W] , Pi[W]  ))  
+            R += upper + lower
+            
+            #self.offdiag_gen_coupling += upper   
+            if self.scale_core_dens and ( W==0 ): 
+                self.offdiag_gen_coupling += 2*upper
+            else: 
+                self.offdiag_gen_coupling += upper  
+  
+        self.gen_coupling = np.linalg.multi_dot((metric, R, metric )) 
+        self.offdiag_gen_coupling = np.linalg.multi_dot((metric, self.offdiag_gen_coupling, metric )) 
+        return self.gen_coupling.reshape((-1))       
+    
+    def diagonalise_gen_coupling(self):
+        X = self.integrals.orthogonalization_matrix()
+        #metric = self.integrals.overlap_matrix()  
+        Ft = np.linalg.multi_dot([X.T, self.gen_coupling, X])
+        # Diagonalise the Fock matrix
+        Et, Ct = np.linalg.eigh(Ft)
+        # Transform back to the original basis
+        Cnew = np.dot(X, Ct)
+
+        # Select occupied orbitals using MOM if specified
+        if(self.mom_method =='MOM'):
+            Cold = self.mo_coeff.copy()
+            projections = self.shell_projection(Cold, Cnew)
+            self.mo_coeff, order = sorting_shells(self, Cnew, projections)
+        elif(self.mom_method == 'IMOM'):
+            projections = self.shell_projection(self.Cinit, Cnew)
+            self.mo_coeff, order  = sorting_shells(self, Cnew, projections)
+        else:
+            self.mo_coeff = Cnew.copy()
+
+        # Save current orbital energies
+        self.update()
+        # Update gen. coupling to avoid unecessary cost in update() 
+        #self.get_fock() 
+
+    def shell_projection(self, Cold, Cnew):
+        projections = np.zeros((self.nmo, self.nshell+1)) 
+        occ_shell_indices = [self.core_indices] + self.shell_indices 
+        for W,shell in enumerate(occ_shell_indices): 
+            p = np.einsum('pj,pq,ql->l', Cold[:,shell], self.integrals.overlap_matrix() ,Cnew,optimize="optimal")
+            projections[:,W] = np.abs(p)
+        return projections 
 
     def get_Y_intermediate(self):
         """ Compute the Y intermediate required for Hessian evaluation
@@ -690,7 +800,7 @@ class CSF(Wavefunction):
         nocc = self.nocc
 
         # Get required two-electron MO integrals
-        Cocc = self.mo_coeff[:,:nocc].copy()
+        Cocc = self.mo_coeff[:,:nocc].copy() #exactly we dont need the occupied ones since we know the constants will be zero! 
         ppoo = self.integrals.tei_ao_to_mo(self.mo_coeff,self.mo_coeff,Cocc,Cocc,True,False)
         popo = self.integrals.tei_ao_to_mo(self.mo_coeff,Cocc,self.mo_coeff,Cocc,True,False)
 
@@ -849,7 +959,6 @@ class CSF(Wavefunction):
                                                        self.mo_coeff[:,shell])
         self.update()
 
-
     def koopmans(self):
         """
         Solve IP using Koopmans theory
@@ -919,6 +1028,14 @@ class CSF(Wavefunction):
         self.update()
         return Q
 
+    def mo_cubegen(self,idx,fname=""): 
+        """ Generate and store cube files for specified MOs
+                idx : list of MO indices 
+        """
+        # Saves MOs as cubegen files
+        for mo in idx: 
+            cubegen.orbital(self.integrals.mol, fname+f".mo.{mo}.cube", self.mo_coeff[:,mo])
+
     def get_anion_exchange(self):
         """Compute the exchange coupling coefficients for adding + or - electron on average."""
         # Addition of '+' electron
@@ -933,3 +1050,34 @@ class CSF(Wavefunction):
             dbeta *= 0.5
 
         return dbeta
+
+    def localise(self): 
+        """ Perform PM localisation on orbitals within occupied shells """ 
+        occ_shells = [self.core_indices] + self.shell_indices 
+        stabilities = [] 
+        ds = [] 
+        for shell in occ_shells: 
+            isstable, d = localise_orbs(self, shell)
+            stabilities.append(isstable) 
+            ds.append(d)
+        return stabilities, ds
+
+##########
+    def tracking_hessian(self): 
+        #Ok find the lowest positive eigenvalue of the hessian
+        eigs, x = self.get_davidson_hessian_index(approx_hess=True, _plev=1) 
+        down=self.hess_index[-1]
+        print("  Down: ", down)
+        step = x[:, down]
+        #
+        optim_step, sufficient_increase = quadratic_model(self, step)
+        if sufficient_increase:
+            print("  Taken step to maximum") 
+            self.take_step(step)
+        else: 
+            print("  Step is too small an increase but its fine")
+            self.take_step(step)
+        return                     
+
+
+ 
