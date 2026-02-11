@@ -59,7 +59,7 @@ class GMF:
         # Initialise reference energy
         grad = obj.gradient
         prec = obj.get_preconditioner(abs=False)
-        eigval, evec = Davidson(nreset=50).run(obj.approx_hess_on_vec,prec,index+1,tol=1e-4,plev=0)
+        eigval, evec = Davidson(nreset=50).run(obj.hess_on_vec,prec,index+1,tol=1e-4,plev=0)
         gmod = self.get_gmf_gradient(obj,grad,index,eigval[:index],evec[:,:index])
 
         if plev>0:
@@ -103,7 +103,6 @@ class GMF:
             qn_count += 1
             if(np.dot(step,grad) > 0):
                 # Need to make sure  s.g < 0 to maintain positive-definite L-BFGS Hessian 
-                print("Step has positive overlap with gradient - reversing direction")
                 step *= -1
                 comment = comment + "reversed "
 
@@ -118,6 +117,7 @@ class GMF:
             # Check for step length converged
             step_length = np.linalg.norm(step)
             if(step_length < thresh*thresh):
+                print("  Step length is too small")
                 return True
 
             # Take the step
@@ -140,7 +140,7 @@ class GMF:
 
             # Compute n lowest eigenvalues
             prec = obj.get_preconditioner(abs=True)
-            eigval, evec = Davidson(nreset=50).run(obj.approx_hess_on_vec,prec,index+1,xguess=evec,tol=1e-4,plev=1)
+            eigval, evec = Davidson(nreset=50).run(obj.hess_on_vec,prec,index+1,xguess=evec,tol=1e-4,plev=0)
 
             # Compute new GMF gradient (need to parallel transport Hessian eigenvector)
             grad = obj.gradient
@@ -157,9 +157,10 @@ class GMF:
         # Save end time and report duration
         kernel_end_time = datetime.datetime.now()
         computation_time = kernel_end_time - kernel_start_time
-        if plev>0: print("  Generalised mode following walltime: ", computation_time.total_seconds(), " seconds")
-        obj.get_davidson_hessian_index(guess=evec)
-
+        if plev>0: 
+            print("  Generalised mode following walltime: ", computation_time.total_seconds(), " seconds")
+            print("  Converged: ", converged)
+        sys.stdout.flush()
         return converged
 
     def get_gmf_gradient(self,obj,grad,n,e,x):
