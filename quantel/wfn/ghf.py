@@ -54,7 +54,7 @@ class GHF(Wavefunction):
         self.ghf_overlap = np.kron(np.eye(2),integrals.overlap_matrix())
         self.ghf_X = np.kron(np.eye(2), integrals.orthogonalization_matrix())
     
-    def initialise(self, mo_guess, ci_guess=None):
+    def initialise(self, mo_guess, ci_guess=None, integrals=True):
         """Initialise the wave function with a set of molecular orbital coefficients"""
         # Make sure orbitals are orthogonal
         self.mo_coeff = orthogonalise(mo_guess, self.ghf_overlap)
@@ -62,7 +62,7 @@ class GHF(Wavefunction):
         if(self.mom_method == 'IMOM'):
             self.Cinit = self.mo_coeff.copy()
         # Update the density and Fock matrices
-        self.update()
+        if(integrals): self.update()
 
     @property
     def dim(self):
@@ -235,10 +235,10 @@ class GHF(Wavefunction):
         # Initialise object
         self.initialise(mo_read)
 
-    def copy(self):
+    def copy(self,integrals=True):
         """Return a copy of the current RHF object"""
         them = GHF(self.integrals, verbose=self.verbose)
-        them.initialise(self.mo_coeff)
+        them.initialise(self.mo_coeff, integrals=integrals)
         return them
 
     def overlap(self, them):

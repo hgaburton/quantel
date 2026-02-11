@@ -130,7 +130,7 @@ class Function(metaclass=ABCMeta):
             else:         nzero +=1 
         return (ndown, nzero, nuphl)
 
-    def get_davidson_hessian_index(self, ntarget=5, eps=1e-5, approx_hess=True):
+    def get_davidson_hessian_index(self, ntarget=5, eps=1e-5, approx_hess=True, plev=1):
         """Iteratively compute Hessian index from gradient only. 
            This approach uses the Davidson algorithm."""
         # Get approximate diagonal terms
@@ -138,23 +138,23 @@ class Function(metaclass=ABCMeta):
 
         # Start with 5 eigenvalues
         nv = ntarget
-        david = Davidson(nreset=50)
-        # Initialise from the lowest diagonal elements
-        x = np.zeros((diag.size, nv),order='F')
-        for i, j in enumerate(np.argsort(diag)[:nv]):
-            x[j,i] = 1.0
+        david = Davidson()
 
         # Get lowest eigenvalues through Davidson algorithm
-        if(approx_hess):
-            eigs, x = david.run(self.approx_hess_on_vec,diag,nv,
-                            xguess=x,plev=2,tol=1e-4,maxit=1000, Hv_args={'eps':eps})
-        else:
-            eigs, x = david.run(self.hess_on_vec,diag,nv,
-                            xguess=x,plev=2,tol=1e-4,maxit=1000)
-
-        # Augment with more columns and try again
-        x  = np.column_stack([x, np.random.rand(diag.size,5)])
-        nv = x.shape[1]
+        converged = False
+        xguess = None
+        while(not converged):
+            if(approx_hess):
+                eigs, x = david.run(self.approx_hess_on_vec,diag,nv,xguess=xguess,
+                                    plev=plev,tol=1e-4,maxit=1000, Hv_args={'eps':eps})
+            else:
+                eigs, x = david.run(self.hess_on_vec,diag,nv,xguess=xguess,
+                                    plev=plev,tol=1e-4,maxit=1000)
+            if(np.sum(eigs<1e-16) < nv):
+                converged = True
+            else: 
+                xguess = np.hstack([x, np.random.uniform(-1.0,1.0,size=(self.dim,2))])
+                nv += 2
 
         # Count the Hessian index
         ndown = 0

@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 # Modified from ss_casscf code of Antoine Marie and Hugh G. A. Burton
 # This is code for a CSF, which can be formed in a variety of ways.
+from pdb import pm
 import numpy as np
 import scipy, quantel, h5py
 from quantel.utils.csf_utils import verify_spin_coupling, get_shells, get_shell_exchange, get_csf_vector
@@ -13,6 +14,7 @@ from quantel.utils.ab2_orbitals import localise_orbs
 from quantel.utils.orbital_guess import orbital_guess
 from pyscf.tools import cubegen
 from quantel.opt.max_linesearch import quadratic_model
+from quantel.utils.orbital_utils import localise_orbs
 
 def flag_transport(A,T,mask,max_order=50,tol=1e-4):
    tA = A.copy()
@@ -947,6 +949,15 @@ class CSF(Wavefunction):
                 frozen = np.asarray(frozen)
                 mask[frozen] = mask[:, frozen] = False
         return mask
+
+
+    def localise_orbitals(self,pop_method='becke'):
+        """ Localise occupied orbitals for each shell using Pipek-Mezey localisation"""
+        # Localise each shell individually
+        for shell in self.shell_indices:
+            self.mo_coeff[:,shell] = localise_orbitals(self.integrals.molecule(),
+                                                       self.mo_coeff[:,shell])
+        self.update()
 
     def koopmans(self):
         """

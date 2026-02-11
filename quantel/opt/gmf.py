@@ -30,7 +30,7 @@ class GMF:
             else: 
                 self.control[key] = kwargs[key]
 
-    def run(self, obj, thresh=1e-8, maxit=100, index=0, plev=1):
+    def run(self, obj, evec_init=None, thresh=1e-6, maxit=100, index=0, plev=1):
         ''' Run the optimisation for a particular objective function obj.
             
             obj must have the following methods implemented:
@@ -56,18 +56,28 @@ class GMF:
         max_subspace = self.control["max_subspace"]
         maxstep = self.control["maxstep"]
 
+        if plev>0:
+            print(f"    > Num. MOs       = {obj.nmo: 6d}")
+            print(f"    > Num. params    = {obj.dim: 6d}")
+            print(f"    > Max subspace   = {max_subspace: 6d}")
+            print(f"    > Max step size  = {self.control['maxstep']: 6.3f}")
+            print(f"    > Parallel tr.   = {self.control['with_transport']}")
+            print(f"    > Pseudo-canon.  = {self.control['with_canonical']}")
+            print(f"    > Canon interval = {self.control['canonical_interval']}")
+            print()
+
+        # Pseudo-canonicalize to help the Davidson converge (more diagonal Hessian)
+        if(self.control["with_canonical"]):
+            X = obj.canonicalize()
+
+        # Setup Davidson solver
+        davidson = Davidson(nreset=50,basis_per_root=8)
+        
         # Initialise reference energy
         grad = obj.gradient
         prec = obj.get_preconditioner(abs=False)
-        eigval, evec = Davidson(nreset=50).run(obj.hess_on_vec,prec,index+1,tol=1e-4,plev=0)
+        eigval, evec = davidson.run(obj.hess_on_vec,prec,index+1,tol=1e-4,plev=0,xguess=evec_init)
         gmod = self.get_gmf_gradient(obj,grad,index,eigval[:index],evec[:,:index])
-
-        if plev>0:
-            print(f"    > Num. MOs     = {obj.nmo: 6d}")
-            print(f"    > Num. params  = {obj.dim: 6d}")
-            print(f"    > Max subspace = {max_subspace: 6d}")
-            print(f"    > Max step     = {maxstep: 6.3f}")
-            print()
 
         # Initialise lists for subspace vectors
         v_step = []
@@ -130,6 +140,7 @@ class GMF:
             if(self.control["with_canonical"] and np.mod(qn_count,self.control["canonical_interval"])==0):
                 #print("  Pseudo-canonicalising the orbitals")
                 X = obj.canonicalize()
+                pass
 
             # Parallel transport previous vectors
             if(self.control["with_transport"]):
@@ -140,8 +151,8 @@ class GMF:
 
             # Compute n lowest eigenvalues
             prec = obj.get_preconditioner(abs=True)
-            eigval, evec = Davidson(nreset=50).run(obj.hess_on_vec,prec,index+1,xguess=evec,tol=1e-4,plev=0)
-
+            eigval, evec = davidson.run(obj.hess_on_vec,prec,index+1,xguess=evec,tol=1e-4,plev=0)
+            
             # Compute new GMF gradient (need to parallel transport Hessian eigenvector)
             grad = obj.gradient
             gmod = self.get_gmf_gradient(obj,grad,index,eigval[:index],evec[:,:index])
@@ -172,10 +183,6 @@ class GMF:
         """
         if(n==0):
             return grad, None
-
-        # Compute n lowest eigenvalues
-        #prec = obj.get_preconditioner()
-        #e, x = Davidson(nreset=50).run(obj.approx_hess_on_vec,prec,n,xguess=xguess,tol=1e-4,plev=0)
 
         # Then project gradient as required
         if(e[n-1] < 0):

@@ -288,13 +288,6 @@ class ROKS(CSF):
         newcsf.initialise(self.mo_coeff,spin_coupling=self.spin_coupling,integrals=integrals)
         return newcsf
 
-    #comment this out so that it inherits the CSF overlap function
-    #def overlap(self, them):
-    #    """ So then need to compute the overlap in a CSF like manner with the configurations from the auxillary coupling 
-    #     """
-    #    #raise NotImplementedError("ROKS overlap coupling not yet implemented")
-        
-
     def hamiltonian(self, them):
         """ Compute the Hamiltonian coupling between two CSF objects
         """
