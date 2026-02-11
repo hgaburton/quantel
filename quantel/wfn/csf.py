@@ -14,7 +14,7 @@ from quantel.utils.ab2_orbitals import localise_orbs
 from quantel.utils.orbital_guess import orbital_guess
 from pyscf.tools import cubegen
 from quantel.opt.max_linesearch import quadratic_model
-from quantel.utils.orbital_utils import localise_orbs
+from quantel.utils.orbital_utils import localise_orbitals
 
 def flag_transport(A,T,mask,max_order=50,tol=1e-4):
    tA = A.copy()
