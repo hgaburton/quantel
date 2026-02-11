@@ -8,11 +8,10 @@ from quantel.utils.linalg import orthogonalise, stable_eigh, matrix_print
 from quantel.gnme.csf_noci import csf_coupling, csf_coupling_slater_condon
 from .wavefunction import Wavefunction
 from quantel.utils.csf_utils import csf_reorder_orbitals
-from quantel.utils.scf_utils import mom_select
+from quantel.utils.scf_utils import mom_select, sorting_shells
 from quantel.utils.orbital_guess import orbital_guess
 from pyscf.tools import cubegen
 from quantel.opt.max_linesearch import quadratic_model
-from quantel.wfn.sorting_shell_occupations import sorting_shells
 
 def flag_transport(A,T,mask,max_order=50,tol=1e-4):
    tA = A.copy()
@@ -38,7 +37,7 @@ class CSF(Wavefunction):
             - save_last_step
             - restore_step
     """
-    def __init__(self, integrals, spin_coupling, verbose=0, advanced_preconditioner=False):
+    def __init__(self, integrals, spin_coupling, verbose=0, advanced_preconditioner=False, mom_method=None, scale_core_dens = True):
         """ Initialise the CSF wave function
                 integrals     : quantel integral interface
                 spin_coupling : genealogical coupling pattern
@@ -61,6 +60,10 @@ class CSF(Wavefunction):
         self.advanced_preconditioner = advanced_preconditioner
         # Initialise spin coupling 
         self.setup_spin_coupling(spin_coupling)
+
+        # DIIS parameters 
+        self.scale_core_dens = scale_core_dens 
+        self.mom_method = mom_method 
     
     def sanity_check(self):
         '''Need to be run at the start of the kernel to verify that the number of 
@@ -131,6 +134,10 @@ class CSF(Wavefunction):
         self.rot_idx    = self.uniq_var_indices(self.frozen)
         self.invariant  = self.invariant_indices()
         self.nrot       = np.sum(self.rot_idx)
+        
+        if(self.mom_method == 'IMOM'):
+            self.Cinit = self.mo_coeff.copy()
+        
         # Initialise integrals
         if (integrals): self.update()
 
@@ -478,21 +485,17 @@ class CSF(Wavefunction):
         if mo_read.shape[1] > self.nmo:
             raise ValueError("Too many orbitals in file")
 
-    def read_from_disk(self, tag, gcoup = False):
-        #NOTE: have added the gcoup value to tell us we are going to pick up the spin coupling vector from old file
+    def read_from_disk(self, tag):
         """Read a CSF wavefunction from disk with prefix 'tag'"""
-        # added this gcoup business in order to read from rhf wfn but really should have it here
-        # gcoup = True - we try and read the old wfns spin coupling and replace this
         with h5py.File(tag+'.hdf5','r') as F:
             mo_read = F['mo_coeff'][:]
-            if gcoup:
+            try: 
                 spin_coupling = str(F['spin_coupling'][...])[2:-1]
-        
-        # Initialise the wave function
-        if gcoup: 
+            except: 
+                spin_coupling = "cs"  
+            
+            # Initialise wave function    
             self.initialise(mo_read, spin_coupling=spin_coupling)  
-        else: 
-            self.initialise(mo_read)  
                
         # Check the input
         if mo_read.shape[0] != self.nbsf:
@@ -536,12 +539,10 @@ class CSF(Wavefunction):
         self.initialise(Cguess, spin_coupling=self.spin_coupling)
         return
 
-
     def restore_last_step(self):
         """ Restore MO coefficients to previous step"""
         self.mo_coeff = self.mo_coeff_save.copy()
         self.update()
-
 
     def save_last_step(self):
         """ Save MO coefficients"""
@@ -553,7 +554,6 @@ class CSF(Wavefunction):
         self.save_last_step()
         self.rotate_orb(step[:self.nrot])
         self.update()
-
 
     def rotate_orb(self, step):
         """ Rotate molecular orbital coefficients with a step"""
@@ -589,16 +589,18 @@ class CSF(Wavefunction):
         # Return transformed vector
         return kappa[self.rot_idx]
    
-    def try_fock(self, fock_vec): 
-        self.generalised_coupling_operator = fock_vec.reshape((self.nmo, self.nmo)).T
-        self.diagonalise_generalised_coupling_operator()
- 
-    def get_diis_error(self):
-        """Compute the DIIS error vector and DIIS error"""
-        err_vec  = np.linalg.multi_dot([self.generalised_coupling_operator, self.dens, self.integrals.overlap_matrix()])
+    def try_fock(self, fock_vec):
+        """ Diagonalise extrapolated generalised coupling operator, update coefficients and integrals """ 
+        self.gen_coupling = fock_vec.reshape((self.nmo, self.nmo)).T  
+        self.diagonalise_gen_coupling()
+    
+    def get_diis_error(self): 
+        X = self.integrals.orthogonalization_matrix()
+        R = self.offdiag_gen_coupling.copy() 
+        err_vec = np.linalg.multi_dot(( X.T, R, X )) 
         err_vec -= err_vec.T
-        return err_vec.ravel(), np.linalg.norm(err_vec)   
-
+        return err_vec.ravel(), np.linalg.norm(err_vec)
+ 
     def get_density_matrices(self):
         """ Compute total density matrix and relevant matrices for K build"""
         # Initialise memory
@@ -668,9 +670,7 @@ class CSF(Wavefunction):
 
         # Get the total J matrix
         J = np.einsum('kpq->pq',vJ)
-
         return J, vK
-
 
     def get_generalised_fock(self):
         """ Compute the generalised Fock matrix in MO basis"""
@@ -697,116 +697,99 @@ class CSF(Wavefunction):
             F[shell,:] = Fshell[W+1][shell,:]
         
         return F, Fshell
-
-    def get_generalised_fock_aos(self):
-        """ Compute the generalised Fock matrix in MO basis"""
-        # Build fock matrix for each shell 
-        Fshell = np.zeros((1+self.nshell,self.nbsf,self.nbsf))
-
-        # Core contribution
-        Fcore_ao = 2 * (self.integrals.oei_matrix(True) + self.J 
-                      - 0.5 * np.sum(self.K[i] for i in range(self.nshell+1)))
-        Fshell[0] = Fcore_ao
-
-        # Open-shell contributions
-        for W, shell in enumerate(self.shell_indices):
-            # One-electron matrix, Coulomb and core exchange
-            Fw_ao = self.integrals.oei_matrix(True) + self.J - 0.5 * self.K[0]
-            # Different shell exchange
-            Fw_ao += np.einsum('v,vpq->pq',self.beta[W],self.K[1:])
-            # AO-to-MO transformation
-            Fshell[W+1] = Fw_ao
+    
+    def get_fock(self, additional_focks=None): 
+        """ Compute generalised coupling operator in AO basis for DIIS extrapolation """
+        metric = self.integrals.overlap_matrix()  
+        X = self.integrals.orthogonalization_matrix()
+        # 
+        R = np.zeros((self.nbsf, self.nbsf), dtype=float)
+        self.offdiag_gen_coupling = np.zeros((self.nbsf, self.nbsf), dtype=float)
+        # Get scaled shell densities and compute virtual density
+        Q = np.linalg.multi_dot(( self.mo_coeff[:,self.nopen+self.ncore:].copy(), self.mo_coeff[:, self.nopen+self.ncore:].copy().T  ))
+        # Scale the core density to cancel out additional factor of 2 
+        Pi = [ p.copy() for p in self.vd ]
+        if self.scale_core_dens: 
+            Pi[0] *= 0.5
         
-        return Fshell
-
-    def get_generalised_coupling_operator(self): 
-        R = np.zeros((self.nmo, self.nmo))
-        F, Fshell = self.get_generalised_fock()
-        #Fshell = np.array(Fshell)
-        # shell indices for all the occupied shells 
-        all_shell_indices = [self.core_indices.copy()] + self.shell_indices.copy() 
-        # Start with diagonal elements: 
+        # Focks in AO basis
+        Fshell = [ np.linalg.multi_dot((metric,  self.mo_coeff, fock_shell, self.mo_coeff.T, metric  )) for fock_shell in self.fock_shell[:] ]
+        # Additional Fock terms for ROKS child class   
+        if additional_focks is not None:  
+            print("going through") 
+            Fshell = [  fock + additional_focks[W] for W,fock in enumerate(Fshell)  ]   
+        
+        # Diagonal blocks 
         # Occupied shell contributions
-        for W, shell in enumerate(all_shell_indices):
-            R[shell, shell] = Fshell[W][shell, shell] 
-       
+        for W in range(self.nshell+1):
+            R += np.linalg.multi_dot(( Pi[W], Fshell[W], Pi[W] ))  
         # Virtual shell contribution
-        vir_shell_indices=[i for i in range(self.ncore +self.nopen, self.nmo)] 
-        R[vir_shell_indices, vir_shell_indices] = np.sum([shell_fock[vir_shell_indices, vir_shell_indices] for shell_fock in Fshell] ) 
-
-        # Off diagonal blocks
-        # occupied - occupied
-        for W1, shell1 in enumerate(all_shell_indices): 
-            for W2 in range(W1+1, len(all_shell_indices)): 
-                shell2 = all_shell_indices[W2]
-                R[np.ix_(shell1, shell2)] = Fshell[W2][ np.ix_(shell1, shell2)] - Fshell[W1][ np.ix_(shell1, shell2)] 
-                R[np.ix_(shell2, shell1)] = Fshell[W1][ np.ix_(shell2, shell1)] - Fshell[W2][ np.ix_(shell2, shell1)] 
-                 
-        # occupied - virtual
-        for W, shell in enumerate(all_shell_indices):
-            R[np.ix_(shell, vir_shell_indices)] = Fshell[W][ np.ix_(shell, vir_shell_indices)]  
-            R[np.ix_(vir_shell_indices, shell)] = Fshell[W][ np.ix_(vir_shell_indices, shell)] 
-        self.generalised_coupling_operator = R 
-        return R       
-
-    def cascade_diagonalise_operator(self): 
-        #
-        all_shell_indices = [self.core_indices.copy()] + self.shell_indices.copy() + [[i for i in range(self.ncore + self.nopen, self.nmo)]]
-        ###
-        # Get the shell fock matrices in atomic orbital basis      
-        Fshell = self.get_generalised_fock_aos()
-        #
-        C0 = self.mo_coeff.copy()
-        #all occupied shells and virtuals - do orbital assignment according to a MOM like update no?
-        for i in range(self.nshell+1): 
-            d = Fshell[i].copy()
-            C = C0.copy()[:, all_shell_indices[i] + all_shell_indices[-1]]
-            D = np.linalg.multi_dot((C.T, d, C)) 
-            _ , U = np.linalg.eigh(D) 
-            C1 = np.dot(C, U)       
-            C0[:, all_shell_indices[i] + all_shell_indices[-1]]= C1
-        # now need to loop over all the core-active and active-active elements orbitals 
-        for first_active in range(self.nshell+1):
-            for i in range(first_active+1, self.nshell+1):
-                C = C0[:, all_shell_indices[first_active]+all_shell_indices[i]]
-                d = Fshell[first_active].copy() - Fshell[i].copy()
-                D = np.linalg.multi_dot((C.T, d, C)) 
-                eigvals, U = np.linalg.eigh(D) 
-                C1 = np.dot(C, U)       
-                C0[:, all_shell_indices[first_active] + all_shell_indices[i]] = C1
+        for shell in Fshell[:]: 
+            R += np.linalg.multi_dot(( Q , shell , Q  ))  
         
-        return C0 
-    
+        # Off diagonal blocks
+        # (core/active, core/active)
+        for W1 in range(self.nshell+1):
+            for W2 in range(W1+1,self.nshell+1):
+                upper = np.linalg.multi_dot(( Pi[W1], Fshell[W1] - Fshell[W2] , Pi[W2]  )) 
+                lower= np.linalg.multi_dot((  Pi[W2], Fshell[W1] - Fshell[W2] , Pi[W1] ))  
+                R += upper + lower
 
+                #self.offdiag_gen_coupling += upper  
+                if self.scale_core_dens and ( W1==0 or W2==0 ): 
+                    self.offdiag_gen_coupling += 2*upper
+                else: 
+                    self.offdiag_gen_coupling += upper  
+        # (core/active, virtual)
+        for W in range(self.nshell+1):
+            upper = np.linalg.multi_dot(( Pi[W], Fshell[W] , Q ))  
+            lower = np.linalg.multi_dot(( Q, Fshell[W] , Pi[W]  ))  
+            R += upper + lower
+            
+            #self.offdiag_gen_coupling += upper   
+            if self.scale_core_dens and ( W==0 ): 
+                self.offdiag_gen_coupling += 2*upper
+            else: 
+                self.offdiag_gen_coupling += upper  
+  
+        self.gen_coupling = np.linalg.multi_dot((metric, R, metric )) 
+        self.offdiag_gen_coupling = np.linalg.multi_dot((metric, self.offdiag_gen_coupling, metric )) 
+        return self.gen_coupling.reshape((-1))       
     
-    def diagonalise_generalised_coupling_operator(self, thresh=1e-8): 
-        #Do this with some MOM type update, but could just do an aufbau filling
-        self.canonicalize()
-        Rold = self.get_generalised_coupling_operator() 
-        eigvals, evecs = np.linalg.eigh(Rold)
-        Cold = self.mo_coeff.copy()
-        Cnew = np.dot(Cold, evecs)
-        ###
-        #all_shell_indices = [self.core_indices.copy()] + self.shell_indices.copy() 
-        #Cshell = [] 
-        #for shell in all_shell_indices: 
-        #    Cshell.append(Cold[:,shell]) 
-        #projections = np.zeros((self.nmo, self.nshell + 1)) 
-        # Need to compute the projection of every orbital onto each old shell. 
-        #for w in range(self.nshell+1):
-        #    projs, _ = mom_select( Cshell[w], self.integrals.overlap_matrix(), Cnew )
-        #    projections[:,w] = projs
-        #Cnew = sorting_shells(self, projections)  
-        self.mo_coeff = Cnew 
+    def diagonalise_gen_coupling(self):
+        X = self.integrals.orthogonalization_matrix()
+        #metric = self.integrals.overlap_matrix()  
+        Ft = np.linalg.multi_dot([X.T, self.gen_coupling, X])
+        # Diagonalise the Fock matrix
+        Et, Ct = np.linalg.eigh(Ft)
+        # Transform back to the original basis
+        Cnew = np.dot(X, Ct)
+
+        # Select occupied orbitals using MOM if specified
+        if(self.mom_method =='MOM'):
+            #self.canonicalize() 
+            Cold = self.mo_coeff.copy()
+            projections = self.shell_projection(Cold, Cnew)
+            self.mo_coeff, order = sorting_shells(self, Cnew, projections)
+        elif(self.mom_method == 'IMOM'):
+            projections = self.shell_projection(self.Cinit, Cnew)
+            #projections[:,1:] *= 100 
+            self.mo_coeff, order  = sorting_shells(self, Cnew, projections)
+        else:
+            self.mo_coeff = Cnew.copy()
+
+        # Save current orbital energies
         self.update()
-        # Do something here to check convergence - if check if its diagonal
-        self.generalised_coupling_operator = self.get_generalised_coupling_operator() 
-        count = np.sum( (self.generalised_coupling_operator - np.diag(np.diagonal(self.generalised_coupling_operator))) > thresh )
-        if count==0: 
-            converged = True 
-        else: 
-            converged = False    
-        return converged, count
+        # Update gen. coupling to avoid unecessary cost in update() 
+        #self.get_fock() 
+
+    def shell_projection(self, Cold, Cnew):
+        projections = np.zeros((self.nmo, self.nshell+1)) 
+        occ_shell_indices = [self.core_indices] + self.shell_indices 
+        for W,shell in enumerate(occ_shell_indices): 
+            p = np.einsum('pj,pq,ql->l', Cold[:,shell], self.integrals.overlap_matrix() ,Cnew,optimize="optimal")
+            projections[:,W] = np.abs(p)
+        return projections 
 
     def get_Y_intermediate(self):
         """ Compute the Y intermediate required for Hessian evaluation

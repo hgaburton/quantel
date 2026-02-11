@@ -21,14 +21,14 @@ class ROKS(CSF):
             - save_last_step
             - restore_step
     """
-    def __init__(self, integrals, spin_coupling, verbose=0, advanced_preconditioner=False):
+    def __init__(self, integrals, spin_coupling, verbose=0, advanced_preconditioner=False, mom_method=None, scale_core_dens=True):
         """ Initialise the CSF wave function
                 integrals     : quantel integral interface
                 spin_coupling : genealogical coupling pattern
                 verbose       : verbosity level
         """
         # Call the parent constructor
-        CSF.__init__(self,integrals,spin_coupling,verbose,advanced_preconditioner)
+        CSF.__init__(self,integrals,spin_coupling,verbose,advanced_preconditioner, mom_method, scale_core_dens)
 
 
     def initialise(self, mo_guess, spin_coupling=None, mat_ci=None, integrals=True):
@@ -190,7 +190,6 @@ class ROKS(CSF):
         Hvec += xc_Hvec[self.rot_idx]
         return Hvec
     
-
     def print(self,verbose=1):
         """ Print details about the state energy and orbital coefficients
 
@@ -266,7 +265,6 @@ class ROKS(CSF):
                 
         return exc, vxc_shell, vxc_ensemble
 
-
     def update(self):
         """ Update the integrals with current set of orbital coefficients"""
         # Update density, J, K, wfn_fock and gen_fock from parent CSF class
@@ -280,7 +278,9 @@ class ROKS(CSF):
             self.gen_fock_xc[shell,:] += np.linalg.multi_dot([self.mo_coeff[:,shell].T, self.vxc[W+1], self.mo_coeff])
         # Add XC contribution to overall Fock matrix
         self.fock_vir = self.fock_vir + np.einsum('Lxpq,L->pq',self.vxc_ensemble,self.ensemble_coeff,optimize='optimal')
-
+        
+    def get_fock(self): 
+        return super().get_fock(additional_focks = self.vxc)
 
     def copy(self,integrals=True):
         """Return a copy of the current object"""
