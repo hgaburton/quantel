@@ -2,6 +2,7 @@
 
 import numpy
 from pygnme import utils
+from quantel.utils.ci_utils import get_chergwin_coulson_weights
 
 eh2ev=27.211386245988
 
@@ -125,6 +126,12 @@ def noci(wfnlist, lindep_tol=1e-8, plev=1):
     # Save eigenvalues and eigenvectors to disk
     numpy.savetxt('noci_energy_list', w,fmt="% 16.10f")
     numpy.savetxt('noci_evecs', v, fmt="% 8.6f")
+    
+    #Get chergwin coulson weights 
+    ccW, overlap = get_chergwin_coulson_weights(wfnlist, v) 
+    numpy.savetxt('chco_weights', ccW, fmt="% 8.6f")
+    numpy.savetxt('csf_overlaps', overlap, fmt="% 8.6f")
+    
 
     print("\n NOCI Eigenvalues")
     print(w)

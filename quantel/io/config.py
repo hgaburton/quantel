@@ -105,6 +105,13 @@ class Config(dict):
                                             canonical_interval = getvalue(self.lines,"canonical_interval",int,False,default=10),
                                             gamma_preconditioner = getbool(self.lines,"gamma_prec",False,default=False)
                                             )
+        elif self["optimiser"]["algorithm"] == "diis":
+            self["optimiser"]["diis"] = dict( max_vec = getvalue(self.lines, "max_vec", int, False, default=6) ) 
+            self["wavefunction"][self["wavefunction"]["method"]]["mom_method"] = getvalue(self.lines,"mom_method",str,False, default=None)
+        
+        elif self["optimiser"]["algorithm"] == "hybridef":
+            self["optimiser"]["hybridef"] = dict( max_step = getvalue(self.lines, "max_step", int, False, default=0.5) ) 
+        
         else:
             errstr = "Requested optimiser '"+self["optimiser"]["algorithm"]+"' is not available"
             raise ValueError(errstr)
@@ -140,8 +147,28 @@ class Config(dict):
                                                 init_scf_cycles = getvalue(self.lines,"init_scf_cycles",int,False,default=500),
                                                 mo_rot_range= getvalue(self.lines,"mo_rot_range",float,False,default=numpy.pi)
                                                )
+        
+        elif self["jobcontrol"]["guess"] == "rand_fromfile":
+            self["jobcontrol"]["search"] = dict(nsample = getvalue(self.lines,"nsample",int,False,default=10),
+                                                seed = getvalue(self.lines,"seed",int,False,default=7),
+                                                init_scf_cycles = getvalue(self.lines,"init_scf_cycles",int,False,default=500),
+                                                mo_rot_range= getvalue(self.lines,"mo_rot_range",float,False,default=numpy.pi)
+                                               )
+            self["jobcontrol"]["read_dir"] = getlist(self.lines,"read_dir",str,True)
+            self["jobcontrol"]["gcoup"] = getbool(self.lines,"read_gcoup",False, default=True)
+        
         elif self["jobcontrol"]["guess"] == "fromfile":
             self["jobcontrol"]["read_dir"] = getlist(self.lines,"read_dir",str,True)
+            self["jobcontrol"]["gcoup"] = getbool(self.lines,"read_gcoup",False, default=True)
+        
+        elif self["jobcontrol"]["guess"] == "ladder_fromfile":
+            self["jobcontrol"]["read_dir"] = getlist(self.lines,"read_dir",str,True)
+            self["jobcontrol"]["gcoup"] = getbool(self.lines,"read_gcoup",False, default=True)
+        
+        elif self["jobcontrol"]["guess"] == "follow_fromfile":
+            self["jobcontrol"]["read_dir"] = getlist(self.lines,"read_dir",str,True)
+            self["jobcontrol"]["gcoup"] = getbool(self.lines,"read_gcoup",False, default=True)
+            self["jobcontrol"]["save_solns"] = getbool(self.lines,"save_solns",False,default=True)
         
         elif self["jobcontrol"]["guess"] == "fromorca":
             self["jobcontrol"]["orca_file"] = getvalue(self.lines,"orca_file",str,True)

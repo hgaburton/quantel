@@ -16,7 +16,7 @@ import argparse, numpy, time
 from datetime import datetime, timedelta
 from quantel import Molecule, LibintInterface
 from quantel.io.config import Config
-from quantel.drivers import random_search, from_file, ci_guess, standard_guess, ev_linesearch, analyse, noci
+from quantel.drivers import random_search, from_file, ci_guess, standard_guess, ev_linesearch, analyse, noci, follow, rand_fromfile, ladder_from_file
 from cProfile import Profile
 from pstats import SortKey, Stats
 from quantel.ints.pyscf_integrals import PySCFMolecule, PySCFIntegrals
@@ -95,6 +95,12 @@ def main():
         wfnlist = ev_linesearch(ints, config)
     elif config["jobcontrol"]["guess"] == "standard":
         wfnlist = standard_guess(ints, config)
+    elif config["jobcontrol"]["guess"] == "follow_fromfile":
+        wfnlist = follow(ints, config)
+    elif config["jobcontrol"]["guess"] == "rand_fromfile":
+        wfnlist = rand_fromfile(ints, config)
+    elif config["jobcontrol"]["guess"] == "ladder_fromfile":
+        wfnlist = ladder_from_file(ints, config)
     else:
         errstr = "No wavefunctions have been defined"
         raise ValueError(errstr)

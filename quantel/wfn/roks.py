@@ -52,6 +52,9 @@ class ROKS(CSF):
         self.invariant  = self.invariant_indices()
         self.nrot       = np.sum(self.rot_idx)
 
+        if(self.mom_method == 'IMOM'):
+            self.Cinit = self.mo_coeff.copy()
+        
         # Initialise integrals
         if (integrals): self.update()
 
@@ -294,18 +297,24 @@ class ROKS(CSF):
         raise NotImplementedError("ROKS Hamiltonian coupling not yet implemented")
     
 
-    def get_orbital_guess(self, method="gwh",avas_ao_labels=None,reorder=True):
-        """Get a guess for the molecular orbital coefficients"""
-        # Get the guess for the molecular orbital coefficients
-        Cguess = orbital_guess(self.integrals,method,avas_ao_labels=avas_ao_labels,rohf_ms=0.5*self.nopen)
-        # Optimise the order of the CSF orbitals and return
-        if(reorder and (self.spin_coupling != '')):
-            Cguess[:,self.ncore:self.nocc] = csf_reorder_orbitals(self.integrals,self.exchange_matrix,
-                                                                  np.copy(Cguess[:,self.ncore:self.nocc]))
-
-        # Initialise the CSF object with the guess coefficients.
-        self.initialise(Cguess, spin_coupling=self.spin_coupling)
-        return
+    #def get_orbital_guess(self, method="gwh",avas_ao_labels=None,reorder=True, localise=False):
+    #    """Get a guess for the molecular orbital coefficients"""
+    #    # Get the guess for the molecular orbital coefficients
+    #    Cguess = orbital_guess(self.integrals,method,avas_ao_labels=avas_ao_labels,rohf_ms=0.5*self.nopen)
+    #    
+    #    if localise:  
+    #        self.initialise(Cguess, spin_coupling=self.nopen*"+")
+    #        self.localise()
+    #        Cguess = self.mo_coeff.copy() 
+    #    
+    #    # Optimise the order of the CSF orbitals and return
+    #    if(reorder and (self.spin_coupling != '')):
+    #        Cguess[:,self.ncore:self.nocc] = csf_reorder_orbitals(self.integrals,self.exchange_matrix,
+    #                                                              np.copy(Cguess[:,self.ncore:self.nocc]))
+    #
+    #    # Initialise the CSF object with the guess coefficients.
+    #    self.initialise(Cguess, spin_coupling=self.spin_coupling)
+    #    return
 
 
     def get_preconditioner(self,abs=True):

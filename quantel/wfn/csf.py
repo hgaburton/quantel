@@ -488,7 +488,7 @@ class CSF(Wavefunction):
         if mo_read.shape[1] > self.nmo:
             raise ValueError("Too many orbitals in file")
 
-    def read_from_disk(self, tag):
+    def read_from_disk(self, tag, gcoup=False):
         """Read a CSF wavefunction from disk with prefix 'tag'"""
         with h5py.File(tag+'.hdf5','r') as F:
             mo_read = F['mo_coeff'][:]
@@ -497,6 +497,10 @@ class CSF(Wavefunction):
             except: 
                 spin_coupling = "cs"  
             
+            #i.e. dont read in the genealogical coupling            
+            if not gcoup:
+                spin_coupling = self.spin_coupling
+ 
             # Initialise wave function    
             self.initialise(mo_read, spin_coupling=spin_coupling)  
                
@@ -515,7 +519,6 @@ class CSF(Wavefunction):
         newcsf.initialise(self.mo_coeff,spin_coupling=self.spin_coupling,integrals=integrals)
         return newcsf
 
-
     def overlap(self, them):
         """ Compute the overlap between two CSF objects
         """
@@ -529,15 +532,18 @@ class CSF(Wavefunction):
         return csf_coupling_slater_condon(self, them, self.integrals)
     
 
-    def get_orbital_guess(self, method="gwh",avas_ao_labels=None,reorder=True):
+    def get_orbital_guess(self, method="gwh",avas_ao_labels=None,reorder=True, localise=True):
         """Get a guess for the molecular orbital coefficients"""
         # Get the guess for the molecular orbital coefficients
         Cguess = orbital_guess(self.integrals,method,avas_ao_labels=avas_ao_labels,rohf_ms=0.5*self.nopen)
+        if localise:  
+            self.initialise(Cguess, spin_coupling=self.nopen*"+")
+            self.localise()
+            Cguess = self.mo_coeff.copy() 
         # Optimise the order of the CSF orbitals and return
         if(reorder and (self.spin_coupling != '')):
             Cguess[:,self.ncore:self.nocc] = csf_reorder_orbitals(self.integrals,self.exchange_matrix,
                                                                   np.copy(Cguess[:,self.ncore:self.nocc]))
-
         # Initialise the CSF object with the guess coefficients.
         self.initialise(Cguess, spin_coupling=self.spin_coupling)
         return

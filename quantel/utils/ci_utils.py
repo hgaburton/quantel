@@ -40,3 +40,33 @@ def write_cidump(civec, ncore, nmo, filename,thresh=1e-10):
 
     # Close output file
     outF.close()
+
+# NOCI utils
+
+def get_chergwin_coulson_weights(wfn_list, evecs): 
+    # Construct overlap matrix 
+    ncsfs = len(wfn_list) 
+    overlap_matrix = np.zeros((ncsfs, ncsfs))
+    for i in range(ncsfs): 
+        for j in range(i): 
+            overlap_matrix[i,j] = wfn_list[i].overlap(wfn_list[j])    
+    overlap_matrix += overlap_matrix.T
+    np.fill_diagonal(overlap_matrix,1)
+    # Calculate the Chergwin-Coulson weights 
+    W = np.linalg.multi_dot((overlap_matrix, evecs))
+    W = np.multiply(evecs, W)
+    #W = [ W[i]*evecs[i,0] for i in range(ncsfs) ]
+    return np.array(W), overlap_matrix
+
+
+
+
+
+
+
+
+
+
+
+
+

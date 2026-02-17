@@ -7,7 +7,7 @@ from pyscf.mp import mp2
 import sys
 from quantel.utils.linalg import orthogonalise, matrix_print 
 
-def localise_orbs(wfn,indices):    
+def localise_orbs(wfn,indices, pop_method='becke'):    
     """
        Wrapper for PYSCF orbital localisation via Pipek-Mezey scheme
         Input: 
@@ -19,7 +19,7 @@ def localise_orbs(wfn,indices):
     """
     # Localise occupied orbitals
     pm = pipek.PM(wfn.integrals.mol, wfn.mo_coeff[:,indices].copy())
-    pm.pop_method = "mulliken" 
+    pm.pop_method = pop_method 
     _ = pm.kernel()
     
     # Perform Stability analysis 
@@ -39,7 +39,6 @@ def localise_orbs(wfn,indices):
    
     wfn.mo_coeff[:,indices] = local_coeffs
     wfn.update()  
-
     return isstable, np.array(ds) 
 
 def get_ab2_orbs(wfn, lumo_idx):

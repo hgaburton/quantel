@@ -46,7 +46,8 @@ def ev_linesearch(ints, config):
     count = 0
     for prefix in config["jobcontrol"]["read_dir"]:
         print(" Reading solutions from directory {:s}".format(prefix))
-        
+        #reading solutions so presumably this would be reading in from a previous geometry, would have solutions that have 
+        # been organised into directories with convergence to come from above or below - i would rather that we had this automatically.
         # Need to count the number of states to converge
         nstates = len(glob.glob(prefix+"*.mo_coeff"))
         for i in range(nstates):
@@ -111,36 +112,45 @@ def ev_linesearch(ints, config):
 
             # Identify target hessian index
             eigen_target = config["jobcontrol"]["eigen_index"]
-            if eigen_target > 0:
+            #so the target hessian index - i guess is going to be either +1 or -1 ?
+            if eigen_target > 0: # so eigen_target = 1 
                 indzero = numpy.argmin(numpy.abs(eigval)+1e10*(eigval<0)) + eigen_target - 1
+                #indzero this is trying to find where the near zero index - but the near zero one from above
             else:
                 indzero = numpy.argmin(numpy.abs(eigval)+1e10*(eigval>0)) + eigen_target + 1
+                #indzero this is trying to find where the near zero index - from below
 
             print()
             print(" Performing eigenvector linesearch for solution {:5d}:".format(isol+1))
             print("  Search along eigenvector {:5d} with eigenvalue = {: 16.10f}".format(indzero+1, eigval[indzero]))
 
             # Get step and energy function
+            # gets the step direction from indzero
             step = eigvec[:,indzero]
             myfun.save_last_step()
+            #see how the energy varies along that step direction
             def get_energy(x):
                 myfun.take_step(x * step)
                 energy = myfun.energy
                 myfun.restore_last_step()
                 return energy
-
+            
             # Compute linesearch values 
+            # alpha defines the kind of grid we are looking at
             ls = numpy.array([[alpha, get_energy(alpha)] for alpha in numpy.linspace(*config["jobcontrol"]["linesearch_grid"])])
-
-            # Compute numerical gradients
+            # so that ls = [step len , energy]
+ 
+            # Compute numerical gradients at each point
+            ### compute via finite differences the absolute value of the gradient at each point
             gls = numpy.zeros((ls.shape[0]-1,ls.shape[1]))
-            gls[:,0] = 0.5 * (ls[:-1,0] + ls[1:,0]) 
-            gls[:,1] = numpy.abs((ls[1:,1] - ls[:-1,1]) / (ls[1:,0] - ls[:-1,0]))
+            gls[:,0] = 0.5 * (ls[:-1,0] + ls[1:,0]) #this is saving the average value betwen two adjacent step lengths?  
+            gls[:,1] = numpy.abs((ls[1:,1] - ls[:-1,1]) / (ls[1:,0] - ls[:-1,0])) #finite differences abs gradient at each of these midpoints
 
             # Test new stationary points
             nopt = config["jobcontrol"]["linesearch_nopt"]
             for ind in numpy.argsort(gls[:,1])[:nopt]:
-                x = gls[ind,0]
+                #choosing the npot number of points with the smallest absolute value of the gradient as starting points for the optimsation
+                x = gls[ind,0] # the midpoints where we have calculated numerical gradients 
 
                 print("\n  Approximate stationary point at x = {: 16.10f}:".format(x))
                 print("  -----------------------------------------------")

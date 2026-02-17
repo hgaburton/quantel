@@ -3,7 +3,7 @@
 import numpy, glob
 from pyscf import gto
 
-def from_file(ints, config):
+def follow(ints, config):
     """Read wavefunctions from solutions that are saved to file"""
 
     print("-----------------------------------------------")
@@ -36,15 +36,18 @@ def from_file(ints, config):
         from quantel.opt.lsr1 import SR1 as OPT
     elif config["optimiser"]["algorithm"] == "gmf":
         from quantel.opt.gmf import GMF as OPT
+        #from quantel.opt.test_gmf import GMF as OPT
     elif config["optimiser"]["algorithm"] == "lbfgs":
         from quantel.opt.lbfgs import LBFGS as OPT
     elif config["optimiser"]["algorithm"] == "mode_control":
         from quantel.opt.mode_controlling import ModeControl as OPT
-    elif config["optimiser"]["algorithm"] == "diis":
-        from quantel.opt.diis import DIIS as OPT
+    elif config["optimiser"]["algorithm"] == "adaptive":
+        from quantel.opt.lbfgs import LBFGS 
+        from quantel.opt.gmf import GMF
 
     # Initialise wavefunction list
     wfn_list  = []
+    name_list = [] 
     e_list    = []
     i_list    = []
 
@@ -53,22 +56,40 @@ def from_file(ints, config):
     count = 0
     for prefix in config["jobcontrol"]["read_dir"]:
         print(" Reading solutions from directory {:s}".format(prefix))
-        # Need to count the number of states to converge
-        nstates = len(glob.glob(prefix+"*.solution"))
-        for i in range(nstates):
-            old_tag = "{:s}{:04d}".format(prefix, i+1)
-
+        #nstates = len(glob.glob(prefix+"*.solution"))
+        for old_tag in glob.glob(prefix+"*solution"):
+            with open(old_tag, "r") as file: 
+                hess_index = file.readline().split()[1]
+                hess_index = int(hess_index)
+            
+            old_tag = old_tag[:-9]
             # Initialise optimisation object
             try: del myfun
             except: pass
             myfun = WFN(ints, **wfnconfig)
             myfun.read_from_disk(old_tag, gcoup=config["jobcontrol"]["gcoup"])
-
+            
             # Run the optimisation
-            myopt = OPT(**optconfig)
-            if not myopt.run(myfun, **config["optimiser"]["keywords"]):
-                continue
-
+            if config["optimiser"]["algorithm"]=="adaptive": 
+                if hess_index==0:
+                    lbfgsconfig=optconfig["lbfgs"]
+                    myopt = LBFGS(**lbfgsconfig)
+                    #surely the different optimisations will need different key words! 
+                    if not myopt.run(myfun, **config["optimiser"]["keywords"]):
+                        continue
+                else: 
+                    gmfconfig=optconfig["gmf"]
+                    myopt = GMF(**gmfconfig)
+                    config["optimiser"]["keywords"]["index"] = hess_index 
+                    #then put this into the optimiser
+                    #surely the different optimisations will need different key words! 
+                    if not myopt.run(myfun, **config["optimiser"]["keywords"]):
+                        continue
+            else: 
+                myopt = OPT(**optconfig)
+                if not myopt.run(myfun, **config["optimiser"]["keywords"]):
+                    continue
+            
             # Check the Hessian index
             myfun.canonicalize()
             if config["jobcontrol"]["nohess"]:
@@ -77,6 +98,7 @@ def from_file(ints, config):
             else:
                 myfun.get_davidson_hessian_index()
                 hindices = myfun.hess_index
+                # Yes need to set target index = None to prevent skipping the rest of the loop
                 if (hindices[0] != target_index) and (target_index is not None):
                     continue
 
@@ -90,15 +112,15 @@ def from_file(ints, config):
 
             # Save the solution if it is a new one!
             if new: 
-                
                 if config["wavefunction"]["method"] == "esmf":
                     myfun.canonicalize()
-                # Get the prefix for this solution
+                # Name it according to the followed solution
                 count += 1
-                tag = "{:04d}".format(count)
+                tag = old_tag[-4:]
 
-                # Save the object to disck
-                myfun.save_to_disk(tag)
+                # Save the object to disk - only if want to 
+                if config["jobcontrol"]["save_solns"]: 
+                    myfun.save_to_disk(tag)
 
                 # Save energy and indices
                 e_list.append(myfun.energy)
@@ -107,6 +129,7 @@ def from_file(ints, config):
                 # Deallocate integrals to reduce memory footprint
                 myfun.deallocate()
                 wfn_list.append(myfun.copy())
+                name_list.append(old_tag[2:]) 
             else: 
                 print("  Solution matches previous solution...",prev+1)
 
@@ -115,6 +138,7 @@ def from_file(ints, config):
 
     numpy.savetxt('energy_list', numpy.array([e_list]),fmt="% 16.10f")
     numpy.savetxt('ind_list', numpy.array([i_list]),fmt="% 5d")
+    numpy.savetxt('name_list', numpy.array([name_list]), fmt='%s')
 
     print()
     print(" Read from file complete... Identified {:5d} unique solutions".format(len(wfn_list)))

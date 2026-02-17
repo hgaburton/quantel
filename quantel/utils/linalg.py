@@ -213,7 +213,7 @@ def orthogonalise(mat, metric=None, thresh=1e-10, fill=True, lindep=False ):
             print(f"WARNING: Gram-Schmidt orthogonalisation failed with max(abs(error)) = {ortho_test: 7.3e}")
     return mat
  
-def matrix_print(M, title=None, ncols=6, offset=0):
+def matrix_print(M, title=None, labels=None, ncols=6, offset=0):
     '''Print a matrix in a nice format with ncols columns at a time'''
     # Total number of columns
     nc = M.shape[1]
@@ -222,14 +222,22 @@ def matrix_print(M, title=None, ncols=6, offset=0):
         print("  "+title)
         print(" -----------------------------------------------------------------------------------------------")
     # Loop over output blocks
+    #ceils gives the smallest value of (nc/ncols) + 1 - i.e. how many block we need to write matrix in 
     for i in range(np.ceil(nc/ncols).astype(int)):
-        print("     ",end="")
+        print("     ",end="") # this prints the space between the columns of each block, end="" prevents printing of line break so that they stay on the same block
         for j in range(ncols):
             if(i*ncols+j < nc):
-                print(f"{i*ncols+j+1+offset:^14d} ",end="")
+                if labels is not None:  
+                    print(f"{labels[i*ncols+j+offset]:^14d} ",end="") #this is printing the column labels
+                else: 
+                    print(f"{i*ncols+j+1+offset:^14d} ",end="")  
         print()
         for irow, row in enumerate(M[:,i*ncols:min(nc,(i+1)*ncols)]):
-            print(f"{irow+1: 4d} ",end="")
+            if labels is not None: 
+                print(f"{labels[irow]: 4d} ",end="") #printing row labels
+            else:  
+                print(f"{irow+1: 4d} ",end="")
+            
             for val in row:
                 print(f"{val:^14.8f} ",end="")
             print()

@@ -4,22 +4,29 @@ import copy
 
 # Code to implement the DIIS algorithm for SCF convergence
 class DIIS:
-    def __init__(self,occupation_selector="Aufbau"):
+    def __init__(self,**kwargs):
+        self.control = dict() 
+        self.control["max_vec"] = 6
+        for key in kwargs:
+            if not key in self.control.keys():
+                print("ERROR: Keyword [{:s}] not recognised".format(key))
+            else: 
+                self.control[key] = kwargs[key]
+
         self.err_vecs = []  
         self.fock_vecs = []
-        self.occupation_selector = occupation_selector
     
-    def run(self, obj, thresh=1e-6, maxit=100, index=0, plev=1, max_vec=6):
+    def run(self, obj, thresh=1e-6, maxit=100, index=0, plev=1):
         """Run the DIIS optimisation"""
-        self.nbsf = obj.nbsf
-        self.max_vec = max_vec 
+        self.nbsf = obj.nbsf 
 
         kernel_start_time = datetime.datetime.now()
         if plev>0: print()
         if plev>0: print("  Running DIIS optimisation...")
         if plev>0:
+            print(f"    > Occ. selector     = {obj.mom_method}")
             print(f"    > Num. MOs          = {obj.nmo: 6d}")
-            print(f"    > Max DIIS subspace = {max_vec: 6d}")
+            print(f"    > Max DIIS subspace = {self.control['max_vec']: 6d}")
         if plev>0: print("  ==========================================")
         if plev>0: print("       {:^16s}    {:^8s}".format("   Energy / Eh","Error"))
         if plev>0: print("  ==========================================")
@@ -49,7 +56,7 @@ class DIIS:
             self.fock_vecs.append(fock_new)
             
             # Remove oldest error vector and Fock matrix if we have too many
-            if len(self.err_vecs) > self.max_vec:
+            if len(self.err_vecs) > self.control['max_vec']:
                 self.err_vecs.pop(0)
                 self.fock_vecs.pop(0)
  
