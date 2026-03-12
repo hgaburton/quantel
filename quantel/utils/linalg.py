@@ -1,5 +1,4 @@
 #!/usr/bin/python3 
-
 from functools import reduce
 import numpy as np
 from scipy.linalg import expm as scipy_expm
@@ -123,8 +122,9 @@ def inner_prod(a,b,metric=None):
 
 def gram_schmidt(mat, metric=None):
     '''
-    Perform Gram-Schmidt orthogonalisation for a set of vectors with respect to a metric S.
-    
+    Perform Modified Gram-Schmidt orthogonalisation for a set of vectors with respect to a metric S.
+    Removes linearly dependent vectors using a norm threshold(NOT TOTALLY NUMERICALLY STABLE) 
+     
     Parameters: 
         mat (ndarray)    : Matrix with columns containing the vectors to be orthogonlised
         metric (ndarray) : Metric tensor used for the orthogonalisation  
@@ -133,43 +133,23 @@ def gram_schmidt(mat, metric=None):
     Returns: 
         ndarray          : Matrix containing the orthogonalised vectors
     '''
-    # Copy of metric @ vector for use later
-    Sv = np.copy(mat) if (metric is None) else metric @ mat
-
-    # Orthogonalise each vector sequentially
-    for i in range(0,mat.shape[1]):
+    idx_indep = []   
+    for i in range(mat.shape[1]): 
         # Target vector
-        vi  = mat[:,i] 
-        # Projection space
-        vj  = mat[:,:i]
-        # Perform the projection
-        vi -= vj @ (vj.conj().T @ Sv[:,i])
-        vi /= norm(vi,metric)
-    return mat
-
-def test_gram_schmidt(mat, metric=None):
-    # Copy of metric @ vector for use later
-    Sv = np.copy(mat) if (metric is None) else metric @ mat
-
-    # Orthogonalise each vector sequentially
-    lin_indep=[]
-    for i in range(0,mat.shape[1]):
-        # Target vector
-        vi  = mat[:,i] 
-        # Projection space
-        vj  = mat[:,:i]
-        # Perform the projection
-        vi -= vj @ (vj.conj().T @ Sv[:,i])
+        vi = mat[:,i] 
         vi_norm = norm(vi, metric)
+        # Reject linearly dependent vectors
         if vi_norm > 1e-8: 
-            # Check norm
-            vi /= vi_norm
-            lin_indep.append(vi)
-    
-    sys.stdout.flush() 
-    return np.array(lin_indep).T 
+            vi /= vi_norm 
+            idx_indep.append(i)
+            # Project out current direction from subsequent vectors
+            if metric is None: 
+                mat[:, i+1:mat.shape[1] ] -=  np.linalg.outer( vi, np.einsum("i,ij", vi, mat[:, i+1:mat.shape[1] ] ) )    
+            else: 
+                mat[:, i+1:mat.shape[1] ] -=  np.linalg.outer(vi, np.einsum("i,ij,jk", vi, metric, mat[:, i+1:mat.shape[1] ] ) )
+    return mat[:,idx_indep]
 
-def orthogonalise(mat, metric=None, thresh=1e-10, fill=True, lindep=False ):
+def orthogonalise(mat, metric=None, thresh=1e-10, fill=True):
     '''
     Orthogonalise the columns of mat with respect to the metric tensor.
 
@@ -199,10 +179,7 @@ def orthogonalise(mat, metric=None, thresh=1e-10, fill=True, lindep=False ):
     # If the orthogonality test fails, we need to orthogonalise
     if ortho_test > thresh:
         # Perform Gram-Schmidt twice for stability
-        if lindep: 
-            mat = test_gram_schmidt( test_gram_schmidt(mat,metric),metric)
-        else:
-            mat = gram_schmidt( gram_schmidt(mat,metric),metric)
+        mat = gram_schmidt( gram_schmidt(mat,metric),metric)
         # Re-check the orthogonality
         ortho = inner_prod(mat,mat,metric)
         for i in range(mat.shape[1]):
