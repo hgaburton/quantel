@@ -112,6 +112,42 @@ class Config(dict):
         elif self["optimiser"]["algorithm"] == "hybridef":
             self["optimiser"]["hybridef"] = dict( max_step = getvalue(self.lines, "max_step", int, False, default=0.5) ) 
         
+        elif self["optimiser"]["algorithm"] == "adaptive":
+            self["optimiser"]["adaptive"]=dict()
+            self["optimiser"]["adaptive"]["lbfgs"]=dict(minstep = getvalue(self.lines,"minstep",float,False,default=0),
+                                            maxstep = getvalue(self.lines,"maxstep",float,False,default=0.2),
+                                            max_subspace = getvalue(self.lines,"max_subspace",int,False,default=10),
+                                            backtrack_scale = getvalue(self.lines,"backtrack_scale",float,False,default=0.1),
+                                            with_transport = getbool(self.lines,"parallel_transport",False,default=True),
+                                            with_canonical = getbool(self.lines,"pseudo-canonicalise",False,default=True),
+                                            canonical_interval = getvalue(self.lines,"canonical_interval",int,False,default=10),
+                                            gamma_preconditioner = getbool(self.lines,"gamma_prec",False,default=False))
+
+            self["optimiser"]["adaptive"]["gmf"] = dict(minstep = getvalue(self.lines,"minstep",float,False,default=0),
+                                            maxstep = getvalue(self.lines,"maxstep",float,False,default=0.2),
+                                            with_transport = getbool(self.lines,"parallel_transport",False,default=True),
+                                            with_canonical = getbool(self.lines,"pseudo-canonicalise",False,default=True),
+                                            canonical_interval = getvalue(self.lines,"canonical_interval",int,False,default=10),
+                                            max_subspace = getvalue(self.lines,"max_subspace",int,False,default=10)
+                                            )
+     
+        elif self["optimiser"]["algorithm"] == "adaptive_evf":
+            self["optimiser"]["adaptive_evf"]=dict()
+            self["optimiser"]["adaptive_evf"]["lbfgs"]=dict(minstep = getvalue(self.lines,"minstep",float,False,default=0),
+                                            maxstep = getvalue(self.lines,"maxstep",float,False,default=0.2),
+                                            max_subspace = getvalue(self.lines,"max_subspace",int,False,default=10),
+                                            backtrack_scale = getvalue(self.lines,"backtrack_scale",float,False,default=0.1),
+                                            with_transport = getbool(self.lines,"parallel_transport",False,default=True),
+                                            with_canonical = getbool(self.lines,"pseudo-canonicalise",False,default=True),
+                                            canonical_interval = getvalue(self.lines,"canonical_interval",int,False,default=10),
+                                            gamma_preconditioner = getbool(self.lines,"gamma_prec",False,default=False))
+
+            self["optimiser"]["adaptive_evf"]["eigenvector_following"] = dict(minstep = getvalue(self.lines,"minstep",float,False,default=0),
+                                                              rtrust  = getvalue(self.lines,"rtrust",float,False,default=0.15),
+                                                              maxstep = getvalue(self.lines,"maxstep",float,False,default=0.2),
+                                                              hesstol = getvalue(self.lines,"hesstol",float,False,1e-16)
+                                                             )
+
         else:
             errstr = "Requested optimiser '"+self["optimiser"]["algorithm"]+"' is not available"
             raise ValueError(errstr)
@@ -155,19 +191,19 @@ class Config(dict):
                                                 mo_rot_range= getvalue(self.lines,"mo_rot_range",float,False,default=numpy.pi)
                                                )
             self["jobcontrol"]["read_dir"] = getlist(self.lines,"read_dir",str,True)
-            self["jobcontrol"]["gcoup"] = getbool(self.lines,"read_gcoup",False, default=True)
+            self["jobcontrol"]["override_spin_coupling"] = getbool(self.lines,"override_spin_coupling",False, default=False)
         
         elif self["jobcontrol"]["guess"] == "fromfile":
             self["jobcontrol"]["read_dir"] = getlist(self.lines,"read_dir",str,True)
-            self["jobcontrol"]["gcoup"] = getbool(self.lines,"read_gcoup",False, default=True)
+            self["jobcontrol"]["override_spin_coupling"] = getbool(self.lines,"override_spin_coupling",False, default=False)
         
         elif self["jobcontrol"]["guess"] == "ladder_fromfile":
             self["jobcontrol"]["read_dir"] = getlist(self.lines,"read_dir",str,True)
-            self["jobcontrol"]["gcoup"] = getbool(self.lines,"read_gcoup",False, default=True)
+            self["jobcontrol"]["override_spin_coupling"] = getbool(self.lines,"override_spin_coupling",False, default=False)
         
         elif self["jobcontrol"]["guess"] == "follow_fromfile":
             self["jobcontrol"]["read_dir"] = getlist(self.lines,"read_dir",str,True)
-            self["jobcontrol"]["gcoup"] = getbool(self.lines,"read_gcoup",False, default=True)
+            self["jobcontrol"]["override_spin_coupling"] = getbool(self.lines,"override_spin_coupling",False, default=False)
             self["jobcontrol"]["save_solns"] = getbool(self.lines,"save_solns",False,default=True)
         
         elif self["jobcontrol"]["guess"] == "fromorca":

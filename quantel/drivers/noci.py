@@ -1,12 +1,11 @@
 #!/usr/bin/python3
-
 import numpy
 from pygnme import utils
-from quantel.utils.ci_utils import get_chergwin_coulson_weights
+from quantel.gnme.utils import get_chergwin_coulson_weights
 
 eh2ev=27.211386245988
 
-def oscillator_strength(wfnlist, ref_ind=0, plev=1):
+def oscillator_strength(wfnlist, namelist, ref_ind=0, plev=1):
     """Compute oscillator strengths from a given reference states [ref_ind]"""
     # Get number of states
     nstate = len(wfnlist)
@@ -18,17 +17,18 @@ def oscillator_strength(wfnlist, ref_ind=0, plev=1):
 
     # Get the reference state and integrals
     ref_state = wfnlist[ref_ind]
-    ref_state.update_integrals()
+    ref_state.update()
 
     # Loop over the remaining states
     strengths=[]
     for i, state_i in enumerate(wfnlist):
         if(i==ref_ind): continue
-        state_i.update_integrals()
+        state_i.update()
 
         # Compute excitation energy
         de = state_i.energy - ref_state.energy 
         # Compute TDM
+        ##### so to compute the TDM we need to transition density matrices and then multiply by the dipole vector for the current state .
         s, tdm = ref_state.tdm(state_i)
         # Compute oscillator strength
         f = 2./3. * de * numpy.dot(tdm,tdm)
@@ -38,16 +38,15 @@ def oscillator_strength(wfnlist, ref_ind=0, plev=1):
         strengths.append((de, f, s))
 
     # Print the outcome
-    print("{:4s}   {:10s}   {:10s}   {:10s}".format("", "   dE / eV", "   f / au", "   S / au"))
+    print("{:4s}   {:10s}   {:10s}   {:10s}".format("","  dE / eV", "   f / au", "   S / au"))
     print("-----------------------------------------------")
     #strengths.sort()
     for i, (de, f, s) in enumerate(strengths):
-        print("{: 4d}:  {: 10.6f}   {: 10.6f}   {: 10.6f}".format(i,de,f,s))
+        print("{}:  {: 10.6f}   {: 10.6f}   {: 10.6f}".format(namelist[i+1],de,f,s))
     print("----------------------------------------------------------")
 
     # Record the output in a file
     numpy.savetxt('oscillators', numpy.array(strengths)[:,[0,1]], fmt="% 10.6f")
-
     return 
 
 def overlap(wfnlist, lindep_tol=1e-8, plev=1, save=True):
@@ -127,11 +126,10 @@ def noci(wfnlist, lindep_tol=1e-8, plev=1):
     numpy.savetxt('noci_energy_list', w,fmt="% 16.10f")
     numpy.savetxt('noci_evecs', v, fmt="% 8.6f")
     
-    #Get chergwin coulson weights 
-    ccW, overlap = get_chergwin_coulson_weights(wfnlist, v) 
+    #Get Chergwin-Coulson weights and save overlap 
+    ccW = get_chergwin_coulson_weights(Swx, v) 
     numpy.savetxt('chco_weights', ccW, fmt="% 8.6f")
-    numpy.savetxt('csf_overlaps', overlap, fmt="% 8.6f")
-    
+    numpy.savetxt('overlap_matrix', Swx, fmt="% 8.6f")
 
     print("\n NOCI Eigenvalues")
     print(w)

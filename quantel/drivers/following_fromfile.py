@@ -41,10 +41,16 @@ def follow(ints, config):
         from quantel.opt.lbfgs import LBFGS as OPT
     elif config["optimiser"]["algorithm"] == "mode_control":
         from quantel.opt.mode_controlling import ModeControl as OPT
+    elif config["optimiser"]["algorithm"] == "hybridef":
+        from quantel.opt.hybrid_ef import HybridEF as OPT
     elif config["optimiser"]["algorithm"] == "adaptive":
         from quantel.opt.lbfgs import LBFGS 
         from quantel.opt.gmf import GMF
 
+    elif config["optimiser"]["algorithm"] == "adaptive_evf":
+        from quantel.opt.lbfgs import LBFGS 
+        from quantel.opt.eigenvector_following import EigenFollow 
+    
     # Initialise wavefunction list
     wfn_list  = []
     name_list = [] 
@@ -67,7 +73,7 @@ def follow(ints, config):
             try: del myfun
             except: pass
             myfun = WFN(ints, **wfnconfig)
-            myfun.read_from_disk(old_tag, gcoup=config["jobcontrol"]["gcoup"])
+            myfun.read_from_disk(old_tag, gcoup=config["jobcontrol"]["override_spin_coupling"])
             
             # Run the optimisation
             if config["optimiser"]["algorithm"]=="adaptive": 
@@ -77,9 +83,16 @@ def follow(ints, config):
                     #surely the different optimisations will need different key words! 
                     if not myopt.run(myfun, **config["optimiser"]["keywords"]):
                         continue
+            elif config["optimiser"]["algorithm"]=="adaptive_evf": 
+                if hess_index==0:
+                    lbfgsconfig=optconfig["lbfgs"]
+                    myopt = LBFGS(**lbfgsconfig)
+                    #surely the different optimisations will need different key words! 
+                    if not myopt.run(myfun, **config["optimiser"]["keywords"]):
+                        continue
                 else: 
-                    gmfconfig=optconfig["gmf"]
-                    myopt = GMF(**gmfconfig)
+                    evfconfig=optconfig["eigenvector_following"]
+                    myopt = EigenFollow(**evfconfig)
                     config["optimiser"]["keywords"]["index"] = hess_index 
                     #then put this into the optimiser
                     #surely the different optimisations will need different key words! 
@@ -109,6 +122,7 @@ def follow(ints, config):
                   if 1.0 - abs(myfun.overlap(otherwfn)) < config["jobcontrol"]["dist_thresh"]:
                     new = False
                     break
+                print("  1-ovlp: ",1.0 - abs(myfun.overlap(otherwfn))) 
 
             # Save the solution if it is a new one!
             if new: 

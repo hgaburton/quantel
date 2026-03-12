@@ -53,16 +53,15 @@ def from_file(ints, config):
     count = 0
     for prefix in config["jobcontrol"]["read_dir"]:
         print(" Reading solutions from directory {:s}".format(prefix))
-        # Need to count the number of states to converge
-        nstates = len(glob.glob(prefix+"*.solution"))
-        for i in range(nstates):
-            old_tag = "{:s}{:04d}".format(prefix, i+1)
+        
+        for old_tag in glob.glob(prefix+"*.solution"):
+            old_tag = old_tag[:-9]
 
             # Initialise optimisation object
             try: del myfun
             except: pass
             myfun = WFN(ints, **wfnconfig)
-            myfun.read_from_disk(old_tag, gcoup=config["jobcontrol"]["gcoup"])
+            myfun.read_from_disk(old_tag, gcoup=config["jobcontrol"]["override_spin_coupling"])
 
             # Run the optimisation
             myopt = OPT(**optconfig)

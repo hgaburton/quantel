@@ -41,6 +41,12 @@ def rand_fromfile(ints, config):
         from quantel.opt.lbfgs import LBFGS as OPT
     elif config["optimiser"]["algorithm"] == "mode_control":
         from quantel.opt.mode_controlling import ModeControl as OPT
+    elif config["optimiser"]["algorithm"] == "adaptive":
+        from quantel.opt.lbfgs import LBFGS 
+        from quantel.opt.gmf import GMF
+    elif config["optimiser"]["algorithm"] == "adaptive_evf":
+        from quantel.opt.lbfgs import LBFGS 
+        from quantel.opt.eigenvector_following import EigenFollow 
 
     # Initialise wavefunction list
     wfn_list  = []
@@ -54,9 +60,14 @@ def rand_fromfile(ints, config):
     for prefix in config["jobcontrol"]["read_dir"]:
         print(" Reading Solutions from directory {:s}".format(prefix))
         #Need to count the number of states to converge
-        nstates = len(glob.glob(prefix+"*.solution"))
-        for i in range(nstates):
-            old_tag = "{:s}{:04d}".format(prefix, i+1)
+        #nstates = len(glob.glob(prefix+"*.solution"))
+        #for i in range(nstates):
+        for old_tag in glob.glob(prefix+"*.solution"):
+            with open(old_tag, "r") as file: 
+                hess_index = file.readline().split()[1]
+                hess_index = int(hess_index)
+            
+            old_tag = old_tag[:-9]
             mo_range = config["jobcontrol"]["search"]["mo_rot_range"]
             # Perform random rotation on these guess states
             for itest in range(config["jobcontrol"]["search"]["nsample"]):
@@ -64,16 +75,34 @@ def rand_fromfile(ints, config):
                 try: del myfun
                 except: pass
                 myfun = WFN(ints, **wfnconfig)
-                myfun.read_from_disk(old_tag, gcoup=config["jobcontrol"]["gcoup"])
+                myfun.read_from_disk(old_tag, gcoup=config["jobcontrol"]["override_spin_coupling"])
             
-                #
                 mo_guess = myfun.mo_coeff.dot(random_rot(myfun.nmo, -mo_range, mo_range)) #so the random rotations are performed from the ROHF reference, for the given random seed?
                 myfun.mo_coeff = mo_guess
                 myfun.update()
                 # Run the optimisation
-                myopt = OPT(**optconfig)
-                if not myopt.run(myfun, **config["optimiser"]["keywords"]):
-                    continue
+                if(config["optimiser"]["algorithm"]=="adaptive" or config["optimiser"]["algorithm"]=="adaptive_evf"): 
+                    if hess_index==0:
+                        lbfgsconfig=optconfig["lbfgs"]
+                        myopt = LBFGS(**lbfgsconfig)
+                        if not myopt.run(myfun, **config["optimiser"]["keywords"]):
+                            continue
+                    elif config["optimiser"]["algorithm"]=="adaptive_evf": 
+                        evfconfig=optconfig["eigenvector_following"]
+                        myopt = EigenFollow(**evfconfig)
+                        config["optimiser"]["keywords"]["index"] = hess_index 
+                        if not myopt.run(myfun, **config["optimiser"]["keywords"]):
+                            continue
+                    elif config["optimiser"]["algorithm"]=="adaptive": 
+                        gmfconfig=optconfig["gmf"]
+                        myopt = GMF(**gmfconfig)
+                        config["optimiser"]["keywords"]["index"] = hess_index 
+                        if not myopt.run(myfun, **config["optimiser"]["keywords"]):
+                            continue
+                else: 
+                    myopt = OPT(**optconfig)
+                    if not myopt.run(myfun, **config["optimiser"]["keywords"]):
+                        continue
 
                 # Check the Hessian index
                 myfun.canonicalize()

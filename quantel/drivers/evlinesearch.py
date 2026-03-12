@@ -46,12 +46,9 @@ def ev_linesearch(ints, config):
     count = 0
     for prefix in config["jobcontrol"]["read_dir"]:
         print(" Reading solutions from directory {:s}".format(prefix))
-        #reading solutions so presumably this would be reading in from a previous geometry, would have solutions that have 
-        # been organised into directories with convergence to come from above or below - i would rather that we had this automatically.
-        # Need to count the number of states to converge
-        nstates = len(glob.glob(prefix+"*.mo_coeff"))
-        for i in range(nstates):
-            old_tag = "{:s}{:04d}".format(prefix, i+1)
+        
+        for old_tag in glob.glob(prefix+"*.solution"):
+            old_tag = old_tag[:-9]
 
             # Initialise optimisation object
             try: del myfun
@@ -65,9 +62,10 @@ def ev_linesearch(ints, config):
                 continue
 
             # Get Hessian indices
-            hindices = myfun.get_hessian_index()
-            if (hindices[0] != target_index) and (target_index is not None):
-                continue
+            myfun.get_davidson_hessian_index()
+            hindices = myfun.hess_index
+            #if (hindices[0] != target_index) and (target_index is not None):
+            #    continue
 
             # Compare solution against previously found states
             new = True
@@ -98,6 +96,9 @@ def ev_linesearch(ints, config):
                 print("  Solution matches previous solution...",prev+1)
 
         # Attempt to reconverge states
+        # Identify target hessian index
+        eigen_target = config["jobcontrol"]["eigen_index"]
+        config["optimiser"]["keywords"]["index"] = eigen_target
         nsearch = len(wfn_list)
         for isol in range(nsearch):
             # Initialise optimisation object
@@ -110,25 +111,18 @@ def ev_linesearch(ints, config):
             # Diagonalise hessian
             eigval, eigvec = numpy.linalg.eigh(hess)
 
-            # Identify target hessian index
-            eigen_target = config["jobcontrol"]["eigen_index"]
-            #so the target hessian index - i guess is going to be either +1 or -1 ?
-            if eigen_target > 0: # so eigen_target = 1 
+            if eigen_target > 0:   
                 indzero = numpy.argmin(numpy.abs(eigval)+1e10*(eigval<0)) + eigen_target - 1
-                #indzero this is trying to find where the near zero index - but the near zero one from above
             else:
                 indzero = numpy.argmin(numpy.abs(eigval)+1e10*(eigval>0)) + eigen_target + 1
-                #indzero this is trying to find where the near zero index - from below
 
             print()
             print(" Performing eigenvector linesearch for solution {:5d}:".format(isol+1))
             print("  Search along eigenvector {:5d} with eigenvalue = {: 16.10f}".format(indzero+1, eigval[indzero]))
 
             # Get step and energy function
-            # gets the step direction from indzero
             step = eigvec[:,indzero]
             myfun.save_last_step()
-            #see how the energy varies along that step direction
             def get_energy(x):
                 myfun.take_step(x * step)
                 energy = myfun.energy
@@ -136,21 +130,17 @@ def ev_linesearch(ints, config):
                 return energy
             
             # Compute linesearch values 
-            # alpha defines the kind of grid we are looking at
             ls = numpy.array([[alpha, get_energy(alpha)] for alpha in numpy.linspace(*config["jobcontrol"]["linesearch_grid"])])
-            # so that ls = [step len , energy]
  
             # Compute numerical gradients at each point
-            ### compute via finite differences the absolute value of the gradient at each point
             gls = numpy.zeros((ls.shape[0]-1,ls.shape[1]))
-            gls[:,0] = 0.5 * (ls[:-1,0] + ls[1:,0]) #this is saving the average value betwen two adjacent step lengths?  
-            gls[:,1] = numpy.abs((ls[1:,1] - ls[:-1,1]) / (ls[1:,0] - ls[:-1,0])) #finite differences abs gradient at each of these midpoints
+            gls[:,0] = 0.5 * (ls[:-1,0] + ls[1:,0])   
+            gls[:,1] = numpy.abs((ls[1:,1] - ls[:-1,1]) / (ls[1:,0] - ls[:-1,0])) 
 
             # Test new stationary points
             nopt = config["jobcontrol"]["linesearch_nopt"]
             for ind in numpy.argsort(gls[:,1])[:nopt]:
-                #choosing the npot number of points with the smallest absolute value of the gradient as starting points for the optimsation
-                x = gls[ind,0] # the midpoints where we have calculated numerical gradients 
+                x = gls[ind,0] 
 
                 print("\n  Approximate stationary point at x = {: 16.10f}:".format(x))
                 print("  -----------------------------------------------")
@@ -162,6 +152,17 @@ def ev_linesearch(ints, config):
                 if not myopt.run(newfun, **config["optimiser"]["keywords"]):
                     continue
 
+                # Check the Hessian index
+                newfun.canonicalize()
+                if config["jobcontrol"]["nohess"]:
+                    newfun.hess_index = (0,0,0)     
+                    hindices = new_fun.hess_index   
+                else:
+                    newfun.get_davidson_hessian_index()
+                    hindices = newfun.hess_index
+                    #if (hindices[0] != target_index) and (target_index is not None):
+                    #    continue
+                
                 # Compare solution against previously found states
                 new = True
                 for prev, otherwfn in enumerate(wfn_list):
@@ -171,14 +172,13 @@ def ev_linesearch(ints, config):
 
                 # Save the solution if it is a new one!
                 if new: 
-                    hindices = newfun.get_hessian_index()
                     if config["wavefunction"]["method"] == "esmf":
                         newfun.canonicalize()
                     # Get the prefix for this solution
                     count += 1
                     tag = "{:04d}".format(count)
 
-                    # Save the object to disck
+                    # Save the object to disk
                     newfun.save_to_disk(tag)
 
                     # Save energy and indices
