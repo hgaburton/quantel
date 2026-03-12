@@ -2,10 +2,8 @@
 import numpy as np
 from quantel.utils.csf_utils import get_ensemble_expansion, get_det_occupation, csf_reorder_orbitals
 from quantel.utils.linalg import orthogonalise, stable_eigh, matrix_print
-#from quantel.gnme.csf_noci import csf_coupling, csf_coupling_slater_condon
 from .csf import CSF
 from quantel.utils.orbital_guess import orbital_guess
-from quantel.utils.ab2_orbitals import localise_orbs, get_ab2_orbs, update_vir_orbs  
 from pyscf.tools import cubegen 
 import sys 
 
@@ -295,26 +293,6 @@ class ROKS(CSF):
         """ Compute the Hamiltonian coupling between two CSF objects
         """
         raise NotImplementedError("ROKS Hamiltonian coupling not yet implemented")
-    
-
-    #def get_orbital_guess(self, method="gwh",avas_ao_labels=None,reorder=True, localise=False):
-    #    """Get a guess for the molecular orbital coefficients"""
-    #    # Get the guess for the molecular orbital coefficients
-    #    Cguess = orbital_guess(self.integrals,method,avas_ao_labels=avas_ao_labels,rohf_ms=0.5*self.nopen)
-    #    
-    #    if localise:  
-    #        self.initialise(Cguess, spin_coupling=self.nopen*"+")
-    #        self.localise()
-    #        Cguess = self.mo_coeff.copy() 
-    #    
-    #    # Optimise the order of the CSF orbitals and return
-    #    if(reorder and (self.spin_coupling != '')):
-    #        Cguess[:,self.ncore:self.nocc] = csf_reorder_orbitals(self.integrals,self.exchange_matrix,
-    #                                                              np.copy(Cguess[:,self.ncore:self.nocc]))
-    #
-    #    # Initialise the CSF object with the guess coefficients.
-    #    self.initialise(Cguess, spin_coupling=self.spin_coupling)
-    #    return
 
 
     def get_preconditioner(self,abs=True):
@@ -411,75 +389,3 @@ class ROKS(CSF):
         # Update integrals
         self.update()
         return Q
-
-    def mo_cubegen(self,idx,fname=""): 
-        """ Generate and store cube files for specified MOs
-                idx : list of MO indices 
-        """
-        # Saves MOs as cubegen files
-        for mo in idx: 
-            cubegen.orbital(self.integrals.mol, fname+f".mo.{mo}.cube", self.mo_coeff[:,mo])
-
-    def localise(self, verbose=1): 
-        # Localise closed shell 
-        isstable, bonding_indices = localise_orbs(self, np.array(range(self.ncore)))
-        stability = [isstable]
-        # Localise open shells
-        for shell in self.shell_indices:
-            stab, bond= localise_orbs(self, shell)
-            stability.append(stab) 
-            bonding_indices = np.concatenate((bonding_indices, bond))
-        if verbose>0: 
-            print("  PM stable: ", stability)
-            sys.stdout.flush()
-        return stability, bonding_indices
-
-    def get_AB2_orbitals(self): 
-        return get_ab2_orbs(self, self.ncore + self.nopen)
-
-    def update_vir_orbitals(self, new_virs): 
-        update_vir_orbs(self, self.ncore + self.nopen, new_virs)
-        return 
-
-    def fock_exchange_in_ao_basis(self):
-        """ Update the integrals with current set of orbital coefficients"""
-        # Update density, J, K, wfn_fock and gen_fock from parent CSF class
-        CSF.update(self)
-        # Compute xc-potential
-        self.exc, self.vxc, self.vxc_ensemble = self.get_vxc()
-        # Get DFT generalised Fock matrix
-        self.gen_fock_xc = self.gen_fock.copy()
-        self.gen_fock_xc[:self.ncore,:] += np.linalg.multi_dot([self.mo_coeff[:,:self.ncore].T, self.vxc[0], self.mo_coeff])
-        for W, shell in enumerate(self.shell_indices):
-            self.gen_fock_xc[shell,:] += np.linalg.multi_dot([self.mo_coeff[:,shell].T, self.vxc[W+1], self.mo_coeff])
-        # Add XC contribution to overall Fock matrix
-        self.fock_vir = self.fock_vir + np.einsum('Lxpq,L->pq',self.vxc_ensemble,self.ensemble_coeff,optimize='optimal')
-
-    def fock_exchange_in_ao_basis(self):
-        """ Update the integrals with current set of orbital coefficients"""
-        # Update density, J, K, wfn_fock and gen_fock from parent CSF class
-        CSF.update(self)
-        # Compute xc-potential
-        self.exc, self.vxc, self.vxc_ensemble = self.get_vxc()
-        # Get DFT generalised Fock matrix
-        self.gen_fock_xc = self.gen_fock.copy() # getting this from the update
-        self.gen_fock_xc[:self.ncore,:] += np.linalg.multi_dot([self.mo_coeff[:,:self.ncore].T, self.vxc[0], self.mo_coeff])
-        #ok i need to back transform these into the AO basis?
-        # this is a bit more complicated 
-
-        # gen fock xc what are the different things happening here?
-        # so the fock exchanges are only for the specific rows ? 
-        # 
-
-
-        for W, shell in enumerate(self.shell_indices):
-            self.gen_fock_xc[shell,:] += np.linalg.multi_dot([self.mo_coeff[:,shell].T, self.vxc[W+1], self.mo_coeff])
-        # Add XC contribution to overall Fock matrix
-        self.fock_vir = self.fock_vir + np.einsum('Lxpq,L->pq',self.vxc_ensemble,self.ensemble_coeff,optimize='optimal')
-
-
-
-
-
-
-

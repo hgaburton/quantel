@@ -1,13 +1,13 @@
 #!/usr/bin/python3
 # Author: Hugh G. A. Burton
 import sys
-
 import numpy as np
 import scipy.linalg
 import h5py
 from quantel.utils.linalg import orthogonalise, matrix_print
 from quantel.utils.scf_utils import mom_select
-from quantel.utils.ab2_orbitals import update_vir_orbs, localise_orbs, get_ab2_orbs 
+from quantel.utils.orbital_utils import localise_orbitals
+from quantel.utils.ab2_orbitals import reorthogonalise_virs, get_ab2_orbs, get_smushed_ab2_orbs 
 from .wavefunction import Wavefunction
 import quantel
 from pyscf.tools import cubegen
@@ -477,18 +477,28 @@ class RHF(Wavefunction):
         for mo in idx: 
             cubegen.orbital(self.integrals.mol, fname+f".mo.{mo}.cube", self.mo_coeff[:,mo])
 
-    def localise(self, verbose=1): 
-        # For RHF lumo_idx = wfn.nocc 
-        isstable, bonding_indices = localise_orbs(self, np.array(range(self.nocc)))
-        if verbose>0: 
-            print("  PM stable: ", isstable)
-            sys.stdout.flush()
-        return isstable, bonding_indices
+    def localise_orbitals(self, plev=1): 
+        self.mo_coeff[:,:self.nocc], isstable = localise_orbitals(self.integrals.mol, self.mo_coeff[:,:self.nocc])
+        self.update() 
+        if plev>0: 
+            print("  Orbital localistion stable: ", isstable)
 
-    def get_AB2_orbitals(self): 
-        return get_ab2_orbs(self, self.nocc)
+    def compute_and_update_AB2(self,indices=None): 
+        """ Wrapper to compute and update virtuals with AB2 orbitals"""  
+        self.localise_orbitals() 
+        if indices is None: 
+            AB2_orbitals = get_ab2_orbs(self) 
+        else: 
+            AB2_orbitals = get_smushed_ab2_orbs(self,indices) 
+                
+        ortho_virs = reorthogonalise_virs(self, AB2_orbitals)    
+        self.mo_coeff[:,self.nocc:] = ortho_virs
+        self.update() 
+        return AB2_orbitals 
+    
+   # def get_AB2_orbitals(self): 
+   #     return get_ab2_orbs(self)
 
-    def update_vir_orbitals(self, new_virs): 
-        update_vir_orbs(self, self.nocc, new_virs)
-        return 
-
+   # def update_vir_orbitals(self, new_virs): 
+   #     update_vir_orbs(self, self.nocc, new_virs)
+   #     return 
