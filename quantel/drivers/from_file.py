@@ -61,7 +61,7 @@ def from_file(ints, config):
             try: del myfun
             except: pass
             myfun = WFN(ints, **wfnconfig)
-            myfun.read_from_disk(old_tag, gcoup=config["jobcontrol"]["override_spin_coupling"])
+            myfun.read_from_disk(old_tag, override_spin_coupling=config["jobcontrol"]["override_spin_coupling"])
 
             # Run the optimisation
             myopt = OPT(**optconfig)

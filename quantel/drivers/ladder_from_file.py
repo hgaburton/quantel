@@ -73,7 +73,7 @@ def ladder_from_file(ints, config):
             try: del myfun
             except: pass
             myfun = WFN(ints, **wfnconfig)
-            myfun.read_from_disk(old_tag, gcoup=config["jobcontrol"]["override_spin_coupling"])
+            myfun.read_from_disk(old_tag, override_spin_coupling=config["jobcontrol"]["override_spin_coupling"])
             # Initialise optimiser object
             myopt = OPT(**optconfig)
             down_inds = [ a for a in range(hess_index-1, -1, -1)] 

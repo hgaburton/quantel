@@ -75,7 +75,7 @@ def rand_fromfile(ints, config):
                 try: del myfun
                 except: pass
                 myfun = WFN(ints, **wfnconfig)
-                myfun.read_from_disk(old_tag, gcoup=config["jobcontrol"]["override_spin_coupling"])
+                myfun.read_from_disk(old_tag, override_spin_coupling=config["jobcontrol"]["override_spin_coupling"])
             
                 mo_guess = myfun.mo_coeff.dot(random_rot(myfun.nmo, -mo_range, mo_range)) #so the random rotations are performed from the ROHF reference, for the given random seed?
                 myfun.mo_coeff = mo_guess
