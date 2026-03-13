@@ -92,7 +92,7 @@ class GMF:
         for istep in range(maxit+1):
             # Get gradient and check convergence
             #conv = np.linalg.norm(grad) * np.sqrt(1.0/grad.size)
-            conv = np.linalg.norm(grad,ord=np.inf)
+            conv = np.linalg.norm(grad,ord=np.inf) #stationary point check 
             ecur = obj.energy
 
             if istep > 0 and plev > 0:
@@ -113,7 +113,6 @@ class GMF:
             qn_count += 1
             if(np.dot(step,grad) > 0):
                 # Need to make sure  s.g < 0 to maintain positive-definite L-BFGS Hessian 
-                print("Step has positive overlap with gradient - reversing direction")
                 step *= -1
                 comment = comment + "reversed "
 
@@ -128,6 +127,7 @@ class GMF:
             # Check for step length converged
             step_length = np.linalg.norm(step)
             if(step_length < thresh*thresh):
+                print("  Step length is too small")
                 return True
 
             # Take the step
@@ -168,8 +168,10 @@ class GMF:
         # Save end time and report duration
         kernel_end_time = datetime.datetime.now()
         computation_time = kernel_end_time - kernel_start_time
-        if plev>0: print("  Generalised mode following walltime: ", computation_time.total_seconds(), " seconds")
-
+        if plev>0: 
+            print("  Generalised mode following walltime: ", computation_time.total_seconds(), " seconds")
+            print("  Converged: ", converged)
+        sys.stdout.flush()
         return converged
 
     def get_gmf_gradient(self,obj,grad,n,e,x):

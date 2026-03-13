@@ -53,7 +53,7 @@ class LBFGS:
 
         # Extract key parameters
         max_subspace = self.control["max_subspace"]
-        dim = obj.dim
+        dim = obj.dim #Number of the nonredundant spin orbital rotations
         if(dim == 0): return True
 
 
@@ -68,7 +68,7 @@ class LBFGS:
             print(f"    > Canon interval = {self.control['canonical_interval']}")
             print(f"    > Hybrid prec.   = {not self.control['gamma_preconditioner']}")
 
-        # Initialise lists for subspace vectors
+        # Initialise lists for subspace vectors 
         v_step = []
         v_grad = []
 
@@ -99,12 +99,14 @@ class LBFGS:
             sys.stdout.flush()
 
             # Check if we have convergence
-            if(conv < thresh):
+            if(conv < thresh): # i.e. that the max grad component is less than threshold 
                 converged = True
                 break
 
             # Check if we have sufficient decrease
+            # What is this really checking?
             if(istep == 0 or reset):
+                # so that we just pass through if we are at start or on a reset. 
                 wolfe1 = True
                 wolfe2 = True
                 reset = False
@@ -128,25 +130,28 @@ class LBFGS:
                 X = None
                 if(self.control["with_canonical"] and np.mod(qn_count,self.control["canonical_interval"])==0):
                    #conv<1e-2):
-                    X = obj.canonicalize()
+                    X = obj.canonicalize() # returns the transformation matrices if we want pseudocanonicalisation steps... 
                     grad = obj.gradient
                     if(proj_vec is not None):
                         # Project out unwanted directions
                         grad = grad - proj_vec @ (proj_vec.T @ grad)
 
                 # Save reference energy and gradient
-                eref = ecur
-                grad_ref = grad.copy()
+                eref = ecur #current energy 
+                grad_ref = grad.copy() # current gradient
 
                 # Parallel transport previous vectors
                 if(self.control["with_transport"]):
+                    # This is parallel transport only
+                    #in first step v_grad and v_step are empty, next iterations have step from the previous iteration still defined. In reality, since we are on a Grassman manifold step does nothing and only X matters 
                     v_grad = [obj.transform_vector(v, step, X) for v in v_grad] 
                     v_step = [obj.transform_vector(v, step, X) for v in v_step] 
                 elif(self.control["with_canonical"]):
+                    # Here we are explicitly saying that we are on grassman manifold, hence all steps might as well be zero_steps, and then only do the horizontal transformation 
                     v_grad = [obj.transform_vector(v, zero_step, X) for v in v_grad] 
                     v_step = [obj.transform_vector(v, zero_step, X) for v in v_step] 
 
-                # Save new gradient
+                # Save new gradient # just appends our new gradient! 
                 v_grad.append(grad.copy())
 
                 # Get L-BFGS quasi-Newton step
@@ -155,6 +160,7 @@ class LBFGS:
                 step = self.get_lbfgs_step(v_grad,v_step,prec)
                 qn_count += 1
 
+                # stepT.gradient < 0 i.e. the step is a descent step.  
                 # Need to make sure s.g < 0 to maintain positive-definite L-BFGS Hessian 
                 if(np.dot(step,grad_ref) > 0):
                     print("  Step has positive overlap with gradient - reversing direction")
@@ -174,6 +180,7 @@ class LBFGS:
                 self.ls.reset(eref,xref,gref)
 
             else:
+                # This does a proper line search if alpha_k=1 doesnt satisfy the Wolfe conditions. 
                 if(not wolfe1):
                     comment = "overstep"
                 elif(not wolfe2):
@@ -204,6 +211,7 @@ class LBFGS:
             MaxDP = np.linalg.norm(step,ord=np.inf)
 
             # Take the step
+            # IMPORTANT, HERE IS WHERE THE ENERGY AND GRADIENT WILL CHANGE
             obj.take_step(step)
 
             # Remove oldest vectors if subspace is saturated
@@ -244,30 +252,35 @@ class LBFGS:
         """
         # Subspace size
         nvec = len(v_step)
-        assert(len(v_grad)==nvec+1)
+        assert(len(v_grad)==nvec+1) #right since we should have updated with current gradient
 
         # Clip the preconditioner to avoid numerical issues
         thresh=0.1
-        prec = np.sqrt(np.clip(prec,thresh,None))
+        prec = np.sqrt(np.clip(prec,thresh,None)) # prec is just the same as diag
+        # This step sets all values less than thresh equal to thresh and then square roots. Square rooting to get ready to convert from pseudocanonical orbital to EWCs 
 
+        
         # Get sk, yk, and rho in energy weighted coordinates
+        # These are already parallel transported (if choosing to transport)
         sk = [v_step[i] * prec for i in range(nvec)]
         yk = [(v_grad[i+1] - v_grad[i]) / prec for i in range(nvec)]
         rho = [1.0 / np.dot(yk[i], sk[i]) for i in range(nvec)]
 
         # Get gamma_k
+        # Nocedal's formula to compute the H0k if one of the Hessian eigenvalues is negative: H0k = gamma_k * unit_matrix 
         gamma_k = np.dot(sk[-1], yk[-1]) / np.dot(yk[-1], yk[-1]) if (nvec > 0) else 1 
         
         # Initialise step from last gradient
-        q = v_grad[-1].copy() / prec
+        q = v_grad[-1].copy() / prec #this is the hessian update formula, and since we use a diagonal approximation to the Hessian this is fine! 
 
         # Compute alpha and beta terms
+        # what are the alpha and beta terms? two loop recursion scheme  
         alpha = np.empty(nvec)
         for i in range(nvec-1,-1,-1):
             alpha[i] = rho[i] * np.dot(sk[i], q) 
             q = q - alpha[i] * yk[i]
 
-        # Apply preconditioner
+        # Apply preconditioner, which can be unity or scaled unity matrix 
         r = q * gamma_k
 
         # Second loop of L-BFGS
@@ -276,4 +289,5 @@ class LBFGS:
             r = r + sk[i] * (alpha[i] - beta) 
 
         # Convert step back to non-energy weighted coordinates
+        # alpha_k p_k = p_k = -H_k del f_k = - r/prec  
         return - r / prec

@@ -1,9 +1,8 @@
 #!/usr/bin/python3 
-
 from functools import reduce
 import numpy as np
 from scipy.linalg import expm as scipy_expm
-
+import sys
 
 def orthogonalisation_matrix(M, thresh=1e-8):
     """Construct an orthogonalisation matrix X such that X^T M X = I for a symmetric matrix M
@@ -121,11 +120,11 @@ def inner_prod(a,b,metric=None):
     else:
         return np.dot(a.conj().T,metric.dot(b))
 
-
 def gram_schmidt(mat, metric=None):
     '''
-    Perform Gram-Schmidt orthogonalisation for a set of vectors with respect to a metric S.
-    
+    Perform Modified Gram-Schmidt orthogonalisation for a set of vectors with respect to a metric S.
+    Removes linearly dependent vectors using a norm threshold(NOT TOTALLY NUMERICALLY STABLE) 
+     
     Parameters: 
         mat (ndarray)    : Matrix with columns containing the vectors to be orthogonlised
         metric (ndarray) : Metric tensor used for the orthogonalisation  
@@ -134,21 +133,21 @@ def gram_schmidt(mat, metric=None):
     Returns: 
         ndarray          : Matrix containing the orthogonalised vectors
     '''
-    # Copy of metric @ vector for use later
-    Sv = np.copy(mat) if (metric is None) else metric @ mat
-
-    # Orthogonalise each vector sequentially
-    for i in range(0,mat.shape[1]):
+    idx_indep = []   
+    for i in range(mat.shape[1]): 
         # Target vector
-        vi  = mat[:,i] 
-        # Projection space
-        vj  = mat[:,:i]
-        # Perform the projection
-        vi -= vj @ (vj.conj().T @ Sv[:,i])
-        # Renormalise
-        vi /= norm(vi,metric)
-    return mat
-
+        vi = mat[:,i] 
+        vi_norm = norm(vi, metric)
+        # Reject linearly dependent vectors
+        if vi_norm > 1e-8: 
+            vi /= vi_norm 
+            idx_indep.append(i)
+            # Project out current direction from subsequent vectors
+            if metric is None: 
+                mat[:, i+1:mat.shape[1] ] -=  np.linalg.outer( vi, np.einsum("i,ij", vi, mat[:, i+1:mat.shape[1] ] ) )    
+            else: 
+                mat[:, i+1:mat.shape[1] ] -=  np.linalg.outer(vi, np.einsum("i,ij,jk", vi, metric, mat[:, i+1:mat.shape[1] ] ) )
+    return mat[:,idx_indep]
 
 def orthogonalise(mat, metric=None, thresh=1e-10, fill=True):
     '''
@@ -180,8 +179,7 @@ def orthogonalise(mat, metric=None, thresh=1e-10, fill=True):
     # If the orthogonality test fails, we need to orthogonalise
     if ortho_test > thresh:
         # Perform Gram-Schmidt twice for stability
-        mat = gram_schmidt( gram_schmidt(mat,metric),metric )
-
+        mat = gram_schmidt( gram_schmidt(mat,metric),metric)
         # Re-check the orthogonality
         ortho = inner_prod(mat,mat,metric)
         for i in range(mat.shape[1]):
@@ -190,10 +188,9 @@ def orthogonalise(mat, metric=None, thresh=1e-10, fill=True):
 
         if(ortho_test > thresh):
             print(f"WARNING: Gram-Schmidt orthogonalisation failed with max(abs(error)) = {ortho_test: 7.3e}")
-
     return mat
-
-def matrix_print(M, title=None, ncols=6, offset=0):
+ 
+def matrix_print(M, title=None, labels=None, ncols=6, offset=0):
     '''Print a matrix in a nice format with ncols columns at a time'''
     # Total number of columns
     nc = M.shape[1]
@@ -202,14 +199,22 @@ def matrix_print(M, title=None, ncols=6, offset=0):
         print("  "+title)
         print(" -----------------------------------------------------------------------------------------------")
     # Loop over output blocks
+    #ceils gives the smallest value of (nc/ncols) + 1 - i.e. how many block we need to write matrix in 
     for i in range(np.ceil(nc/ncols).astype(int)):
-        print("     ",end="")
+        print("     ",end="") # this prints the space between the columns of each block, end="" prevents printing of line break so that they stay on the same block
         for j in range(ncols):
             if(i*ncols+j < nc):
-                print(f"{i*ncols+j+1+offset:^14d} ",end="")
+                if labels is not None:  
+                    print(f"{labels[i*ncols+j+offset]:^14d} ",end="") #this is printing the column labels
+                else: 
+                    print(f"{i*ncols+j+1+offset:^14d} ",end="")  
         print()
         for irow, row in enumerate(M[:,i*ncols:min(nc,(i+1)*ncols)]):
-            print(f"{irow+1: 4d} ",end="")
+            if labels is not None: 
+                print(f"{labels[irow]: 4d} ",end="") #printing row labels
+            else:  
+                print(f"{irow+1: 4d} ",end="")
+            
             for val in row:
                 print(f"{val:^14.8f} ",end="")
             print()
