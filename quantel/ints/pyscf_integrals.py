@@ -172,7 +172,7 @@ class PySCFIntegrals:
                 ndarray : The scaled Exchange matrix for xc functional
         """
         vJ, vK = self.get_jk(dm=(vdJ,vdK), hermi=hermi)
-        vKfunc = vK
+        vKfunc = vK.copy()
         if (self.xc is None):
             pass
         elif self.ni.libxc.is_hybrid_xc(self.xc):

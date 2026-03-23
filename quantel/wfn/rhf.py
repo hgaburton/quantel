@@ -50,7 +50,7 @@ class RHF(Wavefunction):
         self.mo_coeff  = None
         self.mo_energy = None
     
-    def initialise(self, mo_guess, ci_guess=None):
+    def initialise(self, mo_guess, ci_guess=None, integrals=True):
         """Initialise the wave function with a set of molecular orbital coefficients"""
         # Make sure orbitals are orthogonal
         self.mo_coeff = orthogonalise(mo_guess, self.integrals.overlap_matrix())
@@ -58,7 +58,7 @@ class RHF(Wavefunction):
         if(self.mom_method == 'IMOM'):
             self.Cinit = self.mo_coeff.copy()
         # Update the density and Fock matrices
-        self.update()
+        if(integrals): self.update()
 
     @property
     def dim(self):
@@ -224,10 +224,10 @@ class RHF(Wavefunction):
         # Initialise object
         self.initialise(mo_read)
 
-    def copy(self):
+    def copy(self, integrals=True):
         """Return a copy of the current RHF object"""
         them = RHF(self.integrals, verbose=self.verbose)
-        them.initialise(self.mo_coeff)
+        them.initialise(self.mo_coeff, integrals=integrals)
         return them
 
     def overlap(self, them):
@@ -298,7 +298,7 @@ class RHF(Wavefunction):
         Q[self.nocc:,self.nocc:] = Qvir
         return Q
 
-    def get_preconditioner(self):
+    def get_preconditioner(self,abs=True):
         """Compute approximate diagonal of Hessian"""
         # Get Fock matrix in MO basis
         fock_mo = np.linalg.multi_dot([self.mo_coeff.T, self.fock, self.mo_coeff])
@@ -308,7 +308,10 @@ class RHF(Wavefunction):
         for p in range(self.nmo):
             for q in range(p):
                 Q[p,q] = 4 * (fock_mo[p,p] - fock_mo[q,q])
-        return np.abs(Q[self.rot_idx])
+        if abs:
+            return np.abs(Q[self.rot_idx])
+        else:
+            return Q[self.rot_idx]
 
     def diagonalise_fock(self):
         """Diagonalise the Fock matrix"""

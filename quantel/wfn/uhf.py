@@ -43,7 +43,7 @@ class UHF(Wavefunction):
         self.nrot = (np.sum(self.rot_idx[0]), np.sum(self.rot_idx[1]))
 
 
-    def initialise(self, mo_guess, ci_guess=None):
+    def initialise(self, mo_guess, ci_guess=None, integrals=True):
         """ Initialse the wave function with a set of molecalar orbital coefficients """
         if(len(mo_guess.shape) == 2):
             # We have 1 set of orbital coefficients so assume RHF guess
@@ -61,7 +61,7 @@ class UHF(Wavefunction):
         self.mo_coeff[1] = orthogonalise(self.mo_coeff[1], self.integrals.overlap_matrix())
 
         # Update the density and Fock matrices
-        self.update()
+        if(integrals): self.update()
 
     @property
     def dim(self):
@@ -307,7 +307,7 @@ class UHF(Wavefunction):
         self.update()
         return Q
 
-    def get_preconditioner(self):
+    def get_preconditioner(self, abs=True):
         """Compute approximate diagonal of Hessian"""
         # Get Fock matrix in MO basis 
         fock_mo = np.einsum('smp,smn,snq->spq', self.mo_coeff, self.fock, self.mo_coeff)
@@ -319,7 +319,10 @@ class UHF(Wavefunction):
                 for q in range(self.nmo):
                     Q[spin][p,q] = 2 * (fock_mo[spin][p,p] - fock_mo[spin][q,q])
 
-        return np.abs(np.concatenate((Q[0][self.rot_idx[0]], Q[1][self.rot_idx[1]])))
+        if(abs):
+            return np.abs(np.concatenate((Q[0][self.rot_idx[0]], Q[1][self.rot_idx[1]])))
+        else:
+            return np.concatenate((Q[0][self.rot_idx[0]], Q[1][self.rot_idx[1]]))
 
     def diagonalise_fock(self):
         """Diagonalise the Fock matrices via transformation of the generalised eigenvalue problem"""
@@ -502,6 +505,12 @@ class UHF(Wavefunction):
     def value(self):
         """Map the energy onto the function value"""
         return self.energy
+
+    def copy(self, integrals=True):
+        """Return a copy of the current RHF object"""
+        them = UHF(self.integrals, verbose=self.verbose)
+        them.initialise(self.mo_coeff, integrals=integrals)
+        return them
 
     def overlap(self,other):
         return 
