@@ -513,13 +513,13 @@ class UHF(Wavefunction):
         return them
 
     def overlap(self,other):
-        if(self.nocc != them.nocc):
+        if(self.nocc != other.nocc):
             return 0
-        elif (self.nalfa != them.nalfa) or (self.bneta != them.nbeta): 
+        elif (self.nalfa != other.nalfa) or (self.bneta != other.nbeta): 
             return 0 
         ovlp = self.integrals.overlap_matrix()
-        Sa = np.linalg.multi_dot([self.mo_coeff[:,:self.nalfa].T, ovlp, them.mo_coeff[:,:self.nalfa]])
-        Sb = np.linalg.multi_dot([self.mo_coeff[:,:self.nbeta].T, ovlp, them.mo_coeff[:,:self.nbeta]])
+        Sa = np.linalg.multi_dot([self.mo_coeff[:,:self.nalfa].T, ovlp, other.mo_coeff[:,:self.nalfa]])
+        Sb = np.linalg.multi_dot([self.mo_coeff[:,:self.nbeta].T, ovlp, other.mo_coeff[:,:self.nbeta]])
         return np.linalg.det(Sa)*np.linalg.det(Sb)
  
     def hamiltonian(self, other):
