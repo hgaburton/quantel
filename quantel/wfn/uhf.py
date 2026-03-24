@@ -513,8 +513,15 @@ class UHF(Wavefunction):
         return them
 
     def overlap(self,other):
-        return 
-
+        if(self.nocc != them.nocc):
+            return 0
+        elif (self.nalfa != them.nalfa) or (self.bneta != them.nbeta): 
+            return 0 
+        ovlp = self.integrals.overlap_matrix()
+        Sa = np.linalg.multi_dot([self.mo_coeff[:,:self.nalfa].T, ovlp, them.mo_coeff[:,:self.nalfa]])
+        Sb = np.linalg.multi_dot([self.mo_coeff[:,:self.nbeta].T, ovlp, them.mo_coeff[:,:self.nbeta]])
+        return np.linalg.det(Sa)*np.linalg.det(Sb)
+ 
     def hamiltonian(self, other):
         """Compute the Hamiltonian coupling with another wavefunction of this type"""
         pass
