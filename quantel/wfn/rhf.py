@@ -220,7 +220,7 @@ class RHF(Wavefunction):
         with open(tag+".solution", "w") as F:
             F.write(f"{self.energy:18.12f} {hindices[0]:5d} {hindices[1]:5d} {self.s2:12.6f}\n")
 
-    def read_from_disk(self,tag):
+    def read_from_disk(self,tag,**kwargs):
         """Read object from disk with prefix 'tag'"""
         # Read MO coefficients from hdf5 file
         with h5py.File(tag+".hdf5", "r") as F:
