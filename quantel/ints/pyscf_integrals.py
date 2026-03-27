@@ -10,7 +10,7 @@ from pyscf import dft, gto, ao2mo, fci
 
 class PySCFMolecule(gto.Mole):
     """Wrapper class to call molecule functions from PySCF"""
-    def __init__(self,_atom,_basis,_unit,charge=0,spin=0):
+    def __init__(self,_atom,_basis,_unit,charge=0,spin=0, symmetry=False):
         """Initialise the PySCF molecule
                 _atom  : str
                     The path to the atom file
@@ -28,6 +28,7 @@ class PySCFMolecule(gto.Mole):
         super().__init__(atom=_atom,basis=_basis,unit=_unit,spin=spin,charge=charge)
         self.atom = _atom
         self.unit = _unit
+        self.symmetry = symmetry 
         self.build()
     
     def nalfa(self):
