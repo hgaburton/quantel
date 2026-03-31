@@ -45,6 +45,7 @@ class Davidson:
 
         if(n > dim):
             # If the number of requested states exceeds the dimension of the matrix, reset the values
+            # This is not allowed since the Hessian doesnt have that many eigenvalues, hence we just recast this as finding all the eigenvalues of the Hessian 
             n = dim
             if(xguess is not None):
                 print(f"WARNING: Number of requested eigenvectors exceeds matrix dimension, selecting first {n:6d} guess vectors")
@@ -58,7 +59,7 @@ class Davidson:
             K = xguess.copy()
         K = orthogonalise(K,fill=False)
 
-        # Initialise HK vectors
+        # Initialise HK vectors, generating the subspace VA_k in the notes 
         HK = np.empty((dim, 0))
 
         # Make K in fortran column-major
@@ -78,7 +79,7 @@ class Davidson:
                 # NOTE this requires column-major ordering for effective slicing
                 sk = K[:,ik].copy()
                 # Get approximate Hessian on vector
-                H_sk = fun_Hv(sk,**Hv_args)
+                H_sk = fun_Hv(sk,**Hv_args) 
                 # Add to HK space
                 HK = np.column_stack([HK,H_sk.copy()]) 
 
@@ -150,4 +151,5 @@ class Davidson:
             for iv, ev in enumerate(e):
                 print(f"   {iv: 5d}  { ev: 16.8f}   ")
             print("   --------------------------")
+        # returns the eigenvalues and subspace
         return e, x

@@ -47,10 +47,8 @@ def ev_linesearch(ints, config):
     for prefix in config["jobcontrol"]["read_dir"]:
         print(" Reading solutions from directory {:s}".format(prefix))
         
-        # Need to count the number of states to converge
-        nstates = len(glob.glob(prefix+"*.mo_coeff"))
-        for i in range(nstates):
-            old_tag = "{:s}{:04d}".format(prefix, i+1)
+        for old_tag in glob.glob(prefix+"*.solution"):
+            old_tag = old_tag[:-9]
 
             # Initialise optimisation object
             try: del myfun
@@ -64,9 +62,10 @@ def ev_linesearch(ints, config):
                 continue
 
             # Get Hessian indices
-            hindices = myfun.get_hessian_index()
-            if (hindices[0] != target_index) and (target_index is not None):
-                continue
+            myfun.get_davidson_hessian_index()
+            hindices = myfun.hess_index
+            #if (hindices[0] != target_index) and (target_index is not None):
+            #    continue
 
             # Compare solution against previously found states
             new = True
@@ -97,6 +96,9 @@ def ev_linesearch(ints, config):
                 print("  Solution matches previous solution...",prev+1)
 
         # Attempt to reconverge states
+        # Identify target hessian index
+        eigen_target = config["jobcontrol"]["eigen_index"]
+        config["optimiser"]["keywords"]["index"] = eigen_target
         nsearch = len(wfn_list)
         for isol in range(nsearch):
             # Initialise optimisation object
@@ -109,9 +111,7 @@ def ev_linesearch(ints, config):
             # Diagonalise hessian
             eigval, eigvec = numpy.linalg.eigh(hess)
 
-            # Identify target hessian index
-            eigen_target = config["jobcontrol"]["eigen_index"]
-            if eigen_target > 0:
+            if eigen_target > 0:   
                 indzero = numpy.argmin(numpy.abs(eigval)+1e10*(eigval<0)) + eigen_target - 1
             else:
                 indzero = numpy.argmin(numpy.abs(eigval)+1e10*(eigval>0)) + eigen_target + 1
@@ -128,19 +128,19 @@ def ev_linesearch(ints, config):
                 energy = myfun.energy
                 myfun.restore_last_step()
                 return energy
-
+            
             # Compute linesearch values 
             ls = numpy.array([[alpha, get_energy(alpha)] for alpha in numpy.linspace(*config["jobcontrol"]["linesearch_grid"])])
-
-            # Compute numerical gradients
+ 
+            # Compute numerical gradients at each point
             gls = numpy.zeros((ls.shape[0]-1,ls.shape[1]))
-            gls[:,0] = 0.5 * (ls[:-1,0] + ls[1:,0]) 
-            gls[:,1] = numpy.abs((ls[1:,1] - ls[:-1,1]) / (ls[1:,0] - ls[:-1,0]))
+            gls[:,0] = 0.5 * (ls[:-1,0] + ls[1:,0])   
+            gls[:,1] = numpy.abs((ls[1:,1] - ls[:-1,1]) / (ls[1:,0] - ls[:-1,0])) 
 
             # Test new stationary points
             nopt = config["jobcontrol"]["linesearch_nopt"]
             for ind in numpy.argsort(gls[:,1])[:nopt]:
-                x = gls[ind,0]
+                x = gls[ind,0] 
 
                 print("\n  Approximate stationary point at x = {: 16.10f}:".format(x))
                 print("  -----------------------------------------------")
@@ -152,6 +152,17 @@ def ev_linesearch(ints, config):
                 if not myopt.run(newfun, **config["optimiser"]["keywords"]):
                     continue
 
+                # Check the Hessian index
+                newfun.canonicalize()
+                if config["jobcontrol"]["nohess"]:
+                    newfun.hess_index = (0,0,0)     
+                    hindices = new_fun.hess_index   
+                else:
+                    newfun.get_davidson_hessian_index()
+                    hindices = newfun.hess_index
+                    #if (hindices[0] != target_index) and (target_index is not None):
+                    #    continue
+                
                 # Compare solution against previously found states
                 new = True
                 for prev, otherwfn in enumerate(wfn_list):
@@ -161,14 +172,13 @@ def ev_linesearch(ints, config):
 
                 # Save the solution if it is a new one!
                 if new: 
-                    hindices = newfun.get_hessian_index()
                     if config["wavefunction"]["method"] == "esmf":
                         newfun.canonicalize()
                     # Get the prefix for this solution
                     count += 1
                     tag = "{:04d}".format(count)
 
-                    # Save the object to disck
+                    # Save the object to disk
                     newfun.save_to_disk(tag)
 
                     # Save energy and indices

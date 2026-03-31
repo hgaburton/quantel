@@ -4,6 +4,19 @@ import unittest
 import numpy as np
 import pygnme
 
+def get_chergwin_coulson_weights(overlap_matrix, evecs): 
+    """Construct the Chergwin-Coulson weights for a given overlap matrix and eigenvector of the generalised eigenvalue problem
+    
+       Inputs:
+       -------
+           overlap_matrix  2d-array containing the overlap matrix for the nonorthogonal states
+           evecs           1d-array containing the eigenvector of the generalised eigenvalue problem
+        Outputs:
+        --------
+            W              1d-array containing the Chergwin-Coulson weights
+    """
+    return evecs * (overlap_matrix @ evecs)
+
 def orthogonalisation_matrix(M, thresh=1e-8):
     """Construct an orthogonalisation matrix X such that X^T M X = I for a symmetric matrix M
     
@@ -370,7 +383,6 @@ class test_utils(unittest.TestCase):
 
         # Test we have preserved the overlap
         self.assertTrue(abs(np.linalg.det(Snew) - np.linalg.det(Sold)) < 1e-12, msg='Failed to conserve overlap')
-
 
 if __name__=='__main__':
     unittest.main()

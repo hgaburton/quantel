@@ -68,7 +68,7 @@ class LBFGS:
             print(f"    > Canon interval = {self.control['canonical_interval']}")
             print(f"    > Hybrid prec.   = {not self.control['gamma_preconditioner']}")
 
-        # Initialise lists for subspace vectors
+        # Initialise lists for subspace vectors 
         v_step = []
         v_grad = []
 
@@ -204,6 +204,7 @@ class LBFGS:
             MaxDP = np.linalg.norm(step,ord=np.inf)
 
             # Take the step
+            # IMPORTANT, HERE IS WHERE THE ENERGY AND GRADIENT WILL CHANGE
             obj.take_step(step)
 
             # Remove oldest vectors if subspace is saturated
@@ -244,22 +245,24 @@ class LBFGS:
         """
         # Subspace size
         nvec = len(v_step)
-        assert(len(v_grad)==nvec+1)
+        assert(len(v_grad)==nvec+1) #right since we should have updated with current gradient
 
         # Clip the preconditioner to avoid numerical issues
         thresh=0.1
-        prec = np.sqrt(np.clip(prec,thresh,None))
+        prec = np.sqrt(np.clip(prec,thresh,None)) # prec is just the same as diag
 
         # Get sk, yk, and rho in energy weighted coordinates
+        # These are already parallel transported (if choosing to transport)
         sk = [v_step[i] * prec for i in range(nvec)]
         yk = [(v_grad[i+1] - v_grad[i]) / prec for i in range(nvec)]
         rho = [1.0 / np.dot(yk[i], sk[i]) for i in range(nvec)]
 
         # Get gamma_k
+        # Nocedal's formula to compute the H0k if one of the Hessian eigenvalues is negative: H0k = gamma_k * unit_matrix 
         gamma_k = np.dot(sk[-1], yk[-1]) / np.dot(yk[-1], yk[-1]) if (nvec > 0) else 1 
         
         # Initialise step from last gradient
-        q = v_grad[-1].copy() / prec
+        q = v_grad[-1].copy() / prec #this is the hessian update formula, and since we use a diagonal approximation to the Hessian this is fine! 
 
         # Compute alpha and beta terms
         alpha = np.empty(nvec)
@@ -267,7 +270,7 @@ class LBFGS:
             alpha[i] = rho[i] * np.dot(sk[i], q) 
             q = q - alpha[i] * yk[i]
 
-        # Apply preconditioner
+        # Apply preconditioner, which can be unity or scaled unity matrix 
         r = q * gamma_k
 
         # Second loop of L-BFGS

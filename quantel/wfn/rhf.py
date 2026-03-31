@@ -1,11 +1,13 @@
 #!/usr/bin/python3
 # Author: Hugh G. A. Burton
-
+import sys
 import numpy as np
 import scipy.linalg
 import h5py
 from quantel.utils.linalg import orthogonalise, matrix_print
 from quantel.utils.scf_utils import mom_select
+from quantel.utils.orbital_utils import localise_orbitals
+from quantel.utils.ab2_orbitals import reorthogonalise_virs, get_ab2_orbs, get_smushed_ab2_orbs 
 from .wavefunction import Wavefunction
 import quantel
 from pyscf.tools import cubegen
@@ -199,15 +201,17 @@ class RHF(Wavefunction):
             matrix_print(self.fock, title="Fock Matrix (AO basis)")
         print()
 
-    def save_to_disk(self,tag):
+    def save_to_disk(self,tag, canon=True):
         """Save object to disk with prefix 'tag'"""
-        # Canonicalise orbitals
-        self.canonicalize()
+        if canon:
+            # Canonicalise orbitals
+            self.canonicalize()
  
         # Save hdf5 file with MO coefficients, orbital energies, energy, and spin
         with h5py.File(tag+".hdf5", "w") as F:
             F.create_dataset("mo_coeff", data=self.mo_coeff)
-            F.create_dataset("mo_energy", data=self.mo_energy)
+            if canon: 
+                F.create_dataset("mo_energy", data=self.mo_energy)
             F.create_dataset("energy", data=self.energy)
             F.create_dataset("s2", data=self.s2)    
         
@@ -216,7 +220,7 @@ class RHF(Wavefunction):
         with open(tag+".solution", "w") as F:
             F.write(f"{self.energy:18.12f} {hindices[0]:5d} {hindices[1]:5d} {self.s2:12.6f}\n")
 
-    def read_from_disk(self,tag):
+    def read_from_disk(self,tag,**kwargs):
         """Read object from disk with prefix 'tag'"""
         # Read MO coefficients from hdf5 file
         with h5py.File(tag+".hdf5", "r") as F:
@@ -396,7 +400,7 @@ class RHF(Wavefunction):
         mask[self.nocc:,:self.nocc] = True
         return mask
     
-    def get_orbital_guess(self, method="gwh"):
+    def get_orbital_guess(self, method="gwh", avas_ao_labels=None, reorder=None):
         """Get a guess for the molecular orbital coefficients"""
         # Get one-electron integrals and overlap matrix 
         h1e = self.integrals.oei_matrix(True)
@@ -472,3 +476,29 @@ class RHF(Wavefunction):
         # Saves MOs as cubegen files
         for mo in idx: 
             cubegen.orbital(self.integrals.mol, fname+f".mo.{mo}.cube", self.mo_coeff[:,mo])
+
+    def localise_orbitals(self, plev=1): 
+        self.mo_coeff[:,:self.nocc], isstable = localise_orbitals(self.integrals.mol, self.mo_coeff[:,:self.nocc])
+        self.update() 
+        if plev>0: 
+            print("  Orbital localistion stable: ", isstable)
+
+    def compute_and_update_AB2(self,indices=None): 
+        """ Wrapper to compute and update virtuals with AB2 orbitals"""  
+        self.localise_orbitals() 
+        if indices is None: 
+            AB2_orbitals = get_ab2_orbs(self) 
+        else: 
+            AB2_orbitals = get_smushed_ab2_orbs(self,indices) 
+                
+        ortho_virs = reorthogonalise_virs(self, AB2_orbitals)    
+        self.mo_coeff[:,self.nocc:] = ortho_virs
+        self.update() 
+        return AB2_orbitals 
+    
+   # def get_AB2_orbitals(self): 
+   #     return get_ab2_orbs(self)
+
+   # def update_vir_orbitals(self, new_virs): 
+   #     update_vir_orbs(self, self.nocc, new_virs)
+   #     return 

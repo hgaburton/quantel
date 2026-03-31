@@ -108,7 +108,6 @@ def gwh_guess(integrals, K=1.75):
     # Solve initial generalised eigenvalue problem
     return scipy.linalg.eigh(hguess, s)[1]
 
-
 def orbital_guess(integrals, method="gwh", avas_ao_labels=None, gwh_K=1.75, rohf_ms=0):
     """
     Get initial orbital guess using different methods
@@ -136,5 +135,5 @@ def orbital_guess(integrals, method="gwh", avas_ao_labels=None, gwh_K=1.75, rohf
         Cguess = coeff_from_file()
     else:
         raise NotImplementedError(f"Orbital guess method {method} not implemented")
-    
+   
     return Cguess

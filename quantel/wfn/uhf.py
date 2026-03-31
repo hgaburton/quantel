@@ -248,11 +248,11 @@ class UHF(Wavefunction):
         with open(tag+".solution", "w") as F:
             F.write(f"{self.energy:18.12f} {hindices[0]:5d} {hindices[1]:5d} {self.s2:12.6f}\n")
     
-    def read_from_disk(self, tag):
+    def read_from_disk(self, tag,**kwargs):
         """Read a wavefunction object to disk"""
         with h5py.File(tag+".hdf5", "r") as F:
             mo_read = [F["alpha mo_coeff"][:], F["beta mo_coeff"][:]]
-        self.initialise(mo_read)
+        self.initialise(np.array(mo_read))
 
     def update(self): 
         """ Update the density and Fock matrices for the current MO coefficients """
@@ -513,12 +513,21 @@ class UHF(Wavefunction):
         return them
 
     def overlap(self,other):
-        return 
-
+        if(self.nocc != other.nocc):
+            return 0
+        elif (self.nalfa != other.nalfa) or (self.nbeta != other.nbeta): 
+            return 0 
+        ovlp = self.integrals.overlap_matrix()
+        Sa = np.linalg.multi_dot([self.mo_coeff[0][:,:self.nalfa].T, ovlp, other.mo_coeff[0][:,:self.nalfa]])
+        Sb = np.linalg.multi_dot([self.mo_coeff[1][:,:self.nbeta].T, ovlp, other.mo_coeff[1][:,:self.nbeta]])
+        return np.linalg.det(Sa)*np.linalg.det(Sb)
+ 
     def hamiltonian(self, other):
         """Compute the Hamiltonian coupling with another wavefunction of this type"""
         pass
     
+    def deallocate(self):
+        pass
     
     def approx_hess_on_vec(self, vec, eps=1e-3):
         """ Compute the approximate Hess * vec product using forward finite difference """

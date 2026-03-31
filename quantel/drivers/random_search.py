@@ -24,15 +24,15 @@ def random_search(ints, config):
     if(ms==0):
         print("\nRunning initial closed-shell RHF calculation...")
         mf = RHF(ints)
-        mf.get_orbital_guess()
-        LBFGS().run(mf,maxit=init_scf_cycles)
-        ref_mo = mf.mo_coeff.copy()
     else:
         print(f"\nRunning initial high-spin ROHF calculation with multiplicity {ms+1: 3d}...")
         mf = ROKS(ints, '+'*ms)
-        mf.get_orbital_guess()
-        LBFGS().run(mf,maxit=init_scf_cycles)
-        ref_mo = mf.mo_coeff.copy()
+    
+    mf.get_orbital_guess()
+    LBFGS().run(mf,maxit=init_scf_cycles)
+    
+    
+    ref_mo = mf.mo_coeff.copy()
     ref_ci = None
     mf.print(config["jobcontrol"]["print_final"])
 
@@ -70,7 +70,9 @@ def random_search(ints, config):
         from quantel.opt.lbfgs import LBFGS as OPT
     elif config["optimiser"]["algorithm"] == "mode_control":
         from quantel.opt.mode_controlling import ModeControl as OPT
-
+    elif config["optimiser"]["algorithm"] == "diis":
+        from quantel.opt.diis import DIIS as OPT
+    
     # Set numpy random seed
     numpy.random.seed(config["jobcontrol"]["search"]["seed"])
 
