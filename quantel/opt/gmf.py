@@ -92,7 +92,7 @@ class GMF:
         for istep in range(maxit+1):
             # Get gradient and check convergence
             #conv = np.linalg.norm(grad) * np.sqrt(1.0/grad.size)
-            conv = np.linalg.norm(grad,ord=np.inf) #stationary point check 
+            conv = np.linalg.norm(grad,ord=np.inf)
             ecur = obj.energy
 
             if istep > 0 and plev > 0:

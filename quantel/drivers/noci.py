@@ -28,7 +28,6 @@ def oscillator_strength(wfnlist, namelist, ref_ind=0, plev=1):
         # Compute excitation energy
         de = state_i.energy - ref_state.energy 
         # Compute TDM
-        ##### so to compute the TDM we need to transition density matrices and then multiply by the dipole vector for the current state .
         s, tdm = ref_state.tdm(state_i)
         # Compute oscillator strength
         f = 2./3. * de * numpy.dot(tdm,tdm)
@@ -68,10 +67,6 @@ def overlap(wfnlist, lindep_tol=1e-8, plev=1, save=True):
             if(i<j): continue
             Swx[i,j] = state_i.overlap(state_j)
     if plev > 0: print(" done")
-
-    # Save to disk for safekeeping
-    if save:
-        numpy.savetxt('noci_ov',  Swx, fmt="% 8.6f")
 
     # Print Hamiltonian and Overlap matrices 
     if plev > 0:
@@ -128,8 +123,7 @@ def noci(wfnlist, lindep_tol=1e-8, plev=1):
     
     #Get Chergwin-Coulson weights and save overlap 
     ccW = get_chergwin_coulson_weights(Swx, v) 
-    numpy.savetxt('chco_weights', ccW, fmt="% 8.6f")
-    numpy.savetxt('overlap_matrix', Swx, fmt="% 8.6f")
+    numpy.savetxt('noci_weights', ccW, fmt="% 8.6f")
 
     print("\n NOCI Eigenvalues")
     print(w)

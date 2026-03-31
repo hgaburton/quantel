@@ -1,5 +1,6 @@
 from pyscf import scf, lo
 import numpy as np 
+
 def localise_orbitals(pymol,coeff,pop_method='becke'):
     """ 
        Wrapper for PYSCF orbital localisation via Pipek-Mezey scheme

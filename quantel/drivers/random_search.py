@@ -26,8 +26,7 @@ def random_search(ints, config):
         mf = RHF(ints)
     else:
         print(f"\nRunning initial high-spin ROHF calculation with multiplicity {ms+1: 3d}...")
-        #mf = ROKS(ints, '+'*ms)
-        mf = CSF(ints, '+'*ms)
+        mf = ROKS(ints, '+'*ms)
     
     mf.get_orbital_guess()
     LBFGS().run(mf,maxit=init_scf_cycles)

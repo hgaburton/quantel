@@ -5,10 +5,17 @@ import numpy as np
 import pygnme
 
 def get_chergwin_coulson_weights(overlap_matrix, evecs): 
-    # Calculate the Chergwin-Coulson weights 
-    W = np.linalg.multi_dot((overlap_matrix, evecs))
-    W = np.multiply(evecs, W)
-    return np.array(W)
+    """Construct the Chergwin-Coulson weights for a given overlap matrix and eigenvector of the generalised eigenvalue problem
+    
+       Inputs:
+       -------
+           overlap_matrix  2d-array containing the overlap matrix for the nonorthogonal states
+           evecs           1d-array containing the eigenvector of the generalised eigenvalue problem
+        Outputs:
+        --------
+            W              1d-array containing the Chergwin-Coulson weights
+    """
+    return evecs * (overlap_matrix @ evecs)
 
 def orthogonalisation_matrix(M, thresh=1e-8):
     """Construct an orthogonalisation matrix X such that X^T M X = I for a symmetric matrix M

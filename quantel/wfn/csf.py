@@ -232,15 +232,14 @@ class CSF(Wavefunction):
         return nucl_dip - np.einsum('xij,ji->x',ao_dip,self.dj)
 
     def tdm(self, them):
-        """ Compute the dipole moment of the current wave function"""
+        """ Compute the transition dipole moment with another CSF state"""
         # Get the dipole integrals
         nucl_dip, ao_dip = self.integrals.dipole_matrix()
         overlap = self.integrals.overlap_matrix() 
-        # Summing here first
-        nucl_dip = np.sum(nucl_dip) 
-        ao_dip = np.sum(ao_dip, axis=0) 
-        # need to use a correction to avoid the effect of nonzero overlap 
-        return csf_coupling(self, them, overlap , hcore=ao_dip, enuc=nucl_dip)
+        tdm = np.zeros(3)
+        for x in range(3):
+            tdm[x] = csf_coupling_slater_condon(self, them, overlap, hcore=ao_dip[x], enuc=nucl_dip[x])
+        return tdm
         
     def print(self,verbose=1):
         """ Print details about the state energy and orbital coefficients

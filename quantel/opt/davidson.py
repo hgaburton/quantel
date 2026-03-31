@@ -57,13 +57,13 @@ class Davidson:
         else:
             assert(xguess.shape[1] == n)
             K = xguess.copy()
-        K = orthogonalise(K,fill=False) # orthogonalising the subspace basis vectors
+        K = orthogonalise(K,fill=False)
 
         # Initialise HK vectors, generating the subspace VA_k in the notes 
         HK = np.empty((dim, 0))
 
         # Make K in fortran column-major
-        K = np.asfortranarray(K) #special way to save it 
+        K = np.asfortranarray(K)
 
         if plev>1: print("  =========================================")
         if plev>1: print("    Step   Max(|res|)    # Conv    Subspace")
@@ -79,13 +79,12 @@ class Davidson:
                 # NOTE this requires column-major ordering for effective slicing
                 sk = K[:,ik].copy()
                 # Get approximate Hessian on vector
-                H_sk = fun_Hv(sk,**Hv_args)# is the approx hess on vec function - second argument is the eps value which is just h in the finite difference scheme 
-                #within this we have the parallel transport necessary to bring our gradient at our new step back to the current step. 
+                H_sk = fun_Hv(sk,**Hv_args) 
                 # Add to HK space
                 HK = np.column_stack([HK,H_sk.copy()]) 
 
             # Solve Krylov subproblem
-            A = K.T @ HK #Hessian in our subspace
+            A = K.T @ HK
             e, y = np.linalg.eigh(A)
             # Extract relevant eigenvalues (e) and eigenvectors (x)
             e = e[:n]

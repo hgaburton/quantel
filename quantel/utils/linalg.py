@@ -64,9 +64,7 @@ def delta_kron(i, j):
         return 1
     else:
         return 0
-def delta_kron(i,j):
-    if i==j: return 1
-    else: return 0
+
 
 def sym_orthogonalise(mat, metric, thresh=1e-10):
     """
@@ -179,7 +177,7 @@ def orthogonalise(mat, metric=None, thresh=1e-10, fill=True):
     # If the orthogonality test fails, we need to orthogonalise
     if ortho_test > thresh:
         # Perform Gram-Schmidt twice for stability
-        mat = gram_schmidt( gram_schmidt(mat,metric),metric)
+        mat = gram_schmidt(gram_schmidt(mat,metric),metric)
         # Re-check the orthogonality
         ortho = inner_prod(mat,mat,metric)
         for i in range(mat.shape[1]):
@@ -199,9 +197,8 @@ def matrix_print(M, title=None, labels=None, ncols=6, offset=0):
         print("  "+title)
         print(" -----------------------------------------------------------------------------------------------")
     # Loop over output blocks
-    #ceils gives the smallest value of (nc/ncols) + 1 - i.e. how many block we need to write matrix in 
     for i in range(np.ceil(nc/ncols).astype(int)):
-        print("     ",end="") # this prints the space between the columns of each block, end="" prevents printing of line break so that they stay on the same block
+        print("     ",end="")
         for j in range(ncols):
             if(i*ncols+j < nc):
                 if labels is not None:  
