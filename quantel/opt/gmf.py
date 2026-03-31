@@ -152,7 +152,6 @@ class GMF:
             # Compute n lowest eigenvalues
             prec = obj.get_preconditioner(abs=True)
             eigval, evec = davidson.run(obj.hess_on_vec,prec,index+1,xguess=evec,tol=1e-4,plev=0)
-            
             # Compute new GMF gradient (need to parallel transport Hessian eigenvector)
             grad = obj.gradient
             gmod = self.get_gmf_gradient(obj,grad,index,eigval[:index],evec[:,:index])
