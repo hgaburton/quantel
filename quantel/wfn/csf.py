@@ -219,7 +219,7 @@ class CSF(Wavefunction):
         # Get the dipole integrals
         nucl_dip, ao_dip = self.integrals.dipole_matrix()
         # Return the combination
-        return nucl_dip - np.einsum('xij,ji->x',ao_dip,self.dj)
+        return nucl_dip - np.einsum('xij,kji->x',ao_dip,self.vd)
 
         
     def print(self,verbose=1):

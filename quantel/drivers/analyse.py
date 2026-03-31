@@ -61,8 +61,8 @@ def analyse(ints, config):
 
             if(type(myfun) is quantel.wfn.csf.CSF):
                 for i in range(myfun.nshell+1):
-                    cubegen.density(ints.mol, fname+'.shell.{:d}.cube'.format(i), myfun.dk[i])
-                open_dens = numpy.einsum('ipq->pq', myfun.dk[1:])
+                    cubegen.density(ints.mol, fname+'.shell.{:d}.cube'.format(i), myfun.vd[i])
+                open_dens = numpy.einsum('ipq->pq', myfun.vd[1:])
                 cubegen.density(ints.mol, fname+'.open.cube', open_dens)
 
             for i in range(dysonorbs):

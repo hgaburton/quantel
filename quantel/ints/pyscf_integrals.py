@@ -142,7 +142,7 @@ class PySCFIntegrals:
 
         # Get AO dipole matrices
         ao_dip = self.mol.intor_symmetric('int1e_r', comp=3)
-        return nucl_dip, ao_dip 
+        return nucl_dip, ao_dip
 
     def build_J(self,vdJ,hermi=0):
         """ Build Coulomb matrices for multiple sets of densities
@@ -172,7 +172,7 @@ class PySCFIntegrals:
                 ndarray : The scaled Exchange matrix for xc functional
         """
         vJ, vK = self.get_jk(dm=(vdJ,vdK), hermi=hermi)
-        vKfunc = vK.copy()
+        vKfunc = vK
         if (self.xc is None):
             pass
         elif self.ni.libxc.is_hybrid_xc(self.xc):
@@ -349,7 +349,8 @@ class PySCF_MO_Integrals:
             # Compute core density
             Pcore = Ccore @ Ccore.T
             # Compute inactive JK matrix (2J-K) in AO basis
-            JK = self.ints.build_JK(Pcore)
+            J,K = self.ints.build_JK(Pcore,Pcore)
+            JK = 2*J - K
 
             # Compute scalar core energy 
             Hao = self.ints.oei_matrix()
@@ -495,7 +496,7 @@ class PySCF_CIspace:
         """
         h1 = self.m_ints.oei_matrix(True)
         h2 = self.m_ints.tei_array(True,False).transpose(0,2,1,3)
-        return self.fcisolver.pspace(h1,h2,self.m_nmo,self.nelec)[1] + np.eye(self.ndet()) * self.m_ints.scalar_potential()
+        return self.fcisolver.pspace(h1,h2,self.m_nmo,self.nelec,np=self.ndet())[1] + np.eye(self.ndet()) * self.m_ints.scalar_potential()
     
     def rdm1(self, civec, spin):
         """ Compute the one-particle density matrix
