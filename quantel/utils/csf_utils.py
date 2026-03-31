@@ -240,7 +240,7 @@ def optimise_order(K, X):
 
     return order
 
-def csf_reorder_orbitals(integrals, exchange_matrix, cinit, pop_method='becke'):  
+def csf_reorder_orbitals(integrals, exchange_matrix, cinit, pop_method='becke', localise=True):  
     """
     Optimise the order of the CSF orbitals using the exchange matrix 
     to minimise the exchange energy
@@ -262,20 +262,21 @@ def csf_reorder_orbitals(integrals, exchange_matrix, cinit, pop_method='becke'):
     pymol = integrals.molecule()
 
     # Localise the active orbitals
-    print("  Localising open-shell orbitals")
-    pm = lo.PM(pymol, cinit, scf.ROHF(pymol))
-    pm.pop_method = pop_method
-    cinit = pm.kernel()
+    #print("  Localising open-shell orbitals")
+    if(localise):
+        pm = lo.PM(pymol, cinit, scf.ROHF(pymol))
+        pm.pop_method = pop_method
+        cinit = pm.kernel()
 
     # Get exchange integrals in active orbital space
-    print("  Computing localised orbital exchange integrals")
+    #print("  Computing localised orbital exchange integrals")
     vdm = np.einsum('pi,qi->ipq',cinit,cinit)
     vJ, vK = integrals.build_JK(vdm,vdm,Kxc=False)
     # Transform to MO basis
     K = np.einsum('pmn,mq,nq->pq',vK,cinit,cinit)
 
     # These are the active exchange integrals in chemists order (pq|rs)
-    print("  Optimising order of open-shell orbitals")
+    #print("  Optimising order of open-shell orbitals")
     order = optimise_order(K, exchange_matrix)
 
     # Save initial guess and return

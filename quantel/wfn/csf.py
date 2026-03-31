@@ -541,14 +541,14 @@ class CSF(Wavefunction):
         return csf_coupling_slater_condon(self, them, self.integrals)
     
 
-    def get_orbital_guess(self, method="gwh",avas_ao_labels=None,reorder=True, localise=True):
+    def get_orbital_guess(self, method="gwh",avas_ao_labels=None,reorder=False,localise=False):
         """Get a guess for the molecular orbital coefficients"""
         # Get the guess for the molecular orbital coefficients
         Cguess = orbital_guess(self.integrals,method,avas_ao_labels=avas_ao_labels,rohf_ms=0.5*self.nopen)
-        if localise:  
-            self.initialise(Cguess, spin_coupling=self.nopen*"+")
-            self.localise_orbitals()
-            Cguess = self.mo_coeff.copy() 
+        if localise:
+            # Localise the open-shell and closed-shell orbitals separately, then combine and orthogonalise
+            Cguess[:,:self.ncore], isstable = localise_orbitals(self.integrals.molecule(), Cguess[:,:self.ncore])
+            Cguess[:,self.ncore:self.nocc], isstable = localise_orbitals(self.integrals.molecule(), Cguess[:,self.ncore:self.nocc])
         # Optimise the order of the CSF orbitals and return
         if(reorder and (self.spin_coupling != '')):
             Cguess[:,self.ncore:self.nocc] = csf_reorder_orbitals(self.integrals,self.exchange_matrix,
