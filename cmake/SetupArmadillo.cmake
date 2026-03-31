@@ -17,16 +17,17 @@ if(NOT TARGET armadillo)
 if(ARMADILLO_PATH)
     find_path(ARMADILLO_INCLUDE_DIRS armadillo PATHS "${ARMADILLO_PATH}"
         PATH_SUFFIXES include usr/include usr/local/include NO_DEFAULT_PATH)
-else(ARMADILLO_PATH)
+else()
     find_path(ARMADILLO_INCLUDE_DIRS armadillo)
-endif(ARMADILLO_PATH)
+endif()
+
 if(ARMADILLO_INCLUDE_DIRS)
     add_library(armadillo INTERFACE)
     set(ARMADILLO_COMPILE_DEFINITIONS
         ARMA_DONT_USE_WRAPPER ARMA_USE_NEWARP ARMA_DONT_USE_ATLAS
         ARMA_DONT_USE_SUPERLU ARMA_DONT_USE_HDF5
         ARMA_DONT_USE_CXX11 ARMA_DONT_PRINT_CXX11_WARNING
-	ARMA_DONT_USE_OPENMP ARMA_64BIT_WORD
+        ARMA_DONT_USE_OPENMP ARMA_64BIT_WORD
         $<$<NOT:$<CONFIG:Debug>>:ARMA_NO_DEBUG>)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "Intel")
         list(APPEND ARMADILLO_COMPILE_DEFINITIONS
@@ -34,29 +35,29 @@ if(ARMADILLO_INCLUDE_DIRS)
     endif()
     if(BLAS_FOUND)
         list(APPEND ARMADILLO_COMPILE_DEFINITIONS ARMA_USE_BLAS)
-    else(BLAS_FOUND)
+    else()
         list(APPEND ARMADILLO_COMPILE_DEFINITIONS ARMA_DONT_USE_BLAS)
-    endif(BLAS_FOUND)
+    endif()
     if(LAPACK_FOUND)
         list(APPEND ARMADILLO_COMPILE_DEFINITIONS ARMA_USE_LAPACK)
-    else(LAPACK_FOUND)
+    else()
         list(APPEND ARMADILLO_COMPILE_DEFINITIONS ARMA_DONT_USE_LAPACK)
-    endif(LAPACK_FOUND)
+    endif()
     target_compile_definitions(armadillo INTERFACE
         ${ARMADILLO_COMPILE_DEFINITIONS})
     target_include_directories(armadillo INTERFACE "${ARMADILLO_INCLUDE_DIRS}")
     if(BLAS_FOUND)
         target_link_libraries(armadillo INTERFACE
             ${BLAS_LINKER_FLAGS} ${BLAS_LIBRARIES})
-    endif(BLAS_FOUND)
+    endif()
     if(LAPACK_FOUND)
         target_link_libraries(armadillo INTERFACE
             ${LAPACK_LINKER_FLAGS} ${LAPACK_LIBRARIES})
-    endif(LAPACK_FOUND)
+    endif()
     set(Armadillo_FOUND TRUE)
     message(STATUS "Found Armadillo: ${ARMADILLO_INCLUDE_DIRS}")
-else(ARMADILLO_INCLUDE_DIRS)
+else()
     message(ERROR "Cannot find Armadillo")
-endif(ARMADILLO_INCLUDE_DIRS)
+endif()
 
-endif(NOT TARGET armadillo)
+endif()

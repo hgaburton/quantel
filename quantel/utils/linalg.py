@@ -131,21 +131,48 @@ def gram_schmidt(mat, metric=None):
     Returns: 
         ndarray          : Matrix containing the orthogonalised vectors
     '''
-    idx_indep = []   
-    for i in range(mat.shape[1]): 
+    # Copy of metric @ vector for use later
+    Sv = np.copy(mat) if (metric is None) else metric @ mat
+
+    # Orthogonalise each vector sequentially
+    for i in range(0,mat.shape[1]):
         # Target vector
-        vi = mat[:,i] 
-        vi_norm = norm(vi, metric)
-        # Reject linearly dependent vectors
-        if vi_norm > 1e-8: 
-            vi /= vi_norm 
-            idx_indep.append(i)
-            # Project out current direction from subsequent vectors
-            if metric is None: 
-                mat[:, i+1:mat.shape[1] ] -=  np.linalg.outer( vi, np.einsum("i,ij", vi, mat[:, i+1:mat.shape[1] ] ) )    
-            else: 
-                mat[:, i+1:mat.shape[1] ] -=  np.linalg.outer(vi, np.einsum("i,ij,jk", vi, metric, mat[:, i+1:mat.shape[1] ] ) )
-    return mat[:,idx_indep]
+        vi  = mat[:,i]
+        # Projection space
+        vj  = mat[:,:i]
+        # Perform the projection
+        vi -= vj @ (vj.conj().T @ Sv[:,i])
+        # Renormalise
+        vi /= norm(vi,metric)
+    return mat
+
+    #idx_indep = []   
+    #if(metric is None):
+    #    print(mat.T @ mat)
+    #else:
+    #    print(mat.T @ metric @ mat)
+    #for i in range(mat.shape[1]): 
+    #    # Target vector
+    #    vi = mat[:,i] 
+    #    vi_norm = norm(vi, metric)
+    #    # Reject linearly dependent vectors
+    #    if vi_norm > 1e-8: 
+    #        vi = mat[:,i]
+    #        vj = mat[:,:i]
+    #        vi -= vj @ ()
+    #        if metric is None:
+    #            vi = vi - mat[:,:i] @ mat[:,:i].T @ vi
+    #        else:
+    #            vi = vi - mat[:,:i] @ metric @ mat[:,:i].T @ vi
+    #        vi /= vi_norm 
+    #        idx_indep.append(i)
+    #        # Project out current direction from subsequent vectors
+    #            
+    #        if metric is None: 
+    #            mat[:,i+1:mat.shape[1]] -=  np.outer(vi, np.einsum("i,ij", vi, mat[:,i+1:mat.shape[1] ]))
+    #        else: 
+    #            mat[:,i+1:mat.shape[1]] -=  np.outer(vi, np.einsum("i,ij,jk", vi, metric, mat[:,i+1:mat.shape[1]]))
+    #return mat[:,idx_indep]
 
 def orthogonalise(mat, metric=None, thresh=1e-10, fill=True):
     '''

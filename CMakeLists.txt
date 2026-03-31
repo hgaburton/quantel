@@ -2,8 +2,6 @@ cmake_minimum_required(VERSION 3.12)
 
 project(_quantel)
 
-include(ExternalProject)
-
 # Specify the required C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
@@ -33,9 +31,6 @@ endif()
 set(SOURCE_DIR "src/")
 message(STATUS "SOURCE DIRECTORY: ${SOURCE_DIR}")
 
-# Tell CMake that headers are also in SOURCE_DIR
-include_directories(${SOURCE_DIR})
-
 # BLAS/LAPACK — on macOS prefer Apple's Accelerate framework
 if(APPLE)
     set(BLA_VENDOR Apple)
@@ -46,19 +41,18 @@ find_package(LAPACK)
 # Armadillo (header-only, links against the BLAS/LAPACK found above)
 set(ARMADILLO_PATH "${ROOT_DIR}/external/armadillo")
 include(cmake/SetupArmadillo.cmake)
-include_directories($<TARGET_PROPERTY:armadillo,INTERFACE_INCLUDE_DIRECTORIES>)
-set_property(DIRECTORY . APPEND PROPERTY COMPILE_DEFINITIONS
-    $<TARGET_PROPERTY:armadillo,INTERFACE_COMPILE_DEFINITIONS>)
 
-# Find third-party packages
+# Third-party packages
 find_package(Eigen3 REQUIRED)
-include_directories(${EIGEN3_INCLUDE_DIR})
 find_package(Boost)
-include_directories(${Boost_INCLUDE_DIRS})
+
+# External subprojects
+add_subdirectory(external/fmt)
+add_subdirectory(external/libint2)
 
 # Generate Python module
 find_package(pybind11 CONFIG REQUIRED)
-pybind11_add_module(_quantel ${SOURCES}
+pybind11_add_module(_quantel
     "${SOURCE_DIR}/bindings.cpp"
     "${SOURCE_DIR}/shell_pair.cpp"
     "${SOURCE_DIR}/molecule.cpp"
@@ -69,17 +63,18 @@ pybind11_add_module(_quantel ${SOURCES}
     "${SOURCE_DIR}/ci_space2.cpp"
 )
 
-add_subdirectory(external/fmt)
-add_subdirectory(external/libint2)
+target_include_directories(_quantel PRIVATE
+    ${SOURCE_DIR}
+    ${Boost_INCLUDE_DIRS})
 
 target_link_libraries(_quantel PRIVATE
     fmt-header-only
     armadillo
     libint2
+    Eigen3::Eigen
     ${LAPACK_LIBRARIES}
     ${BLAS_LIBRARIES}
-    ${Boost_LIBRARIES}
-    ${EIGEN3_LIBRARIES})
+    ${Boost_LIBRARIES})
 
 # On macOS, link Accelerate explicitly when BLAS/LAPACK come from it
 if(APPLE AND BLA_VENDOR STREQUAL "Apple")
@@ -107,7 +102,7 @@ if(USE_OpenMP)
     endif()
     find_package(OpenMP REQUIRED)
     if(OpenMP_CXX_FOUND)
-        target_link_libraries(_quantel PUBLIC OpenMP::OpenMP_CXX)
+        target_link_libraries(_quantel PRIVATE OpenMP::OpenMP_CXX)
     endif()
 endif()
 

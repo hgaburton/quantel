@@ -16,8 +16,8 @@ int main(int argc, char* argv[]) {
 
 if(Boost_COMPILES)
     set(${VERIFY} 1)
-else(Boost_COMPILES)
+else()
     set(${VERIFY} 0)
-endif(Boost_COMPILES)
+endif()
 
-endmacro(verify_boost)
+endmacro()

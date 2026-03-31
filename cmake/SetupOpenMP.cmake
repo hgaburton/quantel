@@ -20,4 +20,4 @@ if(WITH_OPENMP)
         int main() { return 0; }"
         WITH_OPENMP4_ATOMIC)
     set(CMAKE_REQUIRED_FLAGS ${CMAKE_REQUIRED_FLAGS_SAVED})
-endif(WITH_OPENMP)
+endif()
