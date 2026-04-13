@@ -4,6 +4,7 @@ import numpy as np
 import quantel
 from quantel.utils.scf_utils import mom_select
 from quantel.utils.linalg import orthogonalise, matrix_print
+from quantel.gnme.uhf_noci import uhf_coupling 
 from .wavefunction import Wavefunction
 from pyscf.tools import cubegen 
 
@@ -524,7 +525,8 @@ class UHF(Wavefunction):
  
     def hamiltonian(self, other):
         """Compute the Hamiltonian coupling with another wavefunction of this type"""
-        pass
+        eri = self.integrals.tei_array().reshape(self.nbsf**2, self.nbsf**2) 
+        return uhf_coupling(self, other, self.integrals.overlap_matrix(), hcore=self.integrals.oei_matrix(), eri=eri, enuc=self.integrals.scalar_potential()) 
     
     def deallocate(self):
         pass
