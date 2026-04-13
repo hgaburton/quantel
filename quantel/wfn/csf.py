@@ -173,6 +173,27 @@ class CSF(Wavefunction):
         return En + E1 + EJ + EK
     
     @property
+    def divided_energy(self):
+        """ Compute the energy corresponding to a given set of
+             one-el integrals, two-el integrals, 1- and 2-RDM
+        """
+        # Total density
+        dt = np.einsum('wpq->pq',self.vd)
+        # Nuclear repulsion
+        En = self.integrals.scalar_potential()
+        # One-electron energy
+        E1 = np.einsum('pq,qp',dt,self.integrals.oei_matrix(True))
+        # Coulomb energy
+        EJ = 0.5 * np.einsum('pq,qp',dt,self.J)
+        # Exchange energy
+        EK = - 0.25 * np.einsum('pq,qp',dt,self.K[0])
+        for w in range(self.nshell):
+            EK += 0.5 * np.einsum('pq,qp',self.K[1+w], 
+                        np.einsum('v,vpq->pq',self.beta[w],self.vd[1:]) - 0.5 * self.vd[0])
+        # Save components
+        self.energy_components = dict(Nuclear=En, One_Electron=E1, Coulomb=EJ, ROHF_Exchange=EK)
+        return En, E1, EJ + EK
+    @property
     def sz(self):
         """<S_z> value of the current wave function"""
         return 0.5 * np.sum([1 if s=='+' else -1 for s in self.spin_coupling])
@@ -535,16 +556,20 @@ class CSF(Wavefunction):
         return csf_coupling(self, them, ovlp)[0]
 
 
-    def hamiltonian(self, them):
+    def hamiltonian(self, them, comp=False):
         """ Compute the Hamiltonian coupling between two CSF objects
         """
-        return csf_coupling_slater_condon(self, them, self.integrals)
+        if comp: 
+            return altered_csf_coupling_slater_condon(self, them, self.integrals)
+        else: 
+            return csf_coupling_slater_condon(self, them, self.integrals)
     
 
     def get_orbital_guess(self, method="gwh",avas_ao_labels=None,reorder=True, localise=True):
         """Get a guess for the molecular orbital coefficients"""
         # Get the guess for the molecular orbital coefficients
         Cguess = orbital_guess(self.integrals,method,avas_ao_labels=avas_ao_labels,rohf_ms=0.5*self.nopen)
+        saved_spin_coupling = self.spin_coupling 
         if localise:  
             self.initialise(Cguess, spin_coupling=self.nopen*"+")
             self.localise_orbitals()
@@ -554,7 +579,7 @@ class CSF(Wavefunction):
             Cguess[:,self.ncore:self.nocc] = csf_reorder_orbitals(self.integrals,self.exchange_matrix,
                                                                   np.copy(Cguess[:,self.ncore:self.nocc]))
         # Initialise the CSF object with the guess coefficients.
-        self.initialise(Cguess, spin_coupling=self.spin_coupling)
+        self.initialise(Cguess, spin_coupling=saved_spin_coupling)
         return
 
     def restore_last_step(self):

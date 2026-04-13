@@ -1,7 +1,7 @@
 from quantel.ints.pyscf_integrals import PySCF_MO_Integrals, PySCFIntegrals, PySCFMolecule
 from quantel.wfn.rhf import RHF
 from quantel.wfn.cisolver import FCI
-from quantel.opt.diis import DIIS
+from quantel.opt.lbfgs import LBFGS
 
 if __name__ == "__main__":
     # Setup molecule
@@ -11,7 +11,7 @@ if __name__ == "__main__":
     # Run RHF to get MO coefficients
     wfn = RHF(ints)
     wfn.get_orbital_guess(method="gwh")
-    DIIS().run(wfn)
+    LBFGS().run(wfn)
 
     # Build the integrals
     Ccore = wfn.mo_coeff[:,0:0]
@@ -22,7 +22,6 @@ if __name__ == "__main__":
     # Setup and solve FCI
     ci = FCI(mo_ints, (mol.nalfa(), mol.nbeta()), version=1)
     x, eci = ci.solve(3,verbose=5)
-    
     # Verify solution
     if abs(-2.84719213 - x[0]) > 1e-6:
         raise ValueError("FCI energy does not match reference value")

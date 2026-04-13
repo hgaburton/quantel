@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/home/cyzbrown/anaconda3/envs/quantel/bin/python
 
 """Main script for running state-specific energy landscape code
 

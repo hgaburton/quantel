@@ -91,3 +91,41 @@ def csf_coupling_slater_condon(csf1, csf2, ints, thresh=1e-10):
             Sxw += S * cix * ciw
 
     return Sxw, Hxw
+
+def altered_csf_coupling_slater_condon(csf1, csf2, ints, thresh=1e-10):
+    # Compute coupling of two CSFs using Slater-Condon rules
+
+    # Get the overlap matrix
+    metric = ints.overlap_matrix()
+
+    # Initialize output
+    Hxw, Sxw = 0, 0
+    Hobxw = 0 
+
+    for (detx, cix) in get_csf_vector(csf1.spin_coupling):
+        if(abs(cix) < thresh):
+            continue
+        # Get occupied orbitals for csf1 determinants
+        bax = np.argwhere(np.asarray(list(detx)) == 'a').ravel() + csf1.ncore
+        bbx = np.argwhere(np.asarray(list(detx)) == 'b').ravel() + csf1.ncore
+        Cax = np.hstack([csf1.mo_coeff[:,:csf1.ncore], csf1.mo_coeff[:,bax]]).copy()
+        Cbx = np.hstack([csf1.mo_coeff[:,:csf1.ncore], csf1.mo_coeff[:,bbx]]).copy()
+
+        for (detw, ciw) in get_csf_vector(csf2.spin_coupling):
+            if(abs(ciw) < thresh):
+                continue
+            # Get occupied orbitals for csf2 determinants
+            baw = np.argwhere(np.asarray(list(detw)) == 'a').ravel() + csf2.ncore
+            bbw = np.argwhere(np.asarray(list(detw)) == 'b').ravel() + csf2.ncore
+            Caw = np.hstack([csf2.mo_coeff[:,:csf2.ncore], csf2.mo_coeff[:,baw]]).copy()
+            Cbw = np.hstack([csf2.mo_coeff[:,:csf2.ncore], csf2.mo_coeff[:,bbw]]).copy()
+
+            # Compute the matrix elements from generalized Slater-Condon rules
+            S, H, Hob = generalised_slater_condon(Cax,Cbx,Caw,Cbw,ints)
+
+            # Increment the total Hamiltonian and overlap coupling
+            Hxw += H * cix * ciw
+            Sxw += S * cix * ciw
+            Hobxw += Hob * cix * ciw
+
+    return Sxw, Hxw, Hobxw

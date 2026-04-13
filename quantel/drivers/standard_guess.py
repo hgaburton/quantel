@@ -22,6 +22,8 @@ def standard_guess(ints, config):
         from quantel.wfn.csf import CSF as WFN
     elif config["wavefunction"]["method"] == "rhf":
         from quantel.wfn.rhf import RHF as WFN
+    elif config["wavefunction"]["method"] == "uhf":
+        from quantel.wfn.uhf import UHF as WFN
     elif config["wavefunction"]["method"] == "roks":
         from quantel.wfn.roks import ROKS as WFN
     else:

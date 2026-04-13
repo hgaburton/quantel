@@ -51,9 +51,21 @@ mol material Orbital
 mol addrep top
 
 scale by [lindex \$argv 2]
+#form
+rotate x by 10
+rotate y by 10 
+
+##testing 
+##rotate x by 90
+
+#allyl
 #rotate y by 90
-#rotate x by 45
+#rotate x by -75
 #rotate z by 45
+
+
+#ethene 
+#rotate x by -15
 
 #render gs [lindex \$argv 0].ps
 render POV3 [lindex \$argv 0].pov 
@@ -62,7 +74,7 @@ render POV3 [lindex \$argv 0].pov
 exit
 " > plot.tcl 
 
-vmd -dispdev none -e plot.tcl -args $1 $2 $3
+vmd -dispdev none -e plot.tcl -args $1 $2 $3 
 rm $1.png &> /dev/null
 povray +W900 +H900 +FN +A +C -D +UA -I$1.pov -O$1.png
 rm plot.tcl

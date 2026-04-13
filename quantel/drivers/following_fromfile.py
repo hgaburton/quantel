@@ -2,6 +2,7 @@
 
 import numpy, glob
 from pyscf import gto
+import sys 
 
 def follow(ints, config):
     """Read wavefunctions from solutions that are saved to file"""
@@ -23,6 +24,8 @@ def follow(ints, config):
         from quantel.wfn.csf import CSF as WFN
     elif config["wavefunction"]["method"] == "rhf":
         from quantel.wfn.rhf import RHF as WFN
+    elif config["wavefunction"]["method"] == "uhf":
+        from quantel.wfn.uhf import UHF as WFN
     elif config["wavefunction"]["method"] == "roks":
         from quantel.wfn.roks import ROKS as WFN
     else:
@@ -73,7 +76,7 @@ def follow(ints, config):
             try: del myfun
             except: pass
             myfun = WFN(ints, **wfnconfig)
-            myfun.read_from_disk(old_tag, gcoup=config["jobcontrol"]["override_spin_coupling"])
+            myfun.read_from_disk(old_tag, override_spin_coupling=config["jobcontrol"]["override_spin_coupling"])
             
             # Run the optimisation
             if config["optimiser"]["algorithm"]=="adaptive": 
@@ -122,8 +125,8 @@ def follow(ints, config):
                   if 1.0 - abs(myfun.overlap(otherwfn)) < config["jobcontrol"]["dist_thresh"]:
                     new = False
                     break
-                print("  1-ovlp: ",1.0 - abs(myfun.overlap(otherwfn))) 
-
+                print("Ovlp: ", abs(myfun.overlap(otherwfn))) 
+            sys.stdout.flush() 
             # Save the solution if it is a new one!
             if new: 
                 if config["wavefunction"]["method"] == "esmf":
@@ -144,8 +147,10 @@ def follow(ints, config):
                 myfun.deallocate()
                 wfn_list.append(myfun.copy())
                 name_list.append(old_tag[2:]) 
+                print("  Unique solution saved ")
             else: 
                 print("  Solution matches previous solution...",prev+1)
+            sys.stdout.flush() 
 
         # Print a new line
         print()

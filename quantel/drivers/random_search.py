@@ -3,6 +3,7 @@
 import numpy
 from quantel.utils.linalg import random_rot
 from quantel.wfn.rhf import RHF
+from quantel.wfn.csf import CSF
 from quantel.opt.diis import DIIS
 from quantel.opt.lbfgs import LBFGS
 from quantel.wfn.roks import ROKS
@@ -26,7 +27,10 @@ def random_search(ints, config):
         mf = RHF(ints)
     else:
         print(f"\nRunning initial high-spin ROHF calculation with multiplicity {ms+1: 3d}...")
-        mf = ROKS(ints, '+'*ms)
+        if config["wavefunction"]["method"]=="roks": 
+            mf = ROKS(ints, '+'*ms)
+        else: 
+            mf = CSF(ints, '+'*ms)
     
     mf.get_orbital_guess()
     LBFGS().run(mf,maxit=init_scf_cycles)
@@ -50,6 +54,8 @@ def random_search(ints, config):
         from quantel.wfn.csf import CSF as WFN
     elif config["wavefunction"]["method"] == "rhf":
         from quantel.wfn.rhf import RHF as WFN
+    elif config["wavefunction"]["method"] == "uhf":
+        from quantel.wfn.uhf import UHF as WFN
     elif config["wavefunction"]["method"] == "roks":
         from quantel.wfn.roks import ROKS as WFN
     else:
@@ -62,10 +68,12 @@ def random_search(ints, config):
     optconfig = config["optimiser"][config["optimiser"]["algorithm"]]
     if config["optimiser"]["algorithm"] == "eigenvector_following":
         from quantel.opt.eigenvector_following import EigenFollow as OPT
+        print("imported GMF", flush=True)
     elif config["optimiser"]["algorithm"] == "lsr1":
         from quantel.opt.lsr1 import SR1 as OPT
     elif config["optimiser"]["algorithm"] == "gmf":
         from quantel.opt.gmf import GMF as OPT
+        print("imported GMF", flush=True)
     elif config["optimiser"]["algorithm"] == "lbfgs":
         from quantel.opt.lbfgs import LBFGS as OPT
     elif config["optimiser"]["algorithm"] == "mode_control":

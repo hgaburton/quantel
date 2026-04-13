@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-
+import sys 
 import numpy, glob
 from pyscf import gto
 
@@ -10,7 +10,7 @@ def from_file(ints, config):
     print(" Reading solutions from file")
     print("    + Wavefunction:       {:s}".format(config["wavefunction"]["method"]))
     print("-----------------------------------------------")
-
+    optconfig = config["optimiser"][config["optimiser"]["algorithm"]]
     # Get information about the wavefunction
     wfnconfig = config["wavefunction"][config["wavefunction"]["method"]]
     if config["wavefunction"]["method"] == "esmf":
@@ -23,6 +23,8 @@ def from_file(ints, config):
         from quantel.wfn.csf import CSF as WFN
     elif config["wavefunction"]["method"] == "rhf":
         from quantel.wfn.rhf import RHF as WFN
+    elif config["wavefunction"]["method"] == "uhf":
+        from quantel.wfn.uhf import UHF as WFN
     elif config["wavefunction"]["method"] == "roks":
         from quantel.wfn.roks import ROKS as WFN
     else:
@@ -86,7 +88,8 @@ def from_file(ints, config):
                   if 1.0 - abs(myfun.overlap(otherwfn)) < config["jobcontrol"]["dist_thresh"]:
                     new = False
                     break
-
+                print("Ovlp: ", abs(myfun.overlap(otherwfn))) 
+            sys.stdout.flush() 
             # Save the solution if it is a new one!
             if new: 
                 

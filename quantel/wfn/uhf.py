@@ -230,10 +230,11 @@ class UHF(Wavefunction):
             matrix_print(self.fock[1], title="Beta Fock Matrix (AO basis)")
         print()
     
-    def save_to_disk(self,tag):
+    def save_to_disk(self,tag, canon=True):
         """Save object to disk with prefix 'tag'"""
-        # Canonicalise orbitals
-        self.canonicalize()
+        if canon: 
+            # Canonicalise orbitals
+            self.canonicalize()
  
         # Save hdf5 file with MO coefficients, orbital energies, energy, and spin
         with h5py.File(tag+".hdf5", "w") as F:
@@ -591,12 +592,12 @@ class UHF(Wavefunction):
         HX[self.nrot[0]:] += np.linalg.multi_dot([Ca_beta.T, kernel_b, Ci_beta]).ravel()
         return HX
     
-    def mo_cubegen(self, a_idx, b_idx, fname=""): 
+    def mo_cubegen(self, idx, fname=""): 
         """ Generate and store cube files for specified MOs
                 a_idx, b_idx : lists of indices of alpha and beta MOs
         """
-        spins = ["a","b"]
-        for i, spin in enumerate([self.alfa, self.beta]):    
-            for mo in [a_idx,b_idx][i]: 
-                cubegen.orbital(self.integrals.mol, fname+f".{spins[i]}.mo.{mo}.cube", spin.mo_coeff[:,mo])
+        spins = ["alfa","beta"]
+        for i in range(2):    
+            for mo in idx: 
+                cubegen.orbital(self.integrals.mol, fname+f".{spins[i]}.mo.{mo}.cube", self.mo_coeff[i][:,mo])
 

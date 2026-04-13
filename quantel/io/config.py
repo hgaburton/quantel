@@ -54,6 +54,9 @@ class Config(dict):
         elif self["wavefunction"]["method"] == "rhf":
             self["wavefunction"]["rhf"] = dict()
 
+        elif self["wavefunction"]["method"] == "uhf":
+            self["wavefunction"]["uhf"] = dict()
+        
         elif self["wavefunction"]["method"] == "casscf":
             self["wavefunction"]["casscf"] = dict(active_space = getlist(self.lines,"active_space",int,True))
 
