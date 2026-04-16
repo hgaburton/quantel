@@ -28,6 +28,7 @@ import numpy as np
 from quantel.ints.pyscf_integrals import PySCFMolecule, PySCFIntegrals
 from quantel.wfn.csf import CSF
 from quantel.opt.csf_disco import CSFDisco, valid_spin_couplings
+from quantel.drivers.noci import noci, selected_noci
 
 np.set_printoptions(linewidth=120, precision=8, suppress=True)
 
@@ -82,7 +83,7 @@ print(initial_couplings)
 
 results = []   # collect (energy, final_coupling, initial_coupling)
 
-for init_sc in initial_couplings:
+for init_sc in ['+++']:#initial_couplings:
     print(f"\n{'─'*60}")
     print(f"  Initial spin coupling: {init_sc!r}")
     print(f"{'─'*60}")
@@ -96,6 +97,8 @@ for init_sc in initial_couplings:
         ethresh=1e-8,
         gthresh=1e-6,
         plev=5,
+        n_hop=20,
+        taboo_tenure=10,
         lbfgs_kwargs=dict(
             maxstep=0.5,
             with_transport=True,
@@ -114,9 +117,25 @@ for init_sc in initial_couplings:
         "converged": converged,
     })
 
-    # Use converged results for NOCI
+    # ---------------------------------------------------------------------------
+    # NOCI using all distinct minima found by DISCO
+    # ---------------------------------------------------------------------------
 
-    quit()
+    minima = sorted(disco.all_minima, key=lambda x: x[0])
+
+    for nstate in [len(minima)]:
+        statelist = minima[:nstate+1]
+        print(f"\n{'═'*60}")
+        print(f"  NOCI on {nstate} distinct minima from DISCO")
+        print(f"{'═'*60}")
+        print(f"  {'#':>4s}  {'Coupling':>10s}  {'Energy / Eh':>16s}  {'ΔE / mEh':>10s}")
+        print(f"  {'─'*4}  {'─'*10}  {'─'*16}  {'─'*10}")
+        e_best = minima[0][0]
+        for idx, (e, csf_min) in enumerate(statelist):
+            print(f"  {idx+1:4d}  {csf_min.spin_coupling!r:>10s}  {e: 16.10f}  {(e-e_best)*1000: 10.4f}")
+
+        wfn_list = [csf_min for _, csf_min in statelist]
+        Hwx, Swx, eigval, v = selected_noci(wfn_list, plev=1)
 
 # ---------------------------------------------------------------------------
 # 4.  Summary

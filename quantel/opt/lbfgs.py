@@ -109,9 +109,11 @@ class LBFGS:
                 wolfe2 = True
                 reset = False
             else:
-                wolfe1 = (ecur - eref) <= 1e-4 * np.dot(step,grad_ref)
-                wolfe2 = - np.dot(step,grad) <= - 0.9 * np.dot(step,grad_ref)
-                if(np.max(np.abs(step))>=self.control["maxstep"]):
+                sg_ref = np.dot(step, grad_ref)
+                sg_cur = np.dot(step, grad)
+                wolfe1 = (ecur - eref) <= 1e-4 * sg_ref
+                wolfe2 = sg_cur >= 0.9 * sg_ref
+                if(np.max(np.abs(step)) >= self.control["maxstep"]):
                     # We're on maximum step size, so we can't extrapolate
                     wolfe2 = True
                 # Override if we reach maximum line search iterations
@@ -140,11 +142,13 @@ class LBFGS:
 
                 # Parallel transport previous vectors
                 if(self.control["with_transport"]):
-                    v_grad = [obj.transform_vector(v, step, X) for v in v_grad] 
-                    v_step = [obj.transform_vector(v, step, X) for v in v_step] 
-                elif(self.control["with_canonical"]):
-                    v_grad = [obj.transform_vector(v, zero_step, X) for v in v_grad] 
-                    v_step = [obj.transform_vector(v, zero_step, X) for v in v_step] 
+                    v_grad = [obj.transform_vector(v, step, X) for v in v_grad]
+                    v_step = [obj.transform_vector(v, step, X) for v in v_step]
+                elif(self.control["with_canonical"] and X is not None):
+                    # Only needed when a canonical rotation X actually occurred;
+                    # with X=None the transform is the identity — skip it.
+                    v_grad = [obj.transform_vector(v, zero_step, X) for v in v_grad]
+                    v_step = [obj.transform_vector(v, zero_step, X) for v in v_step]
 
                 # Save new gradient
                 v_grad.append(grad.copy())
@@ -181,7 +185,7 @@ class LBFGS:
                 
                 # Get information for linesearch
                 xcur = np.linalg.norm(step)
-                gcur = np.dot(step,grad) / xcur
+                gcur = sg_cur / xcur   # sg_cur = np.dot(step, grad) already computed above
 
                 # Restore origin
                 obj.restore_last_step()
@@ -267,16 +271,16 @@ class LBFGS:
         # Compute alpha and beta terms
         alpha = np.empty(nvec)
         for i in range(nvec-1,-1,-1):
-            alpha[i] = rho[i] * np.dot(sk[i], q) 
-            q = q - alpha[i] * yk[i]
+            alpha[i] = rho[i] * np.dot(sk[i], q)
+            q -= alpha[i] * yk[i]
 
-        # Apply preconditioner, which can be unity or scaled unity matrix 
+        # Apply preconditioner, which can be unity or scaled unity matrix
         r = q * gamma_k
 
         # Second loop of L-BFGS
         for i in range(nvec):
             beta = rho[i] * np.dot(yk[i], r)
-            r = r + sk[i] * (alpha[i] - beta) 
+            r += (alpha[i] - beta) * sk[i]
 
         # Convert step back to non-energy weighted coordinates
         return - r / prec

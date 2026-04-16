@@ -57,10 +57,21 @@ def _is_valid_coupling(sc):
     """Return True iff *sc* satisfies the genealogical ballot condition."""
     cumsum = 0
     for c in sc:
-        cumsum += 1 if c == '+' else -1
-        if cumsum < 0:
-            return False
+        if c == '+':
+            cumsum += 1
+        else:
+            cumsum -= 1
+            if cumsum < 0:
+                return False
     return True
+
+
+def _prefix_sums(sc):
+    """Return list of length len(sc)+1 where entry k is the cumulative +1/-1 sum of sc[:k]."""
+    prefix = [0] * (len(sc) + 1)
+    for k, c in enumerate(sc):
+        prefix[k + 1] = prefix[k] + (1 if c == '+' else -1)
+    return prefix
 
 
 def valid_spin_couplings(nopen, nalfa):
@@ -94,36 +105,74 @@ def _enumerate_couplings(remaining, nalfa_left, nbeta_left, cumsum, current, out
                              cumsum - 1, current + "-", out)
 
 
-def _swap_moves(sc):
-    """All unique valid couplings reachable by swapping one '+' and one '-'."""
+def _swap_moves(sc, prefix):
+    """All unique valid couplings reachable by swapping one '+' and one '-'.
+
+    When the '+' moves rightward (i < j) prefix sums in (i, j] drop by 2;
+    valid iff the minimum in that range is >= 2.  When the '+' moves leftward
+    (i > j) prefix sums in (j, i] rise by 2 — always valid.
+    """
     plus_pos  = [i for i, c in enumerate(sc) if c == '+']
     minus_pos = [i for i, c in enumerate(sc) if c == '-']
+    if not plus_pos or not minus_pos:
+        return set()
     seen = set()
     for i in plus_pos:
         for j in minus_pos:
-            lst = list(sc)
-            lst[i], lst[j] = lst[j], lst[i]
-            candidate = ''.join(lst)
-            if candidate not in seen and _is_valid_coupling(candidate):
-                seen.add(candidate)
+            if i < j:
+                # Prefix sums in (i, j] drop by 2 — valid iff min >= 2.
+                if min(prefix[i + 1 : j + 1]) < 2:
+                    continue
+                candidate = sc[:i] + '-' + sc[i + 1:j] + '+' + sc[j + 1:]
+            else:
+                # Prefix sums in (j, i] rise by 2 — always valid.
+                candidate = sc[:j] + '+' + sc[j + 1:i] + '-' + sc[i + 1:]
+            seen.add(candidate)
     return seen
 
 
-def _add_pair_moves(sc):
-    """All unique valid couplings with one extra '+' and one extra '-' inserted."""
+def _add_pair_moves(sc, prefix):
+    """All unique valid couplings with one extra '+' and one extra '-' inserted.
+
+    When '+' is inserted before '-' (j > i in the extended string) prefix sums
+    in (i, j] rise by 1 — always valid.  When '-' comes first (j <= i) prefix
+    sums in [j, i] drop by 1; valid iff the minimum in that range is >= 1.
+
+    Deduplication in the j > i branch:
+      - Skip insertion point i if sc[i-1] == '+': inserting '+' within a run of
+        consecutive '+'s gives the same result as inserting before the run.
+      - Skip insertion point j if j > i+1 and sc[j-2] == '-': inserting '-'
+        within a run of consecutive '-'s gives the same result as inserting
+        before the run.
+    """
     n = len(sc)
     seen = set()
+
+    # j > i: '+' before '-' — always ballot-valid.
     for i in range(n + 1):
-        s_plus = sc[:i] + '+' + sc[i:]
-        for j in range(n + 2):
-            candidate = s_plus[:j] + '-' + s_plus[j:]
-            if candidate not in seen and _is_valid_coupling(candidate):
-                seen.add(candidate)
+        if i > 0 and sc[i - 1] == '+':
+            continue   # duplicate of i-1 for every j > i
+        for j in range(i + 1, n + 2):
+            if j > i + 1 and sc[j - 2] == '-':
+                continue   # duplicate of j-1 for the same i
+            seen.add(sc[:i] + '+' + sc[i:j - 1] + '-' + sc[j - 1:])
+
+    # j <= i: '-' before '+' — valid iff min(prefix[j:i+1]) >= 1.
+    for i in range(n + 1):
+        for j in range(i + 1):
+            if min(prefix[j : i + 1]) >= 1:
+                seen.add(sc[:j] + '-' + sc[j:i] + '+' + sc[i:])
+
     return seen
 
 
-def _delete_pair_moves(sc):
-    """All unique valid couplings with one '+' and one '-' removed."""
+def _delete_pair_moves(sc, prefix):
+    """All unique valid couplings with one '+' and one '-' removed.
+
+    When '+' is removed before '-' (i < j) prefix sums in (i, j] drop by 1;
+    valid iff the minimum in that range is >= 1.  When '-' is removed first
+    (j < i) prefix sums in (j, i] rise by 1 — always valid.
+    """
     if len(sc) < 2:
         return set()
     plus_pos  = [i for i, c in enumerate(sc) if c == '+']
@@ -131,15 +180,22 @@ def _delete_pair_moves(sc):
     seen = set()
     for i in plus_pos:
         for j in minus_pos:
-            candidate = ''.join(c for k, c in enumerate(sc) if k != i and k != j)
-            if candidate not in seen and _is_valid_coupling(candidate):
-                seen.add(candidate)
+            if i < j:
+                # Prefix sums in (i, j] drop by 1 — valid iff min >= 1.
+                if min(prefix[i + 1 : j + 1]) < 1:
+                    continue
+                candidate = sc[:i] + sc[i + 1:j] + sc[j + 1:]
+            else:
+                # Prefix sums in (j, i] rise by 1 — always valid.
+                candidate = sc[:j] + sc[j + 1:i] + sc[i + 1:]
+            seen.add(candidate)
     return seen
 
 
 def coupling_neighbours(sc):
     """Union of all local coupling moves from *sc* (excluding *sc* itself)."""
-    neighbours = _swap_moves(sc) | _add_pair_moves(sc) | _delete_pair_moves(sc)
+    prefix = _prefix_sums(sc)
+    neighbours = _swap_moves(sc, prefix) | _add_pair_moves(sc, prefix) | _delete_pair_moves(sc, prefix)
     neighbours.discard(sc)
     return sorted(neighbours)
 
