@@ -127,11 +127,10 @@ class FCIDUMP:
         """
         if(vDJ.ndim == 2): vDJ = vDJ[None,:,:]
         if(vDK.ndim == 2): vDK = vDK[None,:,:]
-        # Make sure inputs are C-contiguous arrays of type float64
-        vDJ = np.ascontiguousarray(vDJ, dtype=np.float64)
-        vDK = np.ascontiguousarray(vDK, dtype=np.float64)
         # Call the underlying C++ implementation to compute J and K for all density matrices
-        vJ, vK = self._ints.build_multiple_JK(vDJ, vDK, vDJ.shape[0], vDK.shape[0])
+        vJ, vK = self._ints.build_multiple_JK(
+            np.ascontiguousarray(vDJ), np.ascontiguousarray(vDK),
+            vDJ.shape[0], vDK.shape[0])
         vKfunc = vK
         if Kxc:
             return vJ, vK, vKfunc
@@ -155,8 +154,8 @@ class FCIDUMP:
         -------
         ndarray, shape (n1, n2)
         """
-        return self._ints.oei_ao_to_mo(np.asarray(C1, dtype=np.float64),
-                                       np.asarray(C2, dtype=np.float64),True)
+        return self._ints.oei_ao_to_mo(np.ascontiguousarray(C1),
+                                       np.ascontiguousarray(C2),True)
 
     def tei_ao_to_mo(self,C1: np.ndarray,C2: np.ndarray,C3: np.ndarray,C4: np.ndarray,
                      alpha1: bool,alpha2: bool,) -> np.ndarray:
@@ -186,12 +185,9 @@ class FCIDUMP:
         ndarray, shape (n1, n2, n3, n4)
         """
         return self._ints.tei_ao_to_mo(
-            np.asarray(C1, dtype=np.float64),
-            np.asarray(C2, dtype=np.float64),
-            np.asarray(C3, dtype=np.float64),
-            np.asarray(C4, dtype=np.float64),
-            alpha1, alpha2,
-        )
+            np.ascontiguousarray(C1),np.ascontiguousarray(C2),
+            np.ascontiguousarray(C3),np.ascontiguousarray(C4),
+            alpha1,alpha2)
 
     def tei_array(self, spin1=None, spin2=None) -> np.ndarray:
         """Return the full two-electron integral array (pq|rs) in chemist's notation.
@@ -223,7 +219,7 @@ class FCIDUMP:
         -------
         MOintegrals
         """
-        return self._ints.mo_integrals(np.asarray(C, dtype=np.float64), ncore, nactive)
+        return self._ints.mo_integrals(np.ascontiguousarray(C), ncore, nactive)
 
     def print(self):
         """Print a summary of the FCIDUMP contents."""

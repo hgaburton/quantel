@@ -181,14 +181,21 @@ class Function(metaclass=ABCMeta):
         anl = self.gradient
         num = self.get_numerical_gradient()
         diff = anl - num
-        print(diff)
-        return np.linalg.norm(diff) / diff.size < tol
+        if(np.max(np.abs(diff)) > tol):
+            print("Gradient check failed!")
+            idx = np.unravel_index(np.argmax(np.abs(diff)), diff.shape)
+            print(f"Max difference at index {idx}: {diff[idx]:.3e}")
+        return np.max(np.abs(diff)) < tol
 
     def check_hessian(self, tol=1e-3):
         anl = self.hessian
         num = self.get_numerical_hessian()
         diff = anl - num
-        return np.linalg.norm(diff) / diff.size < tol
+        if(np.max(np.abs(diff)) > tol):
+            print("Hessian check failed!")
+            idx = np.unravel_index(np.argmax(np.abs(diff)), diff.shape)
+            print(f"Max difference at index {idx}: {diff[idx]:.3e}")
+        return np.max(np.abs(diff)) < tol
 
     def get_preconditioner(self):
         """Get diagonal preconditioner for Hessian"""

@@ -157,44 +157,65 @@ class PySCFIntegrals:
         return vJ[0]
     
     def build_JK(self,vdJ,vdK,hermi=0,Kxc=False):
-        """ Build Coulomb and Exchange matrices for multiple sets of densities
+        """ Build Coulomb and Exchange matrices for multiple sets of densities.
+
+        Returns batched 3D arrays (n, nbsf, nbsf) so the interface matches
+        the FCIDUMP backend: callers index the batch dimension with [i].
+
             Args:
-                vdJ : ndarray
-                    The Coulomb matrices
-                vdK : ndarray
-                    The Exchange matrices
+                vdJ : ndarray, shape (n, nbsf, nbsf) or (nbsf, nbsf)
+                    Density matrices for the Coulomb build.
+                vdK : ndarray, shape (n, nbsf, nbsf) or (nbsf, nbsf)
+                    Density matrices for the Exchange build.
                 hermi : int
                     0 if dm is not Hermitian, 1 if it is.
                 Kxc : bool
-                    Return the scaled exchange matrix for the xc functional if true
+                    Also return the xc-scaled exchange matrix.
             Returns:
-                ndarray : The Coulomb matrix
-                ndarray : The pure Exchange matrix
-                ndarray : The scaled Exchange matrix for xc functional
+                vJ  : ndarray, shape (nJ, nbsf, nbsf)
+                vK  : ndarray, shape (nK, nbsf, nbsf)
+                vKfunc (only when Kxc=True) : ndarray, shape (nK, nbsf, nbsf)
         """
-        vJ, vK = self.get_jk(dm=(vdJ,vdK), hermi=hermi)
-        vKfunc = vK
-        if (self.xc is None):
-            pass
-        elif self.ni.libxc.is_hybrid_xc(self.xc):
-            if(self.omega == 0):
+        vdJ = np.asarray(vdJ, dtype=np.float64)
+        vdK = np.asarray(vdK, dtype=np.float64)
+        if vdJ.ndim == 2: vdJ = vdJ[None]
+        if vdK.ndim == 2: vdK = vdK[None]
+
+        # Build J from vdJ and K from vdK separately so the batch sizes can
+        # differ and the indexing convention is unambiguous.
+        vJ, _ = self.get_jk(dm=vdJ, hermi=hermi, with_k=False)
+        _, vK = self.get_jk(dm=vdK, hermi=hermi, with_j=False)
+        vJ = np.asarray(vJ)
+        vK = np.asarray(vK)
+        if vJ.ndim == 2: vJ = vJ[None]
+        if vK.ndim == 2: vK = vK[None]
+
+        vKfunc = vK.copy()
+        if self.xc is not None and self.ni.libxc.is_hybrid_xc(self.xc):
+            if self.omega == 0:
                 vKfunc = vK * self.hybrid_K
             elif self.alpha == 0: # LR=0, only SR exchange
-                _, vKfunc = self.get_jk(dm=(vdJ,vdK), hermi=hermi, omega=-self.omega, with_j=False)
+                _, vKfunc = self.get_jk(dm=vdK, hermi=hermi, omega=-self.omega, with_j=False)
+                vKfunc = np.asarray(vKfunc)
+                if vKfunc.ndim == 2: vKfunc = vKfunc[None]
                 vKfunc *= self.hybrid_K
             elif self.hybrid_K == 0: # SR=0, only LR exchange
-                _, vKfunc = self.get_jk(dm=(vdJ,vdK), hermi=hermi, omega=self.omega, with_j=False)
-                vKfunc *= (self.alpha)
+                _, vKfunc = self.get_jk(dm=vdK, hermi=hermi, omega=self.omega, with_j=False)
+                vKfunc = np.asarray(vKfunc)
+                if vKfunc.ndim == 2: vKfunc = vKfunc[None]
+                vKfunc *= self.alpha
             else: # SR and LR different ratios
-                _, vKlr = self.get_jk(dm=(vdJ,vdK), hermi=hermi, omega=self.omega, with_j=False)
+                _, vKlr = self.get_jk(dm=vdK, hermi=hermi, omega=self.omega, with_j=False)
+                vKlr = np.asarray(vKlr)
+                if vKlr.ndim == 2: vKlr = vKlr[None]
                 vKfunc = vK * self.hybrid_K + (self.alpha - self.hybrid_K) * vKlr
-        else:
-            vKfunc *= 0
+        elif self.xc is not None:
+            vKfunc = np.zeros_like(vK)
 
         if Kxc:
-            return vJ[0], vK[1], vKfunc[1]
+            return vJ, vK, vKfunc
         else:
-            return vJ[0], vK[1]
+            return vJ, vK
 
     
     def build_vxc(self,dms,hermi=0):
@@ -351,7 +372,7 @@ class PySCF_MO_Integrals:
             Pcore = Ccore @ Ccore.T
             # Compute inactive JK matrix (2J-K) in AO basis
             J,K = self.ints.build_JK(Pcore,Pcore)
-            JK = 2*J - K
+            JK = 2*J[0] - K[0]
 
             # Compute scalar core energy 
             Hao = self.ints.oei_matrix()

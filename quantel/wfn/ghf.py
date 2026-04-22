@@ -83,7 +83,7 @@ class GHF(Wavefunction):
         # Two-electron energy
         E2 = 0.5 * np.einsum('pq,pq', self.JK, self.dens, optimize="optimal")
         # Save components
-        self.energy_components = dict(Nuclear=En, One_Electron=E1, Two_Electron=E2, Exchange_Correlation=0)
+        self.energy_components = dict(Nuclear=En, One_Electron=float(E1), Two_Electron=E2, Exchange_Correlation=0)
         return En + E1 + E2
 
     @property 
@@ -119,10 +119,10 @@ class GHF(Wavefunction):
         Fmo = np.linalg.multi_dot([self.mo_coeff.T, self.fock, self.mo_coeff])
 
         # Get occupied and virtual orbital coefficients
-        Cao = self.mo_coeff[:self.nbsf,:no].copy()
-        Cbo = self.mo_coeff[self.nbsf:,:no].copy()
-        Cav = self.mo_coeff[:self.nbsf,no:].copy()
-        Cbv = self.mo_coeff[self.nbsf:,no:].copy()
+        Cao = self.mo_coeff[:self.nbsf,:no]
+        Cbo = self.mo_coeff[self.nbsf:,:no]
+        Cav = self.mo_coeff[:self.nbsf,no:]
+        Cbv = self.mo_coeff[self.nbsf:,no:]
 
         # Compute ao_to_mo integral transform
         eri_abij = (  self.integrals.tei_ao_to_mo(Cav,Cav,Cao,Cao,True,False)
@@ -273,7 +273,7 @@ class GHF(Wavefunction):
     def get_fock(self):
         """Compute the Fock matrix for the current state"""
         # Get JK integrals
-        self.vJ, self.vK = self.integrals.build_JK(self.vd,self.vd,Kxc=False)
+        self.vJ, self.vK = self.integrals.build_JK(self.vd,self.vd,Kxc=False,hermi=0)
         # Construct the Coulomb matrix
         self.J = np.zeros((2*self.nbsf, 2*self.nbsf))
         self.J[:self.nbsf,:self.nbsf] = self.vJ[0] + self.vJ[2]
@@ -282,7 +282,7 @@ class GHF(Wavefunction):
         self.K = np.zeros((2*self.nbsf, 2*self.nbsf))
         self.K[:self.nbsf,:self.nbsf] = self.vK[0] # aa
         self.K[self.nbsf:,self.nbsf:] = self.vK[2] # bb
-        self.K[:self.nbsf,self.nbsf:] = self.vK[1] # ab
+        self.K[:self.nbsf,self.nbsf:] = self.vK[1] # ba
         self.K[self.nbsf:,:self.nbsf] = self.vK[1].T # ba
         # Compute the Coulomb and Exchange matrices
         self.fock = np.kron(np.eye(2), self.integrals.oei_matrix(True)) + self.J - self.K

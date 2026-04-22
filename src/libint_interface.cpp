@@ -298,6 +298,10 @@ void LibintInterface::build_JK(std::vector<double> &dens, std::vector<double> &J
     std::vector<double> Jt(dev.nthreads*n2), Kt(dev.nthreads*n2);
     std::fill(Jt.begin(),Jt.end(),0.0);
     std::fill(Kt.begin(),Kt.end(),0.0);
+     
+    // Compute J matrix elements (need to repeat for each density)
+    // Jpq = (pq|rs) * Dsr = \sum_rs <pr|qs> * Dsr
+    // Kps = (pq|rs) * Dqr = \sum_rs <pr|sq> * Dsr
 
     // Loop over basis functions
     #pragma omp parallel for collapse(2) schedule(guided)
@@ -319,36 +323,36 @@ void LibintInterface::build_JK(std::vector<double> &dens, std::vector<double> &J
             double Vpqrs = m_tei[pq*n2+rs];
             if(std::abs(Vpqrs) < thresh) continue;
 
-            J[p*m_nbsf+q] += dens[r*m_nbsf+s] * Vpqrs;
-            K[p*m_nbsf+s] += dens[r*m_nbsf+q] * Vpqrs;
+            J[p*m_nbsf+q] += dens[s*m_nbsf+r] * Vpqrs;
+            K[p*m_nbsf+s] += dens[q*m_nbsf+r] * Vpqrs;
             if(p!=q) {
-                J[q*m_nbsf+p] += dens[r*m_nbsf+s] * Vpqrs;
-                K[q*m_nbsf+s] += dens[r*m_nbsf+p] * Vpqrs;
+                J[q*m_nbsf+p] += dens[s*m_nbsf+r] * Vpqrs;
+                K[q*m_nbsf+s] += dens[p*m_nbsf+r] * Vpqrs;
             }
             if(r!=s) {
-                J[p*m_nbsf+q] += dens[s*m_nbsf+r] * Vpqrs;
-                K[p*m_nbsf+r] += dens[s*m_nbsf+q] * Vpqrs;
+                J[p*m_nbsf+q] += dens[r*m_nbsf+s] * Vpqrs;
+                K[p*m_nbsf+r] += dens[q*m_nbsf+s] * Vpqrs;
             }
             if(r!=s and p!=q) {
-                J[q*m_nbsf+p] += dens[s*m_nbsf+r] * Vpqrs;
-                K[q*m_nbsf+r] += dens[s*m_nbsf+p] * Vpqrs;
+                J[q*m_nbsf+p] += dens[r*m_nbsf+s] * Vpqrs;
+                K[q*m_nbsf+r] += dens[p*m_nbsf+s] * Vpqrs;
             }
 
             if(pq != rs) 
             {
-                J[r*m_nbsf+s] += dens[p*m_nbsf+q] * Vpqrs;
-                K[r*m_nbsf+q] += dens[p*m_nbsf+s] * Vpqrs;
+                J[r*m_nbsf+s] += dens[q*m_nbsf+p] * Vpqrs;
+                K[r*m_nbsf+q] += dens[s*m_nbsf+p] * Vpqrs;
                 if(r!=s) {
-                    J[s*m_nbsf+r] += dens[p*m_nbsf+q] * Vpqrs;
-                    K[s*m_nbsf+q] += dens[p*m_nbsf+r] * Vpqrs;
+                    J[s*m_nbsf+r] += dens[q*m_nbsf+p] * Vpqrs;
+                    K[s*m_nbsf+q] += dens[r*m_nbsf+p] * Vpqrs;
                 }
                 if(p!=q) {
-                    J[r*m_nbsf+s] += dens[q*m_nbsf+p] * Vpqrs;
-                    K[r*m_nbsf+p] += dens[q*m_nbsf+s] * Vpqrs;
+                    J[r*m_nbsf+s] += dens[p*m_nbsf+q] * Vpqrs;
+                    K[r*m_nbsf+p] += dens[s*m_nbsf+q] * Vpqrs;
                 }
                 if(r!=s and p!=q) {
-                    J[s*m_nbsf+r] += dens[q*m_nbsf+p] * Vpqrs;
-                    K[s*m_nbsf+p] += dens[q*m_nbsf+r] * Vpqrs;
+                    J[s*m_nbsf+r] += dens[p*m_nbsf+q] * Vpqrs;
+                    K[s*m_nbsf+p] += dens[r*m_nbsf+q] * Vpqrs;
                 }
             }
         }
@@ -411,17 +415,17 @@ void LibintInterface::build_multiple_JK(
             {
                 double *Jt_k = &Jt[k*n2];
                 double *Dj   = &vDJ[k*n2];
-                Jt_k[p*m_nbsf+q] += Dj[r*m_nbsf+s] * Vpqrs;
-                if(p!=q) Jt_k[q*m_nbsf+p] += Dj[r*m_nbsf+s] * Vpqrs;
-                if(r!=s) Jt_k[p*m_nbsf+q] += Dj[s*m_nbsf+r] * Vpqrs;
-                if(r!=s and p!=q) Jt_k[q*m_nbsf+p] += Dj[s*m_nbsf+r] * Vpqrs;
+                Jt_k[p*m_nbsf+q] += Dj[s*m_nbsf+r] * Vpqrs;
+                if(p!=q) Jt_k[q*m_nbsf+p] += Dj[s*m_nbsf+r] * Vpqrs;
+                if(r!=s) Jt_k[p*m_nbsf+q] += Dj[r*m_nbsf+s] * Vpqrs;
+                if(r!=s and p!=q) Jt_k[q*m_nbsf+p] += Dj[r*m_nbsf+s] * Vpqrs;
 
                 if(pq != rs) 
                 {
-                    Jt_k[r*m_nbsf+s] += Dj[p*m_nbsf+q] * Vpqrs;
-                    if(r!=s) Jt_k[s*m_nbsf+r] += Dj[p*m_nbsf+q] * Vpqrs;
-                    if(p!=q) Jt_k[r*m_nbsf+s] += Dj[q*m_nbsf+p] * Vpqrs;
-                    if(r!=s and p!=q) Jt_k[s*m_nbsf+r] += Dj[q*m_nbsf+p] * Vpqrs;
+                    Jt_k[r*m_nbsf+s] += Dj[q*m_nbsf+p] * Vpqrs;
+                    if(r!=s) Jt_k[s*m_nbsf+r] += Dj[q*m_nbsf+p] * Vpqrs;
+                    if(p!=q) Jt_k[r*m_nbsf+s] += Dj[p*m_nbsf+q] * Vpqrs;
+                    if(r!=s and p!=q) Jt_k[s*m_nbsf+r] += Dj[p*m_nbsf+q] * Vpqrs;
                 }                
             }
 
@@ -430,17 +434,17 @@ void LibintInterface::build_multiple_JK(
             {
                 double *Kt_k = &Kt[k*n2];
                 double *Dk   = &vDK[k*n2];
-                Kt_k[p*m_nbsf+s] += Dk[r*m_nbsf+q] * Vpqrs;
-                if(p!=q) Kt_k[q*m_nbsf+s] += Dk[r*m_nbsf+p] * Vpqrs;
-                if(r!=s) Kt_k[p*m_nbsf+r] += Dk[s*m_nbsf+q] * Vpqrs;
-                if(r!=s and p!=q) Kt_k[q*m_nbsf+r] += Dk[s*m_nbsf+p] * Vpqrs;
+                Kt_k[p*m_nbsf+s] += Dk[q*m_nbsf+r] * Vpqrs;
+                if(p!=q) Kt_k[q*m_nbsf+s] += Dk[p*m_nbsf+r] * Vpqrs;
+                if(r!=s) Kt_k[p*m_nbsf+r] += Dk[q*m_nbsf+s] * Vpqrs;
+                if(r!=s and p!=q) Kt_k[q*m_nbsf+r] += Dk[p*m_nbsf+s] * Vpqrs;
 
                 if(pq != rs) 
                 {
-                    Kt_k[r*m_nbsf+q] += Dk[p*m_nbsf+s] * Vpqrs;
-                    if(r!=s) Kt_k[s*m_nbsf+q] += Dk[p*m_nbsf+r] * Vpqrs;
-                    if(p!=q) Kt_k[r*m_nbsf+p] += Dk[q*m_nbsf+s] * Vpqrs;
-                    if(r!=s and p!=q) Kt_k[s*m_nbsf+p] += Dk[q*m_nbsf+r] * Vpqrs;
+                    Kt_k[r*m_nbsf+q] += Dk[s*m_nbsf+p] * Vpqrs;
+                    if(r!=s) Kt_k[s*m_nbsf+q] += Dk[r*m_nbsf+p] * Vpqrs;
+                    if(p!=q) Kt_k[r*m_nbsf+p] += Dk[s*m_nbsf+q] * Vpqrs;
+                    if(r!=s and p!=q) Kt_k[s*m_nbsf+p] += Dk[r*m_nbsf+q] * Vpqrs;
                 }
             }
         }
@@ -476,9 +480,12 @@ void LibintInterface::tei_ao_to_mo(
     size_t d3 = C3.size() / m_nbsf;
     size_t d4 = C4.size() / m_nbsf;
 
+    size_t dim = (std::max(d1,m_nbsf) * std::max(d2,m_nbsf) 
+                * std::max(d3,m_nbsf) * std::max(d4,m_nbsf));
+
     // Define temporary memory
-    std::vector<double> tmp1(n2*n2, 0.0);
-    std::vector<double> tmp2(n2*n2, 0.0);    
+    std::vector<double> tmp1(dim, 0.0);
+    std::vector<double> tmp2(dim, 0.0);    
 
     // Set tmp2 to the antisymmetrised values as appropriate and convert chemist to physicist
     double scale = (alpha1 == alpha2) ? 1.0 : 0.0; 

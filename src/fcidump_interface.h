@@ -30,7 +30,7 @@ protected:
     std::vector<double> m_oei_b; ///< Beta  one-electron integrals h(p,q)
     std::vector<double> m_tei;   ///< Two-electron integrals (pq|rs), chemist's notation
 
-    double thresh = 1e-12; ///< Screening threshold used in JK builds and transformations
+    double thresh = -1; ///< Screening threshold used in JK builds and transformations
 
 public:
     virtual ~FCIDumpInterface() { }

@@ -11,7 +11,7 @@ if __name__ == "__main__":
     ints = PySCFIntegrals(mol,xc='pbe0')
 
     # Initialise CSF object for an open-shell singlet state
-    wfn = ROKS(ints, '+-')
+    wfn = ROKS(ints, '+-+-')
     wfn.get_orbital_guess(method="gwh")
 
     # Setup optimiser

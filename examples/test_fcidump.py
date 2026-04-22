@@ -117,17 +117,22 @@ check("build_JK: K matches direct einsum",np.allclose(Kintdump, Kref, atol=1e-10
 
 # Check two-electron orbital transformation against direct einsum with PySCF integrals.
 print("\n--- One-electron MO transform ---")
-C_rot = orthogonalise(np.random.rand(nbsf,nmo), overlap)
-h1e_ref = np.linalg.multi_dot([C_rot.T, h1e_mo, C_rot])
-h1e_intdump = intdump.oei_ao_to_mo(C_rot,C_rot,True)
+C1 = np.random.rand(nbsf,2*nmo)
+C2 = np.random.rand(nbsf,4)
+C3 = np.random.rand(nbsf,2*nmo)
+C4 = np.random.rand(nbsf,2)
+h1e_ref = np.linalg.multi_dot([C1.T, h1e_mo, C2])
+h1e_intdump = intdump.oei_ao_to_mo(C1,C2,True)
 check("oei_ao_to_mo with rotation matches direct einsum", np.allclose(h1e_intdump, h1e_ref, atol=1e-10))
 
 print("\n--- Two-electron MO transform ---")
-h2e_ref = np.einsum("pqrs,pa,qb,rc,sd->abcd", h2e_mo, C_rot, C_rot, C_rot, C_rot, optimize="optimal")
+h2e_ref = np.einsum("pqrs,pa,qb,rc,sd->abcd", h2e_mo.transpose(0,2,1,3),C1,C2,C3,C4, optimize="optimal")
 # Convert chemists to physicists notation for direct comparison with intdump.tei_ao_to_mo output
-h2e_ref = h2e_ref.transpose(0,2,1,3)
-h2e_intdump = intdump.tei_ao_to_mo(C_rot,C_rot,C_rot,C_rot, True, False)
+h2e_intdump = intdump.tei_ao_to_mo(C1,C2,C3,C4, True, False)
 check("tei_ao_to_mo with rotation matches direct einsum", np.allclose(h2e_intdump, h2e_ref, atol=1e-10))
+
+# Remove the FCIDUMP file
+os.remove(fname)
 
 # ===========================================================================
 # Done

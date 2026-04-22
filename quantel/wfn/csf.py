@@ -520,6 +520,8 @@ class CSF(Wavefunction):
         # Get the guess for the molecular orbital coefficients
         if type(method)==np.ndarray:
             Cguess = orthogonalise(method, self.integrals.overlap_matrix())
+        else:
+            Cguess = orbital_guess(self.integrals,method,avas_ao_labels=avas_ao_labels,rohf_ms=0.5*self.nopen)
         if localise:
             self.initialise(Cguess, spin_coupling=self.nopen*"+")
             self.localise_orbitals()
