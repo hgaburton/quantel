@@ -464,7 +464,7 @@ class CSF(Wavefunction):
 
     def write_fcidump(self, tag):
         """ Write an FCIDUMP file for the current CSF object """
-        from quantel.ints.fcidump_integrals import write_fcidump
+        from quantel.ints.utils import write_fcidump
         write_fcidump(self.integrals, tag+'.fcid', mo_coeff=self.mo_coeff)
 
     def write_cidump(self, tag):
