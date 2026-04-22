@@ -136,7 +136,7 @@ class HybridEF:
                 if(plev>1): print("\n  ----------------------------------------------------------------")
                 if(plev>1): print("   Hybrid Eigenvector-Following step:")
                 if(plev>1): print("  ----------------------------------------------------------------")
-                print(" {: 5d} {: 16.10f}    {:^8s}    {:8.2e}    {:8.2e}    {:10s}".format(
+                if(plev>0): print(" {: 5d} {: 16.10f}    {:^8s}    {:8.2e}    {:8.2e}    {:10s}".format(
                       istep, eref, st_cur_ind, step_length, conv, comment))
                 if(plev>1): print("  ----------------------------------------------------------------")
 
@@ -144,7 +144,7 @@ class HybridEF:
                 if(plev>1): print("\n  ----------------------------------------------------------------")
                 if(plev>1): print("   Hybrid Eigenvector-Following step:")
                 if(plev>1): print("  ----------------------------------------------------------------")
-                print(" {: 5d} {: 16.10f}    {:^8s}                {:8.2e}    {:10s}".format(
+                if(plev>0): print(" {: 5d} {: 16.10f}    {:^8s}                {:8.2e}    {:10s}".format(
                     istep, eref, st_cur_ind, conv, comment))
                 if(plev>1): print("  ----------------------------------------------------------------")                
                 break

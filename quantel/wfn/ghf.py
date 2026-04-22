@@ -247,12 +247,11 @@ class GHF(Wavefunction):
             return 0
         nocc = self.nocc
         S = np.linalg.multi_dot([self.mo_coeff[:,:nocc].T, self.ghf_overlap, them.mo_coeff[:,:nocc]])
-        return np.linalg.det(S)**2
+        return np.linalg.det(S)
 
     def hamiltonian(self, them):
-        """Compute the (nonorthogonal) many-body Hamiltonian coupling with another RHF wavefunction (them)"""
-        raise NotImplementedError("R" \
-        "HF Hamiltonian not implemented")
+        """Compute the (nonorthogonal) many-body Hamiltonian coupling with another GHF wavefunction (them)"""
+        raise NotImplementedError("GHF Hamiltonian not implemented")
 
     def update(self):
         """Update the 1RDM and Fock matrix for the current state"""
@@ -290,6 +289,24 @@ class GHF(Wavefunction):
         self.JK = self.J - self.K
         # Vectorised format of the Fock matrix 
         return self.fock.T.reshape((-1))
+    
+    def get_natural_orbitals(self):
+        """Compute spatial natural orbitals and their occupation numbers"""
+        # Overlap matrix and orthogonalisation matrix
+        S = self.integrals.overlap_matrix()
+        X = self.integrals.orthogonalization_matrix()
+
+        # Get the spatial 1RDM in covariant form
+        self.get_density()
+        Da = np.linalg.multi_dot([S, self.dens[:self.nbsf,:self.nbsf], S])
+        Db = np.linalg.multi_dot([S, self.dens[self.nbsf:,self.nbsf:], S]) 
+        # Project to linearly independent orbitals
+        Dt = np.linalg.multi_dot([X.T, Da + Db, X])
+        # Diagonalise the spatial density matrix
+        nocc, Ct = np.linalg.eigh(-Dt)
+        # Transform back to the original basis and return
+        Cno = np.dot(X, Ct)
+        return Cno, -nocc
 
 
     def canonicalize(self):
@@ -318,7 +335,7 @@ class GHF(Wavefunction):
         return Q
 
 
-    def get_preconditioner(self):
+    def get_preconditioner(self,abs=True):
         """Compute approximate diagonal of Hessian"""
         # Get Fock matrix in MO basis
         fock_mo = np.linalg.multi_dot([self.mo_coeff.T, self.fock, self.mo_coeff])
@@ -328,7 +345,10 @@ class GHF(Wavefunction):
         for p in range(self.nmo):
             for q in range(p):
                 Q[p,q] = 2 * (fock_mo[p,p] - fock_mo[q,q])
-        return np.abs(Q[self.rot_idx])
+        if abs:
+            return np.abs(Q[self.rot_idx])
+        else:
+            return Q[self.rot_idx]
 
 
     def diagonalise_fock(self):
@@ -510,7 +530,7 @@ class GHF(Wavefunction):
         return self.nelec - ev[-1]
     
     def excite(self,occ_idx,vir_idx,mom_method=None):
-        """ Perform orbital excitation on both spins
+        """ Perform orbital excitation
             Args:
                 occ_idx : list of occupied orbital indices to be excited
                 vir_idx : list of virtual orbital indices to be occupied
@@ -521,7 +541,7 @@ class GHF(Wavefunction):
         dest   = vir_idx + occ_idx
         coeff_new = self.mo_coeff.copy()
         coeff_new[:,dest] = self.mo_coeff[:,source]
-        them = GHF(self.integrals, verbose=self.verbose,mom_method=mom_method)
+        them = GHF(self.integrals,verbose=self.verbose,mom_method=mom_method)
         them.initialise(coeff_new)
         return them
 
@@ -537,4 +557,3 @@ class GHF(Wavefunction):
         # Saves MOs as cubegen files
         for mo in idx: 
             cubegen.orbital(self.integrals.mol, fname+f".mo.{mo}.cube", spatial[:,mo])
-

@@ -174,7 +174,7 @@ def gram_schmidt(mat, metric=None):
     #            mat[:,i+1:mat.shape[1]] -=  np.outer(vi, np.einsum("i,ij,jk", vi, metric, mat[:,i+1:mat.shape[1]]))
     #return mat[:,idx_indep]
 
-def orthogonalise(mat, metric=None, thresh=1e-10, fill=True):
+def orthogonalise(mat, metric=None, thresh=1e-8, fill=True):
     '''
     Orthogonalise the columns of mat with respect to the metric tensor.
 
@@ -213,6 +213,9 @@ def orthogonalise(mat, metric=None, thresh=1e-10, fill=True):
 
         if(ortho_test > thresh):
             print(f"WARNING: Gram-Schmidt orthogonalisation failed with max(abs(error)) = {ortho_test: 7.3e}")
+            # Find where the error is coming from
+            x,y = np.unravel_index(np.argmax(np.abs(ortho)),ortho.shape)
+            print(f"Max error at ({x},{y}) = {ortho[x,y]: 7.3e}")
     return mat
  
 def matrix_print(M, title=None, labels=None, ncols=6, offset=0):

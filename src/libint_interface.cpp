@@ -188,7 +188,7 @@ void LibintInterface::compute_two_electron_integrals()
         for(size_t f3=0; f3 < n3; ++f3)
         for(size_t f4=0; f4 < n4; ++f4)
         {
-            // Save value for aabb block in physicists notation
+            // Save value for aabb block in chemists notation
             double value = ints[f1*strides[0] + f2*strides[1] + f3*strides[2] + f4];
             m_tei[tei_index(bf1+f1,bf2+f2,bf3+f3,bf4+f4)] = value;
         }

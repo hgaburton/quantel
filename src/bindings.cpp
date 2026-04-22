@@ -5,7 +5,8 @@
 #include <libint2/initialize.h>
 
 #include "libint_interface.h"
-#include "molecule.h"    
+#include "fcidump_interface.h"
+#include "molecule.h"
 #include "determinant.h"
 #include "mo_integrals.h"
 #include "excitation.h"
@@ -554,6 +555,91 @@ PYBIND11_MODULE(_quantel, m) {
                },
                "Return two-electron integral (pq|rs) array");
 
+
+     py::class_<FCIDumpInterface>(m, "FCIDumpInterface")
+          .def(py::init<const std::string &>(), "Construct from a FCIDUMP filename")
+          .def("nbsf",  &FCIDumpInterface::nbsf,  "Number of orbitals (NORB)")
+          .def("nmo",   &FCIDumpInterface::nmo,   "Number of molecular orbitals (= nbsf)")
+          .def("nelec", &FCIDumpInterface::nelec, "Total number of electrons (NELEC)")
+          .def("nalfa", &FCIDumpInterface::nalfa, "Number of alpha electrons")
+          .def("nbeta", &FCIDumpInterface::nbeta, "Number of beta electrons")
+          .def("scalar_potential", &FCIDumpInterface::scalar_potential,
+               "Scalar potential (nuclear repulsion or frozen-core energy)")
+          .def("overlap_matrix", [](FCIDumpInterface &ints) {
+               return vec_to_np_array(ints.nbsf(), ints.nbsf(), ints.overlap_matrix());
+               }, "Return the overlap matrix (identity)")
+          .def("orthogonalization_matrix", [](FCIDumpInterface &ints) {
+               return vec_to_np_array(ints.nbsf(), ints.nbsf(), ints.orthogonalization_matrix());
+               }, "Return the orthogonalisation matrix (identity)")
+          .def("oei_matrix", [](FCIDumpInterface &ints, bool alpha) {
+               return vec_to_np_array(ints.nbsf(), ints.nbsf(), ints.oei_matrix(alpha));
+               }, "Return the one-electron Hamiltonian matrix")
+          .def("tei_array", [](FCIDumpInterface &ints) {
+               size_t n = ints.nbsf();
+               return vec_to_np_array(n, n, n, n, ints.tei_array());
+               }, "Return the two-electron integral (pq|rs) array")
+          .def("build_fock", [](FCIDumpInterface &ints, py::array_t<double> &dens) {
+               size_t n = ints.nbsf();
+               auto buf = dens.request();
+               std::vector<double> v_dens((double *) buf.ptr, (double *) buf.ptr + buf.size);
+               std::vector<double> v_fock(v_dens.size(), 0.0);
+               ints.build_fock(v_dens, v_fock);
+               return vec_to_np_array(n, n, v_fock.data());
+               }, "Build Fock matrix from restricted density matrix")
+          .def("build_JK", [](FCIDumpInterface &ints, py::array_t<double> &dens) {
+               size_t n = ints.nbsf();
+               auto buf = dens.request();
+               std::vector<double> v_dens((double *) buf.ptr, (double *) buf.ptr + buf.size);
+               std::vector<double> v_jk(v_dens.size(), 0.0);
+               ints.build_JK(v_dens, v_jk);
+               return vec_to_np_array(n, n, v_jk.data());
+               }, "Build (2J-K) matrix from density matrix")
+          .def("build_multiple_JK", [](FCIDumpInterface &ints,
+                    py::array_t<double> &vDJ, py::array_t<double> &vDK,
+                    size_t nj, size_t nk) {
+               size_t nbsf = ints.nbsf();
+               auto bJ_buf = vDJ.request();
+               auto bK_buf = vDK.request();
+               std::vector<double> v_vDJ((double *) bJ_buf.ptr, (double *) bJ_buf.ptr + bJ_buf.size);
+               std::vector<double> v_vDK((double *) bK_buf.ptr, (double *) bK_buf.ptr + bK_buf.size);
+               std::vector<double> v_J(nbsf*nbsf*nj, 0.0), v_K(nbsf*nbsf*nk, 0.0);
+               ints.build_multiple_JK(v_vDJ,v_vDK,v_J,v_K,nj,nk);
+               return std::make_tuple(
+                    vec_to_np_array(nj,nbsf,nbsf,v_J.data()),
+                    vec_to_np_array(nk,nbsf,nbsf,v_K.data()));
+               }, "Build J and K matrices for multiple density matrices")
+          .def("oei_ao_to_mo", [](FCIDumpInterface &ints,
+               py::array_t<double> &C1, py::array_t<double> &C2, bool alpha) {
+               auto b1 = C1.request(), b2 = C2.request();
+               size_t d1 = b1.shape[1], d2 = b2.shape[1];
+               std::vector<double> v_C1((double *) b1.ptr, (double *) b1.ptr + b1.size);
+               std::vector<double> v_C2((double *) b2.ptr, (double *) b2.ptr + b2.size);
+               std::vector<double> v_oei(d1 * d2, 0.0);
+               ints.oei_ao_to_mo(v_C1, v_C2, v_oei, alpha);
+               return vec_to_np_array(d1, d2, v_oei.data());
+               }, "Transform one-electron integrals to a new orbital basis")
+          .def("tei_ao_to_mo", [](FCIDumpInterface &ints,
+               py::array_t<double> &C1, py::array_t<double> &C2,
+               py::array_t<double> &C3, py::array_t<double> &C4,
+               bool alpha1, bool alpha2) {
+               auto b1 = C1.request(), b2 = C2.request();
+               auto b3 = C3.request(), b4 = C4.request();
+               size_t d1 = b1.shape[1], d2 = b2.shape[1];
+               size_t d3 = b3.shape[1], d4 = b4.shape[1];
+               std::vector<double> v_C1((double *) b1.ptr, (double *) b1.ptr + b1.size);
+               std::vector<double> v_C2((double *) b2.ptr, (double *) b2.ptr + b2.size);
+               std::vector<double> v_C3((double *) b3.ptr, (double *) b3.ptr + b3.size);
+               std::vector<double> v_C4((double *) b4.ptr, (double *) b4.ptr + b4.size);
+               std::vector<double> v_eri(d1 * d2 * d3 * d4, 0.0);
+               ints.tei_ao_to_mo(v_C1, v_C2, v_C3, v_C4, v_eri, alpha1, alpha2);
+               return vec_to_np_array(d1, d2, d3, d4, v_eri.data());
+               }, "Transform two-electron integrals to a new orbital basis (physicist, antisymmetrised)")
+          .def("mo_integrals", [](FCIDumpInterface &ints,
+               py::array_t<double> &C, size_t ncore, size_t nactive) {
+               auto buf = C.request();
+               std::vector<double> v_C((double *) buf.ptr, (double *) buf.ptr + buf.size);
+               return ints.mo_integrals(v_C, ncore, nactive);
+               }, "Build MOintegrals for the (ncore, nactive) orbital partition of C");
 
      m.def("det_str", &det_str,"Print the determinant");
 

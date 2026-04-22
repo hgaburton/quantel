@@ -86,6 +86,11 @@ class RHF(Wavefunction):
     def s2(self):
         """Get the spin of the current RHF state"""
         return 0 # All RHF states have spin 0
+    
+    @property
+    def sz(self):
+        """Get the S_z of the current RHF state"""
+        return 0 # All RHF states have S_z = 0
 
     @property
     def gradient(self):
@@ -267,7 +272,7 @@ class RHF(Wavefunction):
     def get_fock(self):
         """Compute the Fock matrix for the current state"""
         # Compute the Coulomb and Exchange matrices
-        J, self.Ipqqp, K = self.integrals.build_JK([self.dens],[self.dens],hermi=1,Kxc=True)
+        J, self.Ipqqp, K = self.integrals.build_JK(self.dens,self.dens,hermi=1,Kxc=True)
         self.JK = 2*J[0] - K[0]
         # Compute the exchange-correlation energy
         self.exc, self.vxc = self.integrals.build_vxc([self.dens, self.dens])

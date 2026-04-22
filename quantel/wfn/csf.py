@@ -230,6 +230,19 @@ class CSF(Wavefunction):
         nucl_dip, ao_dip = self.integrals.dipole_matrix()
         # Return the combination
         return nucl_dip - np.einsum('xij,kji->x',ao_dip,self.vd)
+    
+    def get_natural_orbitals(self):
+        """Compute spatial natural orbitals and their occupation numbers"""
+        X = self.integrals.orthogonalization_matrix()
+        # Get the spatial 1RDM in covariant form
+        dens = np.einsum('wpq->pq',self.vd)
+        # Project to linearly independent orbitals
+        Dt = np.linalg.multi_dot([X.T, dens, X])
+        # Diagonalise the Fock matrix
+        nocc, Ct = np.linalg.eigh(-Dt)
+        # Transform back to the original basis
+        Cno = np.dot(X, Ct)
+        return Cno, -nocc
 
     def tdm(self, them):
         """ Compute the transition dipole moment with another CSF state"""
@@ -451,51 +464,14 @@ class CSF(Wavefunction):
 
     def write_fcidump(self, tag):
         """ Write an FCIDUMP file for the current CSF object """
-        if(not (type(self.integrals) is quantel.ints.pyscf_integrals.PySCFIntegrals)):
-            raise ValueError("FCIDUMP file can only be written for PySCF integrals")
-        
-        # Write the FCIDUMP using PySCF
-        from pyscf.tools import fcidump
-        mol = self.integrals.molecule().copy()
-        mol.spin = int(2 * self.sz)
-        fcidump.from_mo(mol, tag+'.fcid', self.mo_coeff, ms=self.sz)
+        from quantel.ints.fcidump_integrals import write_fcidump
+        write_fcidump(self.integrals, tag+'.fcid', mo_coeff=self.mo_coeff)
 
     def write_cidump(self, tag):
         # Write the CI vector dump
         from quantel.utils.ci_utils import write_cidump
         write_cidump(get_csf_vector(self.spin_coupling),self.ncore,self.nbsf,tag+'_civec.txt')
 
-
-    def read_from_orca(self,json_file):
-        """ Read a set of CSF coefficients from ORCA gbw file.
-            This requires the orca_2json executable to be available and spin_coupling 
-            must be set in the Quantel input file.
-        """
-        import json
-        # Read ORCA Json file
-        with open(json_file, 'r') as f:
-            data = json.load(f)
-        mo_read = np.array([value['MOCoefficients'] for value in data['Molecule']['MolecularOrbitals']['MOs']]).T
-        
-        # TODO: For now, we have a temporary fix to change the sign of the f+3 and f-3 orbitals, 
-        #       which appear to be inconsistent between Libint and ORCA
-        orb_labels = data['Molecule']['MolecularOrbitals']['OrbitalLabels']
-        phase_shift = []
-        for i, l in enumerate(orb_labels):
-            if (r'f+3' in l) or (r'f-3' in l):
-                phase_shift.append(i)
-        mo_read[phase_shift,:] *= -1
-         
-        # Initialise the wave function
-        self.initialise(mo_read, spin_coupling=self.spin_coupling)   
-
-        # Check the input
-        if mo_read.shape[0] != self.nbsf:
-            raise ValueError("Inccorect number of AO basis functions in file")
-        if mo_read.shape[1] < self.nocc:
-            raise ValueError("Insufficient orbitals in file to represent occupied orbitals")
-        if mo_read.shape[1] > self.nmo:
-            raise ValueError("Too many orbitals in file")
 
     def read_from_disk(self, tag, override_spin_coupling=False):
         """Read a CSF wavefunction from disk with prefix 'tag'"""
@@ -529,23 +505,22 @@ class CSF(Wavefunction):
         return newcsf
 
     def overlap(self, them):
-        """ Compute the overlap between two CSF objects
-        """
+        """ Compute the overlap between two CSF objects"""
         ovlp = self.integrals.overlap_matrix()
         return csf_coupling(self, them, ovlp)[0]
 
 
     def hamiltonian(self, them):
-        """ Compute the Hamiltonian coupling between two CSF objects
-        """
+        """ Compute the Hamiltonian coupling between two CSF objects"""
         return csf_coupling_slater_condon(self, them, self.integrals)
     
 
-    def get_orbital_guess(self, method="gwh",avas_ao_labels=None,reorder=True, localise=True):
+    def get_orbital_guess(self, method="gwh",avas_ao_labels=None,reorder=True,localise=True):
         """Get a guess for the molecular orbital coefficients"""
         # Get the guess for the molecular orbital coefficients
-        Cguess = orbital_guess(self.integrals,method,avas_ao_labels=avas_ao_labels,rohf_ms=0.5*self.nopen)
-        if localise:  
+        if type(method)==np.ndarray:
+            Cguess = orthogonalise(method, self.integrals.overlap_matrix())
+        if localise:
             self.initialise(Cguess, spin_coupling=self.nopen*"+")
             self.localise_orbitals()
             Cguess = self.mo_coeff.copy() 
