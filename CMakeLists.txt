@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.14)
 
 project(_quantel)
 
@@ -8,12 +8,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 set(ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
-set(CMAKE_INSTALL_PREFIX "${ROOT_DIR}/quantel/lib")
+
+# Installation destination for the _quantel extension module.
+# Default: install into the source tree so 'import quantel' works from the repo root.
+# Override with -DQUANTEL_INSTALL_DIR=<path> for conda/pip packaging
+# (e.g. -DQUANTEL_INSTALL_DIR=$SP_DIR/quantel/lib in a conda build script).
+set(QUANTEL_INSTALL_DIR "${ROOT_DIR}/quantel/lib" CACHE PATH
+    "Directory where the _quantel extension module is installed")
 message(STATUS "ROOT_DIR: ${ROOT_DIR}")
-message(STATUS "CMAKE_INSTALL_PREFIX: ${CMAKE_INSTALL_PREFIX}")
+message(STATUS "QUANTEL_INSTALL_DIR: ${QUANTEL_INSTALL_DIR}")
 
 # Options
-option(USE_OpenMP "Use OpenMP to enable <omp.h>" OFF)
 option(CODE_COVERAGE "Enable compilation with code coverage flags" OFF)
 
 # Code coverage flags
@@ -38,17 +43,20 @@ endif()
 find_package(BLAS)
 find_package(LAPACK)
 
+# fmt (header-only interface)
+find_package(fmt CONFIG REQUIRED)
+
+# libint2
+find_package(Libint2 CONFIG REQUIRED)
+
 # Armadillo (header-only, links against the BLAS/LAPACK found above)
-set(ARMADILLO_PATH "${ROOT_DIR}/external/armadillo")
+# SetupArmadillo.cmake creates an INTERFACE target 'armadillo' from the
+# system headers; ARMADILLO_PATH is unset so it searches standard locations.
 include(cmake/SetupArmadillo.cmake)
 
 # Third-party packages
 find_package(Eigen3 REQUIRED)
 find_package(Boost)
-
-# External subprojects
-add_subdirectory(external/fmt)
-add_subdirectory(external/libint2)
 
 # Generate Python module
 find_package(pybind11 CONFIG REQUIRED)
@@ -69,9 +77,9 @@ target_include_directories(_quantel PRIVATE
     ${Boost_INCLUDE_DIRS})
 
 target_link_libraries(_quantel PRIVATE
-    fmt-header-only
+    fmt::fmt-header-only
     armadillo
-    libint2
+    Libint2::int2
     Eigen3::Eigen
     ${LAPACK_LIBRARIES}
     ${BLAS_LIBRARIES}
@@ -82,29 +90,31 @@ if(APPLE AND BLA_VENDOR STREQUAL "Apple")
     target_link_libraries(_quantel PRIVATE "-framework Accelerate")
 endif()
 
-# OpenMP — optional, requires special handling on macOS with Apple Clang
-if(USE_OpenMP)
-    if(APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        # Apple Clang doesn't bundle libomp; find it via Homebrew
-        execute_process(
-            COMMAND brew --prefix libomp
-            OUTPUT_VARIABLE LIBOMP_PREFIX
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-            ERROR_QUIET)
-        if(LIBOMP_PREFIX)
-            set(OpenMP_CXX_FLAGS "-Xpreprocessor -fopenmp -I${LIBOMP_PREFIX}/include")
-            set(OpenMP_CXX_LIB_NAMES "omp")
-            set(OpenMP_omp_LIBRARY "${LIBOMP_PREFIX}/lib/libomp.dylib")
-            message(STATUS "Using Homebrew libomp: ${LIBOMP_PREFIX}")
-        else()
-            message(WARNING "USE_OpenMP=ON but Homebrew libomp not found. "
-                            "Install with: brew install libomp")
-        endif()
-    endif()
-    find_package(OpenMP REQUIRED)
-    if(OpenMP_CXX_FOUND)
-        target_link_libraries(_quantel PRIVATE OpenMP::OpenMP_CXX)
+# OpenMP — required.
+# Try to find it outright first (works in conda environments with llvm-openmp).
+# Fall back to the Homebrew libomp workaround for native macOS Apple Clang builds.
+find_package(OpenMP QUIET)
+if(NOT OpenMP_CXX_FOUND AND APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    execute_process(
+        COMMAND brew --prefix libomp
+        OUTPUT_VARIABLE LIBOMP_PREFIX
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+    if(LIBOMP_PREFIX)
+        set(OpenMP_CXX_FLAGS "-Xpreprocessor -fopenmp -I${LIBOMP_PREFIX}/include")
+        set(OpenMP_CXX_LIB_NAMES "omp")
+        set(OpenMP_omp_LIBRARY "${LIBOMP_PREFIX}/lib/libomp.dylib")
+        message(STATUS "Using Homebrew libomp: ${LIBOMP_PREFIX}")
+        find_package(OpenMP REQUIRED)
+    else()
+        message(FATAL_ERROR "OpenMP is required but was not found. "
+                            "In a conda environment: conda install llvm-openmp. "
+                            "Otherwise: brew install libomp")
     endif()
 endif()
+if(NOT OpenMP_CXX_FOUND)
+    message(FATAL_ERROR "OpenMP is required but was not found.")
+endif()
+target_link_libraries(_quantel PRIVATE OpenMP::OpenMP_CXX)
 
-install(TARGETS _quantel DESTINATION ${ROOT_DIR}/quantel/lib)
+install(TARGETS _quantel DESTINATION "${QUANTEL_INSTALL_DIR}")

@@ -9,49 +9,43 @@ Any questions should be directed to Hugh Burton (hgaburton[@]gmail.com)
 ### Prerequisites
 
 QuantEl requires a number of external libraries. 
-Most of these can be easily installed using a conda environment, but `fmt`, `libint` and `armadillo` currently need to be installed manually. 
-These manual external libraries must be setup in the directory `./external/` following the instructions below.
+Most of these can be easily installed using a conda environment. 
+The C++ dependencies (`fmt`, `libint2`, and `armadillo`) are fetched and set up automatically by CMake.
 
-#### Conda environment
-The conda environment `quantel` can be setup by running
+### Option A — conda package (recommended)
+
+Build and install quantel as a conda package into your base or target environment:
+```
+conda build conda-recipe/
+conda install --use-local quantel
+```
+This handles all C++ and Python dependencies automatically.
+
+### Option B — development install
+
+#### 1. Create the conda environment
 ```
 conda env create -f environment.yml
 conda activate quantel
 ```
+This installs all required build tools (`cmake`, `pybind11`, `boost`, `eigen`, `llvm-openmp`)
+and Python packages (`numpy`, `scipy`, `h5py`, `pandas`, `pyscf`, `pygnme`, etc.).
 
-#### PyGNME
-The nonorthogonal matrix elements in QuantEl require `libgnme` and `pygnme`, which can be installed from https://github.com/hgaburton/pygnme.
+#### 2. PyGNME (if not already installed via pip above)
+The nonorthogonal matrix elements in QuantEl require `libgnme` and `pygnme`, which can be
+installed from https://github.com/hgaburton/pygnme.
 
-#### fmt 
-Library to support easier C++ string formatting. From the directory `external/`, run
+#### 3. Build the C++ extension
+CMake will automatically download or extract `fmt` (11.1.2), `libint2` (2.9.0), and
+`armadillo` (12.8.3) into `external/` if they are not already present.
 ```
-git clone https://github.com/fmtlib/fmt.git
-```
-
-#### libint2
-Integral library used by QuantEl. From the directory `external/`, run
-```
-tar -xvf libint-2.9.0.tgz
-mv libint-2.9.0 libint2
-```
-#### armadillo
-C++ linear algebra library used by QuantEl. From the directory `external/`, run
-```
-wget https://sourceforge.net/projects/arma/files/armadillo-12.8.3.tar.xz
-tar -xvf armadillo-12.8.3.tar.xz
-mv armadillo-12.8.3 armadillo
-```
-
-### Compilation and setup
-Once the prerequisites are setup, full compilation can be achieved using cmake. 
-Starting from the root directory, run 
-```
-mkdir build
+mkdir build && cd build
 cmake ../
 make -j4 install
 cd ../
 ```
-Finally, you need to make sure that the root directory is added to your python path
+
+#### 4. Add to your Python path
 ```
 export PYTHONPATH=~/PATH/TO/QUANTEL:$PYTHONPATH
 ```
