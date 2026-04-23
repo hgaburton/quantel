@@ -130,7 +130,7 @@ class Function(metaclass=ABCMeta):
             else:         nzero +=1 
         return (ndown, nzero, nuphl)
 
-    def get_davidson_hessian_index(self, ntarget=5, eps=1e-5, approx_hess=True, plev=1):
+    def get_davidson_hessian_index(self, ntarget=5, eps=1e-5, approx_hess=True, plev=1, tol=1e-16):
         """Iteratively compute Hessian index from gradient only. 
            This approach uses the Davidson algorithm."""
         # Get approximate diagonal terms
@@ -159,13 +159,15 @@ class Function(metaclass=ABCMeta):
         # Count the Hessian index
         ndown = 0
         nzero = 0
+        nuphl = 0
         for i in eigs:
-            if i < -1e-16:  ndown += 1
-            elif not i>1e-16:  nzero +=1 
+            if i < -tol:  ndown += 1
+            elif i > tol: nuphl +=1
+            else:         nzero +=1 
 
         # Save the result
         self.hess_index = (ndown, nzero)
-        return
+        return (ndown, nzero, nuphl)
 
 
     def pushoff(self, n, angle=np.pi/2):
@@ -179,15 +181,21 @@ class Function(metaclass=ABCMeta):
         anl = self.gradient
         num = self.get_numerical_gradient()
         diff = anl - num
-        print(diff)
-        return np.linalg.norm(diff) / diff.size < tol
+        if(np.max(np.abs(diff)) > tol):
+            print("Gradient check failed!")
+            idx = np.unravel_index(np.argmax(np.abs(diff)), diff.shape)
+            print(f"Max difference at index {idx}: {diff[idx]:.3e}")
+        return np.max(np.abs(diff)) < tol
 
     def check_hessian(self, tol=1e-3):
         anl = self.hessian
         num = self.get_numerical_hessian()
         diff = anl - num
-        print(diff)
-        return np.linalg.norm(diff) / diff.size < tol
+        if(np.max(np.abs(diff)) > tol):
+            print("Hessian check failed!")
+            idx = np.unravel_index(np.argmax(np.abs(diff)), diff.shape)
+            print(f"Max difference at index {idx}: {diff[idx]:.3e}")
+        return np.max(np.abs(diff)) < tol
 
     def get_preconditioner(self):
         """Get diagonal preconditioner for Hessian"""

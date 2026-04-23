@@ -57,6 +57,7 @@ pybind11_add_module(_quantel
     "${SOURCE_DIR}/shell_pair.cpp"
     "${SOURCE_DIR}/molecule.cpp"
     "${SOURCE_DIR}/libint_interface.cpp"
+    "${SOURCE_DIR}/fcidump_interface.cpp"
     "${SOURCE_DIR}/linalg.cpp"
     "${SOURCE_DIR}/determinant.cpp"
     "${SOURCE_DIR}/ci_space.cpp"

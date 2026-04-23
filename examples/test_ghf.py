@@ -9,13 +9,15 @@ if __name__ == "__main__":
     print(f" Testing GHF optimisation method")
     print("===============================================")
     # Setup molecule and integrals
-    mol  = PySCFMolecule("mol/h3.xyz", "cc-pvdz", "angstrom",spin=1,charge=0)
+    mol  = PySCFMolecule("mol/h3.xyz", "sto3g", "angstrom",spin=1,charge=0)
     ints = PySCFIntegrals(mol)
+    nmo  = 2*ints.nmo()
+    Cinit = np.eye(nmo,nmo)
 
     # Initialise GHF object
     wfn = GHF(ints)
     # Set initial coefficients from identity
-    wfn.initialise(np.eye(wfn.nmo,wfn.nmo))
+    wfn.initialise(Cinit)
     # Test LBFGS
     LBFGS().run(wfn)
 
@@ -25,6 +27,6 @@ if __name__ == "__main__":
     wfn.get_davidson_hessian_index(approx_hess=False)
     
     # Test DIIS
-    wfn.initialise(np.eye(wfn.nmo,wfn.nmo))
+    wfn.initialise(Cinit)
     DIIS().run(wfn)
 

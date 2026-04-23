@@ -156,13 +156,11 @@ class PySCFIntegrals:
         vJ, _ = self.get_jk(dm=(vdJ,vdJ), hermi=hermi, with_k=False)
         return vJ[0]
     
-    def build_JK(self,vdJ,vdK,hermi=0,Kxc=False):
+    def build_JK(self,vd,hermi=0,Kxc=False):
         """ Build Coulomb and Exchange matrices for multiple sets of densities
             Args:
-                vdJ : ndarray
-                    The Coulomb matrices
-                vdK : ndarray
-                    The Exchange matrices
+                vd : ndarray
+                    The density matrices
                 hermi : int
                     0 if dm is not Hermitian, 1 if it is.
                 Kxc : bool
@@ -172,7 +170,7 @@ class PySCFIntegrals:
                 ndarray : The pure Exchange matrix
                 ndarray : The scaled Exchange matrix for xc functional
         """
-        vJ, vK = self.get_jk(dm=(vdJ,vdK), hermi=hermi)
+        vJ, vK = self.get_jk(dm=vd, hermi=hermi)
         vKfunc = vK
         if (self.xc is None):
             pass
@@ -180,21 +178,22 @@ class PySCFIntegrals:
             if(self.omega == 0):
                 vKfunc = vK * self.hybrid_K
             elif self.alpha == 0: # LR=0, only SR exchange
-                _, vKfunc = self.get_jk(dm=(vdJ,vdK), hermi=hermi, omega=-self.omega, with_j=False)
+                _, vKfunc = self.get_jk(dm=vd, hermi=hermi, omega=-self.omega, with_j=False)
                 vKfunc *= self.hybrid_K
             elif self.hybrid_K == 0: # SR=0, only LR exchange
-                _, vKfunc = self.get_jk(dm=(vdJ,vdK), hermi=hermi, omega=self.omega, with_j=False)
+                _, vKfunc = self.get_jk(dm=vd, hermi=hermi, omega=self.omega, with_j=False)
                 vKfunc *= (self.alpha)
             else: # SR and LR different ratios
-                _, vKlr = self.get_jk(dm=(vdJ,vdK), hermi=hermi, omega=self.omega, with_j=False)
+                _, vKlr = self.get_jk(dm=vd, hermi=hermi, omega=self.omega, with_j=False)
                 vKfunc = vK * self.hybrid_K + (self.alpha - self.hybrid_K) * vKlr
         else:
             vKfunc *= 0
 
         if Kxc:
-            return vJ[0], vK[1], vKfunc[1]
+            return vJ, vK, vKfunc
         else:
-            return vJ[0], vK[1]
+            return vJ, vK
+
 
     
     def build_vxc(self,dms,hermi=0):
@@ -350,8 +349,8 @@ class PySCF_MO_Integrals:
             # Compute core density
             Pcore = Ccore @ Ccore.T
             # Compute inactive JK matrix (2J-K) in AO basis
-            J,K = self.ints.build_JK(Pcore,Pcore)
-            JK = 2*J - K
+            J,K = self.ints.build_JK(Pcore)
+            JK = 2*J[0] - K[0]
 
             # Compute scalar core energy 
             Hao = self.ints.oei_matrix()

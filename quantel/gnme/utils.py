@@ -291,7 +291,7 @@ def generalised_slater_condon(Cax,Cbx,Caw,Cbw,ints,ktol=1e-8,stol=1e-8):
     vd[nd+2:] = Pb
 
     # Call the JK build
-    vj, vk = ints.build_JK(vd,vd)
+    vj, vk = ints.build_JK(vd)
 
     # Compute two-electron contributions
     jw_t = vj[0] + vj[nd]

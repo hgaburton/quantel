@@ -86,6 +86,11 @@ class RHF(Wavefunction):
     def s2(self):
         """Get the spin of the current RHF state"""
         return 0 # All RHF states have spin 0
+    
+    @property
+    def sz(self):
+        """Get the S_z of the current RHF state"""
+        return 0 # All RHF states have S_z = 0
 
     @property
     def gradient(self):
@@ -103,9 +108,12 @@ class RHF(Wavefunction):
         # Compute Fock matrix in MO basis 
         Fmo = np.linalg.multi_dot([self.mo_coeff.T, self.fock, self.mo_coeff])
 
-        # Get two-electron integrals if not already computed
-        if(not hasattr(self, 'eri_abij') or not hasattr(self, 'eri_aibj')):
-            self.update(with_eri=True)
+        # Get occupied and virtual orbital coefficients
+        Cocc = self.mo_coeff[:,:self.nocc].copy()
+        Cvir = self.mo_coeff[:,self.nocc:].copy()
+        # Compute ao_to_mo integral transform
+        eri_abij = self.integrals.tei_ao_to_mo(Cvir,Cvir,Cocc,Cocc,True,False)
+        eri_aibj = self.integrals.tei_ao_to_mo(Cvir,Cocc,Cvir,Cocc,True,False)
 
         # Initialise Hessian matrix
         hessian = np.zeros((nv,no,nv,no))
@@ -117,9 +125,9 @@ class RHF(Wavefunction):
             hessian[a,:,a,:] -= 4 * Fmo[:no,:no]
 
         # Compute two-electron contributions
-        hessian += 16 * np.einsum('abij->aibj', self.eri_abij, optimize="optimal")
-        hessian -=  4 * self.integrals.hybrid_K * np.einsum('ajbi->aibj', self.eri_aibj, optimize="optimal")
-        hessian -=  4 * self.integrals.hybrid_K * np.einsum('abji->aibj', self.eri_abij, optimize="optimal")
+        hessian += 16 * np.einsum('abij->aibj', eri_abij, optimize="optimal")
+        hessian -=  4 * self.integrals.hybrid_K * np.einsum('ajbi->aibj', eri_aibj, optimize="optimal")
+        hessian -=  4 * self.integrals.hybrid_K * np.einsum('abji->aibj', eri_abij, optimize="optimal")
 
         if(not (self.integrals.xc is None)):
             # Build ground-state density and xc kernel
@@ -153,7 +161,7 @@ class RHF(Wavefunction):
         # First order density change
         Dia = np.einsum('pa,ai,qi->pq', Ca, Xai, Ci, optimize="optimal")
         # Coulomb and exchange contributions
-        Jia, Kia, = self.integrals.build_JK([Dia],[Dia],hermi=0,Kxc=False)
+        Jia, Kia, = self.integrals.build_JK([Dia],hermi=0,Kxc=False)
         # Build ground-state density and fxc kernel
         if(not (self.integrals.xc is None)):
             occ = np.zeros(self.nmo)
@@ -247,17 +255,11 @@ class RHF(Wavefunction):
         """Compute the (nonorthogonal) many-body Hamiltonian coupling with another RHF wavefunction (them)"""
         raise NotImplementedError("RHF Hamiltonian not implemented")
 
-    def update(self, with_eri=False):
+    def update(self):
         """Update the 1RDM and Fock matrix for the current state"""
         self.get_density()
         self.get_fock()
-        if(with_eri):
-            # Get occupied and virtual orbital coefficients
-            Cocc = self.mo_coeff[:,:self.nocc].copy()
-            Cvir = self.mo_coeff[:,self.nocc:].copy()
-            # Compute ao_to_mo integral transform
-            self.eri_abij = self.integrals.tei_ao_to_mo(Cvir,Cvir,Cocc,Cocc,True,False)
-            self.eri_aibj = self.integrals.tei_ao_to_mo(Cvir,Cocc,Cvir,Cocc,True,False)
+
 
     def get_density(self):
         """Compute the 1RDM for the current state in AO basis"""
@@ -267,7 +269,7 @@ class RHF(Wavefunction):
     def get_fock(self):
         """Compute the Fock matrix for the current state"""
         # Compute the Coulomb and Exchange matrices
-        J, self.Ipqqp, K = self.integrals.build_JK([self.dens],[self.dens],hermi=1,Kxc=True)
+        J, self.Ipqqp, K = self.integrals.build_JK(self.dens,hermi=1,Kxc=True)
         self.JK = 2*J[0] - K[0]
         # Compute the exchange-correlation energy
         self.exc, self.vxc = self.integrals.build_vxc([self.dens, self.dens])
