@@ -365,7 +365,7 @@ class CSF(Wavefunction):
                 vd[P+1] += self.beta[P,R] * np.linalg.multi_dot([self.mo_coeff[:,Rinds],step[Rinds,:],self.mo_coeff.T])
             vd[P+1] = 0.5 * (vd[P+1] + vd[P+1].T)
         # Build J and K matrices from first-order densities
-        J1, _, K1 = self.mo_transform(self.integrals.build_JK(vd,vd,hermi=1,Kxc=True))
+        J1, _, K1 = self.mo_transform(self.integrals.build_JK(vd,hermi=1,Kxc=True))
         # Contribution to Hvec
         Hvec += 4 * np.einsum('p,qp->pq',self.mo_occ,J1[0]) 
         # Don't include transpose as density was symmetrised
@@ -656,7 +656,7 @@ class CSF(Wavefunction):
         #    vJ = self.vJ_last + _vJ
         #    vK = self.vK_last + _vK
         #else:
-        vJ, _, vK = self.integrals.build_JK(vd,vd,hermi=1,Kxc=True)
+        vJ, _, vK = self.integrals.build_JK(vd,hermi=1,Kxc=True)
 
         # Save last elements
         self.vd_last = vd.copy()
@@ -827,7 +827,7 @@ class CSF(Wavefunction):
     def get_open_JK(self):
         """ Compute <pq|pq> and <pq|qp> for open-shell orbitals p"""
         vd = np.einsum('mp,np->pmn', self.mo_coeff[:,self.ncore:self.nocc], self.mo_coeff[:,self.ncore:self.nocc])
-        vJ, vK = self.integrals.build_JK(vd,vd,hermi=1,Kxc=False)
+        vJ, vK = self.integrals.build_JK(vd,hermi=1,Kxc=False)
         Ipqpq = np.einsum('pmn,mq,nq->pq', vJ, self.mo_coeff, self.mo_coeff, optimize='optimal')
         Ipqqp = np.einsum('pmn,mq,nq->pq', vK, self.mo_coeff, self.mo_coeff, optimize='optimal')
         return Ipqpq, Ipqqp 

@@ -161,7 +161,7 @@ class RHF(Wavefunction):
         # First order density change
         Dia = np.einsum('pa,ai,qi->pq', Ca, Xai, Ci, optimize="optimal")
         # Coulomb and exchange contributions
-        Jia, Kia, = self.integrals.build_JK([Dia],[Dia],hermi=0,Kxc=False)
+        Jia, Kia, = self.integrals.build_JK([Dia],hermi=0,Kxc=False)
         # Build ground-state density and fxc kernel
         if(not (self.integrals.xc is None)):
             occ = np.zeros(self.nmo)
@@ -269,7 +269,7 @@ class RHF(Wavefunction):
     def get_fock(self):
         """Compute the Fock matrix for the current state"""
         # Compute the Coulomb and Exchange matrices
-        J, self.Ipqqp, K = self.integrals.build_JK(self.dens,self.dens,hermi=1,Kxc=True)
+        J, self.Ipqqp, K = self.integrals.build_JK(self.dens,hermi=1,Kxc=True)
         self.JK = 2*J[0] - K[0]
         # Compute the exchange-correlation energy
         self.exc, self.vxc = self.integrals.build_vxc([self.dens, self.dens])

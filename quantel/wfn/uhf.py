@@ -268,7 +268,7 @@ class UHF(Wavefunction):
     def get_fock(self): 
         """ Construct the two alpha and beta Fock matrices for the current iteration """
         # Compute arrays of J and K matrices
-        vJ, Ipqqp, vK = self.integrals.build_JK(self.dens,self.dens,Kxc=True)
+        vJ, Ipqqp, vK = self.integrals.build_JK(self.dens,Kxc=True)
         # Compute the exchange-correlation energy  
         self.exc , self.vxc = self.integrals.build_vxc(self.dens)
         # Compute JK contributions
@@ -563,7 +563,7 @@ class UHF(Wavefunction):
         D1a = np.einsum('pa,ai,qi->pq', Ca_alfa, Xai_alfa, Ci_alfa, optimize="optimal")
         D1b = np.einsum('pa,ai,qi->pq', Ca_beta, Xai_beta, Ci_beta, optimize="optimal")
         # Coulomb and exchange contributions
-        J, K = self.integrals.build_JK([D1a,D1b],[D1a,D1b], Kxc=False)
+        J, K = self.integrals.build_JK([D1a,D1b], Kxc=False)
         # Build ground-state density and xc kernel
         if(not (self.integrals.xc is None)):
             rho0, vxc, fxc = self.integrals.cache_xc_kernel(self.mo_coeff,self.mo_occ,spin=1)

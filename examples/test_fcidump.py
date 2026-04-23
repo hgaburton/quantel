@@ -111,7 +111,7 @@ P = np.random.rand(nmo,nmo)
 # (2J-K)_{pq} = sum_{rs} P_{rs} * (2*(pq|rs) - (ps|rq))
 Jref = np.einsum("pqrs,rs->pq", h2e_mo, P)
 Kref = np.einsum("psrq,rs->pq", h2e_mo, P)
-Jintdump, Kintdump = intdump.build_JK(P,P)
+Jintdump, Kintdump = intdump.build_JK(P)
 check("build_JK: J matches direct einsum",np.allclose(Jintdump, Jref, atol=1e-10))
 check("build_JK: K matches direct einsum",np.allclose(Kintdump, Kref, atol=1e-10))
 

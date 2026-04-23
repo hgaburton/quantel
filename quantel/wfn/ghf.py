@@ -167,7 +167,7 @@ class GHF(Wavefunction):
         Dba = Dia[self.nbsf:,:self.nbsf]
         Dbb = Dia[self.nbsf:,self.nbsf:]
         # First order JK integrals
-        (Jaa,_,_,Jbb), (Kaa,Kab,Kba,Kbb) = self.integrals.build_JK([Daa,Dab,Dba,Dbb],[Daa,Dab,Dba,Dbb],hermi=0,Kxc=False)
+        (Jaa,_,_,Jbb), (Kaa,Kab,Kba,Kbb) = self.integrals.build_JK([Daa,Dab,Dba,Dbb],hermi=0,Kxc=False)
         Jia = np.zeros((2*self.nbsf, 2*self.nbsf))
         Jia[:self.nbsf,:self.nbsf] = Jaa + Jbb
         Jia[self.nbsf:,self.nbsf:] = Jaa + Jbb
@@ -273,7 +273,7 @@ class GHF(Wavefunction):
     def get_fock(self):
         """Compute the Fock matrix for the current state"""
         # Get JK integrals
-        self.vJ, self.vK = self.integrals.build_JK(self.vd,self.vd,Kxc=False,hermi=0)
+        self.vJ, self.vK = self.integrals.build_JK(self.vd,Kxc=False,hermi=0)
         # Construct the Coulomb matrix
         self.J = np.zeros((2*self.nbsf, 2*self.nbsf))
         self.J[:self.nbsf,:self.nbsf] = self.vJ[0] + self.vJ[2]

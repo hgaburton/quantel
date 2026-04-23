@@ -108,32 +108,29 @@ class FCIDUMP:
         # Return 0 for the XC potential since a FCIDUMP contains no information about an XC functional.
         return 0, np.zeros_like(dens)
 
-    def build_JK(self,vDJ,vDK,hermi=0,Kxc=False):
+    def build_JK(self,vd,hermi=0,Kxc=False):
         """Build J and K matrices for multiple sets of density matrices.
 
         Parameters
         ----------
-        vDJ : ndarray, shape (nj, nbsf, nbsf)
-            Density matrices for J build.
-        vDK : ndarray, shape (nk, nbsf, nbsf)
-            Density matrices for K build.
-        nj, nk : int
-            Number of density matrices in each set.
+        vd : ndarray, shape (n, nbsf, nbsf)
+            Density matrices.
+        hermi : int
+            Unused; present for interface compatibility with pyscf_integrals.
+        Kxc : bool
+            If True, also return the scaled exchange matrix (same as K for FCIDUMP).
 
         Returns
         -------
         tuple of ndarray
-            (vJ, vK) each shaped (n*, nbsf, nbsf).
+            (vJ, vK) each shaped (n, nbsf, nbsf), or (vJ, vK, vKfunc) if Kxc=True.
         """
-        if(vDJ.ndim == 2): vDJ = vDJ[None,:,:]
-        if(vDK.ndim == 2): vDK = vDK[None,:,:]
-        # Call the underlying C++ implementation to compute J and K for all density matrices
+        if(vd.ndim == 2): vd = vd[None,:,:]
         vJ, vK = self._ints.build_multiple_JK(
-            np.ascontiguousarray(vDJ), np.ascontiguousarray(vDK),
-            vDJ.shape[0], vDK.shape[0])
-        vKfunc = vK
+            np.ascontiguousarray(vd), np.ascontiguousarray(vd),
+            vd.shape[0], vd.shape[0])
         if Kxc:
-            return vJ, vK, vKfunc
+            return vJ, vK, vK
         else:
             return vJ, vK
 
