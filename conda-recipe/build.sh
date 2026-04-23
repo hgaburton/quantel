@@ -14,9 +14,7 @@ cd "$SRC_DIR"
 # Install the Python package source files into site-packages
 mkdir -p "$SP_DIR/quantel"
 cp quantel/__init__.py quantel/main.py "$SP_DIR/quantel/"
-for d in drivers gnme ints io opt utils wfn; do
-    cp -r "quantel/$d" "$SP_DIR/quantel/"
-done
+cp -r quantel/drivers quantel/gnme quantel/ints quantel/io quantel/opt quantel/utils quantel/wfn "$SP_DIR/quantel/"
 
 # pygnme is not on conda-forge; install it separately after:
 #   pip install git+https://github.com/hgaburton/pygnme.git

@@ -57,10 +57,7 @@ endif()
 find_package(BLAS)
 find_package(LAPACK)
 
-# fmt (header-only interface)
 find_package(fmt CONFIG REQUIRED)
-
-# libint2
 find_package(Libint2 CONFIG REQUIRED)
 
 # Armadillo (header-only, links against the BLAS/LAPACK found above)
@@ -125,9 +122,6 @@ if(NOT OpenMP_CXX_FOUND AND APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
                             "In a conda environment: conda install llvm-openmp. "
                             "Otherwise: brew install libomp")
     endif()
-endif()
-if(NOT OpenMP_CXX_FOUND)
-    message(FATAL_ERROR "OpenMP is required but was not found.")
 endif()
 target_link_libraries(_quantel PRIVATE OpenMP::OpenMP_CXX)
 
