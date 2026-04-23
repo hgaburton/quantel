@@ -40,8 +40,7 @@ pip install --no-build-isolation git+https://github.com/hgaburton/pygnme.git
 ```
 
 #### 3. Build the C++ extension
-CMake will automatically download or extract `fmt` (11.1.2), `libint2` (2.9.0), and
-`armadillo` (12.8.3) into `external/` if they are not already present.
+All C++ dependencies (`fmt`, `libint2`, `armadillo`) are provided by the conda environment.
 ```
 mkdir build && cd build
 cmake ../
@@ -52,4 +51,15 @@ cd ../
 #### 4. Add to your Python path
 ```
 export PYTHONPATH=~/PATH/TO/QUANTEL:$PYTHONPATH
+```
+
+### Linux note — OpenBLAS and OpenMP
+
+On Linux, OpenBLAS (the default conda BLAS) is compiled with pthreads, which conflicts
+with quantel's OpenMP parallelism and produces a runtime warning. The `environment.yml`
+sets `OPENBLAS_NUM_THREADS=1` automatically when the environment is created. If you
+already have the environment, apply it manually:
+```
+conda env config vars set OPENBLAS_NUM_THREADS=1 -n quantel
+conda activate quantel
 ```

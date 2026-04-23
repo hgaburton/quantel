@@ -34,3 +34,6 @@ dependencies:
 
   # Note: pygnme must be installed separately after the environment is created:
   #   pip install --no-build-isolation git+https://github.com/hgaburton/pygnme.git
+
+variables:
+  OPENBLAS_NUM_THREADS: "1"
