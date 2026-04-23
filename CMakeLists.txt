@@ -15,6 +15,12 @@ set(ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 if(DEFINED ENV{CONDA_PREFIX})
     list(PREPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX})
     message(STATUS "CONDA_PREFIX detected: prepending $ENV{CONDA_PREFIX} to CMAKE_PREFIX_PATH")
+    # pybind11's FindPythonInterp ignores CMAKE_PREFIX_PATH, so pin the
+    # Python executable explicitly to prevent it picking up a Homebrew Python.
+    if(NOT DEFINED PYTHON_EXECUTABLE)
+        set(PYTHON_EXECUTABLE "$ENV{CONDA_PREFIX}/bin/python3" CACHE FILEPATH
+            "Python interpreter" FORCE)
+    endif()
 endif()
 
 # Installation destination for the _quantel extension module.
