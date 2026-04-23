@@ -270,7 +270,7 @@ class RHF(Wavefunction):
         """Compute the Fock matrix for the current state"""
         # Compute the Coulomb and Exchange matrices
         J, self.Ipqqp, K = self.integrals.build_JK(self.dens,hermi=1,Kxc=True)
-        self.JK = 2*J[0] - K[0]
+        self.JK = 2*J - K
         # Compute the exchange-correlation energy
         self.exc, self.vxc = self.integrals.build_vxc([self.dens, self.dens])
         self.fock = self.integrals.oei_matrix(True) + self.JK + self.vxc[0]

@@ -9,49 +9,57 @@ Any questions should be directed to Hugh Burton (hgaburton[@]gmail.com)
 ### Prerequisites
 
 QuantEl requires a number of external libraries. 
-Most of these can be easily installed using a conda environment, but `fmt`, `libint` and `armadillo` currently need to be installed manually. 
-These manual external libraries must be setup in the directory `./external/` following the instructions below.
+Most of these can be easily installed using a conda environment. 
+The C++ dependencies (`fmt`, `libint2`, and `armadillo`) are fetched and set up automatically by CMake.
 
-#### Conda environment
-The conda environment `quantel` can be setup by running
+### Option A — conda package (recommended)
+
+Build and install quantel as a conda package into your base or target environment:
+```
+conda build conda-recipe/
+conda install --use-local quantel
+```
+This handles all C++ and Python dependencies automatically.
+
+### Option B — development install
+
+#### 1. Create the conda environment
 ```
 conda env create -f environment.yml
 conda activate quantel
 ```
+This installs all required build tools (`cmake`, `pybind11`, `boost`, `eigen`, `llvm-openmp`)
+and Python packages (`numpy`, `scipy`, `h5py`, `pandas`, `pyscf`, etc.).
 
-#### PyGNME
-The nonorthogonal matrix elements in QuantEl require `libgnme` and `pygnme`, which can be installed from https://github.com/hgaburton/pygnme.
-
-#### fmt 
-Library to support easier C++ string formatting. From the directory `external/`, run
+#### 2. PyGNME
+The nonorthogonal matrix elements in QuantEl require `pygnme`. Install it after the
+conda environment is active (the `--no-build-isolation` flag is required so the build
+can find the conda-installed numpy headers):
 ```
-git clone https://github.com/fmtlib/fmt.git
-```
-
-#### libint2
-Integral library used by QuantEl. From the directory `external/`, run
-```
-tar -xvf libint-2.9.0.tgz
-mv libint-2.9.0 libint2
-```
-#### armadillo
-C++ linear algebra library used by QuantEl. From the directory `external/`, run
-```
-wget https://sourceforge.net/projects/arma/files/armadillo-12.8.3.tar.xz
-tar -xvf armadillo-12.8.3.tar.xz
-mv armadillo-12.8.3 armadillo
+pip install --no-build-isolation git+https://github.com/hgaburton/pygnme.git
 ```
 
-### Compilation and setup
-Once the prerequisites are setup, full compilation can be achieved using cmake. 
-Starting from the root directory, run 
+#### 3. Build the C++ extension
+All C++ dependencies (`fmt`, `libint2`, `armadillo`) are provided by the conda environment.
 ```
-mkdir build
+mkdir build && cd build
 cmake ../
 make -j4 install
 cd ../
 ```
-Finally, you need to make sure that the root directory is added to your python path
+
+#### 4. Add to your Python path
 ```
 export PYTHONPATH=~/PATH/TO/QUANTEL:$PYTHONPATH
+```
+
+### Linux note — OpenBLAS and OpenMP
+
+On Linux, OpenBLAS (the default conda BLAS) is compiled with pthreads, which conflicts
+with quantel's OpenMP parallelism and produces a runtime warning. The `environment.yml`
+sets `OPENBLAS_NUM_THREADS=1` automatically when the environment is created. If you
+already have the environment, apply it manually:
+```
+conda env config vars set OPENBLAS_NUM_THREADS=1 -n quantel
+conda activate quantel
 ```
