@@ -9,6 +9,14 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 set(ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
+# When building inside a conda environment, prefer conda packages over anything
+# installed system-wide (e.g. Homebrew) by prepending the conda prefix to all
+# cmake search paths.
+if(DEFINED ENV{CONDA_PREFIX})
+    list(PREPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX})
+    message(STATUS "CONDA_PREFIX detected: prepending $ENV{CONDA_PREFIX} to CMAKE_PREFIX_PATH")
+endif()
+
 # Installation destination for the _quantel extension module.
 # Default: install into the source tree so 'import quantel' works from the repo root.
 # Override with -DQUANTEL_INSTALL_DIR=<path> for conda/pip packaging
