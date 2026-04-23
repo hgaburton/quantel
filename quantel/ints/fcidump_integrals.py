@@ -125,10 +125,12 @@ class FCIDUMP:
         tuple of ndarray
             (vJ, vK) each shaped (n, nbsf, nbsf), or (vJ, vK, vKfunc) if Kxc=True.
         """
-        if(vd.ndim == 2): vd = vd[None,:,:]
+        twoarray = vd.ndim == 2
+        if(twoarray): vd = vd[None,:,:]
         vJ, vK = self._ints.build_multiple_JK(
             np.ascontiguousarray(vd), np.ascontiguousarray(vd),
             vd.shape[0], vd.shape[0])
+        if(twoarray): vJ, vK = vJ[0], vK[0]
         if Kxc:
             return vJ, vK, vK
         else:
