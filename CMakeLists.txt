@@ -57,6 +57,7 @@ endif()
 find_package(BLAS)
 find_package(LAPACK)
 
+cmake_policy(SET CMP0167 NEW)
 find_package(fmt CONFIG REQUIRED)
 find_package(Libint2 CONFIG REQUIRED)
 
@@ -67,9 +68,10 @@ include(cmake/SetupArmadillo.cmake)
 
 # Third-party packages
 find_package(Eigen3 REQUIRED)
-find_package(Boost)
+find_package(Boost CONFIG)
 
 # Generate Python module
+set(PYBIND11_FINDPYTHON ON)
 find_package(pybind11 CONFIG REQUIRED)
 pybind11_add_module(_quantel
     "${SOURCE_DIR}/bindings.cpp"
