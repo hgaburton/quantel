@@ -30,9 +30,8 @@ dependencies:
   - h5py
   - pandas
   - matplotlib
+  - pyscf >=2.0
 
   # Pip-only packages
   - pip:
-    - pyscf>=2.0
-    - pygnme>=1.0
-    - pylibxc         # libxc bindings for pyscf DFT
+    - git+https://github.com/hgaburton/pygnme.git
