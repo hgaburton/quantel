@@ -29,11 +29,15 @@ conda env create -f environment.yml
 conda activate quantel
 ```
 This installs all required build tools (`cmake`, `pybind11`, `boost`, `eigen`, `llvm-openmp`)
-and Python packages (`numpy`, `scipy`, `h5py`, `pandas`, `pyscf`, `pygnme`, etc.).
+and Python packages (`numpy`, `scipy`, `h5py`, `pandas`, `pyscf`, etc.).
 
-#### 2. PyGNME (if not already installed via pip above)
-The nonorthogonal matrix elements in QuantEl require `libgnme` and `pygnme`, which can be
-installed from https://github.com/hgaburton/pygnme.
+#### 2. PyGNME
+The nonorthogonal matrix elements in QuantEl require `pygnme`. Install it after the
+conda environment is active (the `--no-build-isolation` flag is required so the build
+can find the conda-installed numpy headers):
+```
+pip install --no-build-isolation git+https://github.com/hgaburton/pygnme.git
+```
 
 #### 3. Build the C++ extension
 CMake will automatically download or extract `fmt` (11.1.2), `libint2` (2.9.0), and
