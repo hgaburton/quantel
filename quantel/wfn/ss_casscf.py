@@ -328,8 +328,8 @@ class SS_CASSCF(Wavefunction):
         self.popo = self.integrals.tei_ao_to_mo(self.mo_coeff,self.mo_coeff,Cocc,Cocc,True,False).transpose(0,2,1,3)
         # Construct core potential outside active space
         dm_core = np.dot(self.mo_coeff[:,:self.ncore], self.mo_coeff[:,:self.ncore].T)
-        v_j, v_k = self.integrals.build_JK(dm_core,dm_core)
-        v_jk = 2*v_j - v_k
+        v_j, v_k = self.integrals.build_JK(dm_core)
+        v_jk = 2*v_j[0] - v_k[0]
         self.vhf_c = np.linalg.multi_dot([self.mo_coeff.T, v_jk, self.mo_coeff])
 
         # Reduced density matrices 

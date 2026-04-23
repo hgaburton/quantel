@@ -83,7 +83,7 @@ class GHF(Wavefunction):
         # Two-electron energy
         E2 = 0.5 * np.einsum('pq,pq', self.JK, self.dens, optimize="optimal")
         # Save components
-        self.energy_components = dict(Nuclear=En, One_Electron=E1, Two_Electron=E2, Exchange_Correlation=0)
+        self.energy_components = dict(Nuclear=En, One_Electron=float(E1), Two_Electron=E2, Exchange_Correlation=0)
         return En + E1 + E2
 
     @property 
@@ -119,10 +119,10 @@ class GHF(Wavefunction):
         Fmo = np.linalg.multi_dot([self.mo_coeff.T, self.fock, self.mo_coeff])
 
         # Get occupied and virtual orbital coefficients
-        Cao = self.mo_coeff[:self.nbsf,:no].copy()
-        Cbo = self.mo_coeff[self.nbsf:,:no].copy()
-        Cav = self.mo_coeff[:self.nbsf,no:].copy()
-        Cbv = self.mo_coeff[self.nbsf:,no:].copy()
+        Cao = self.mo_coeff[:self.nbsf,:no]
+        Cbo = self.mo_coeff[self.nbsf:,:no]
+        Cav = self.mo_coeff[:self.nbsf,no:]
+        Cbv = self.mo_coeff[self.nbsf:,no:]
 
         # Compute ao_to_mo integral transform
         eri_abij = (  self.integrals.tei_ao_to_mo(Cav,Cav,Cao,Cao,True,False)
@@ -167,7 +167,7 @@ class GHF(Wavefunction):
         Dba = Dia[self.nbsf:,:self.nbsf]
         Dbb = Dia[self.nbsf:,self.nbsf:]
         # First order JK integrals
-        (Jaa,_,_,Jbb), (Kaa,Kab,Kba,Kbb) = self.integrals.build_JK([Daa,Dab,Dba,Dbb],[Daa,Dab,Dba,Dbb],hermi=0,Kxc=False)
+        (Jaa,_,_,Jbb), (Kaa,Kab,Kba,Kbb) = self.integrals.build_JK([Daa,Dab,Dba,Dbb],hermi=0,Kxc=False)
         Jia = np.zeros((2*self.nbsf, 2*self.nbsf))
         Jia[:self.nbsf,:self.nbsf] = Jaa + Jbb
         Jia[self.nbsf:,self.nbsf:] = Jaa + Jbb
@@ -247,12 +247,11 @@ class GHF(Wavefunction):
             return 0
         nocc = self.nocc
         S = np.linalg.multi_dot([self.mo_coeff[:,:nocc].T, self.ghf_overlap, them.mo_coeff[:,:nocc]])
-        return np.linalg.det(S)**2
+        return np.linalg.det(S)
 
     def hamiltonian(self, them):
-        """Compute the (nonorthogonal) many-body Hamiltonian coupling with another RHF wavefunction (them)"""
-        raise NotImplementedError("R" \
-        "HF Hamiltonian not implemented")
+        """Compute the (nonorthogonal) many-body Hamiltonian coupling with another GHF wavefunction (them)"""
+        raise NotImplementedError("GHF Hamiltonian not implemented")
 
     def update(self):
         """Update the 1RDM and Fock matrix for the current state"""
@@ -274,7 +273,7 @@ class GHF(Wavefunction):
     def get_fock(self):
         """Compute the Fock matrix for the current state"""
         # Get JK integrals
-        self.vJ, self.vK = self.integrals.build_JK(self.vd,self.vd,Kxc=False)
+        self.vJ, self.vK = self.integrals.build_JK(self.vd,Kxc=False,hermi=0)
         # Construct the Coulomb matrix
         self.J = np.zeros((2*self.nbsf, 2*self.nbsf))
         self.J[:self.nbsf,:self.nbsf] = self.vJ[0] + self.vJ[2]
@@ -283,13 +282,31 @@ class GHF(Wavefunction):
         self.K = np.zeros((2*self.nbsf, 2*self.nbsf))
         self.K[:self.nbsf,:self.nbsf] = self.vK[0] # aa
         self.K[self.nbsf:,self.nbsf:] = self.vK[2] # bb
-        self.K[:self.nbsf,self.nbsf:] = self.vK[1] # ab
+        self.K[:self.nbsf,self.nbsf:] = self.vK[1] # ba
         self.K[self.nbsf:,:self.nbsf] = self.vK[1].T # ba
         # Compute the Coulomb and Exchange matrices
         self.fock = np.kron(np.eye(2), self.integrals.oei_matrix(True)) + self.J - self.K
         self.JK = self.J - self.K
         # Vectorised format of the Fock matrix 
         return self.fock.T.reshape((-1))
+    
+    def get_natural_orbitals(self):
+        """Compute spatial natural orbitals and their occupation numbers"""
+        # Overlap matrix and orthogonalisation matrix
+        S = self.integrals.overlap_matrix()
+        X = self.integrals.orthogonalization_matrix()
+
+        # Get the spatial 1RDM in covariant form
+        self.get_density()
+        Da = np.linalg.multi_dot([S, self.dens[:self.nbsf,:self.nbsf], S])
+        Db = np.linalg.multi_dot([S, self.dens[self.nbsf:,self.nbsf:], S]) 
+        # Project to linearly independent orbitals
+        Dt = np.linalg.multi_dot([X.T, Da + Db, X])
+        # Diagonalise the spatial density matrix
+        nocc, Ct = np.linalg.eigh(-Dt)
+        # Transform back to the original basis and return
+        Cno = np.dot(X, Ct)
+        return Cno, -nocc
 
 
     def canonicalize(self):
@@ -318,7 +335,7 @@ class GHF(Wavefunction):
         return Q
 
 
-    def get_preconditioner(self):
+    def get_preconditioner(self,abs=True):
         """Compute approximate diagonal of Hessian"""
         # Get Fock matrix in MO basis
         fock_mo = np.linalg.multi_dot([self.mo_coeff.T, self.fock, self.mo_coeff])
@@ -328,7 +345,10 @@ class GHF(Wavefunction):
         for p in range(self.nmo):
             for q in range(p):
                 Q[p,q] = 2 * (fock_mo[p,p] - fock_mo[q,q])
-        return np.abs(Q[self.rot_idx])
+        if abs:
+            return np.abs(Q[self.rot_idx])
+        else:
+            return Q[self.rot_idx]
 
 
     def diagonalise_fock(self):
@@ -510,7 +530,7 @@ class GHF(Wavefunction):
         return self.nelec - ev[-1]
     
     def excite(self,occ_idx,vir_idx,mom_method=None):
-        """ Perform orbital excitation on both spins
+        """ Perform orbital excitation
             Args:
                 occ_idx : list of occupied orbital indices to be excited
                 vir_idx : list of virtual orbital indices to be occupied
@@ -521,7 +541,7 @@ class GHF(Wavefunction):
         dest   = vir_idx + occ_idx
         coeff_new = self.mo_coeff.copy()
         coeff_new[:,dest] = self.mo_coeff[:,source]
-        them = GHF(self.integrals, verbose=self.verbose,mom_method=mom_method)
+        them = GHF(self.integrals,verbose=self.verbose,mom_method=mom_method)
         them.initialise(coeff_new)
         return them
 
@@ -537,4 +557,3 @@ class GHF(Wavefunction):
         # Saves MOs as cubegen files
         for mo in idx: 
             cubegen.orbital(self.integrals.mol, fname+f".mo.{mo}.cube", spatial[:,mo])
-
