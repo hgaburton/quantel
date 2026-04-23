@@ -1,0 +1,48 @@
+{% set version = "0.1" %}
+
+package:
+  name: quantel
+  version: "{{ version }}"
+
+source:
+  path: ..
+
+build:
+  number: 0
+
+requirements:
+  build:
+    - cmake >=3.14
+    - make              # [unix]
+    - {{ compiler('cxx') }}
+
+  host:
+    - python
+    - pip
+    - pybind11
+    - numpy
+    - boost
+    - eigen
+    - fmt
+    - libint
+    - armadillo
+    - llvm-openmp
+
+  run:
+    - python >=3.10,<3.11
+    - numpy
+    - scipy
+    - h5py
+    - pandas
+    - matplotlib
+    - libint
+    - pyscf >=2.0
+
+test:
+  imports:
+    - quantel
+
+about:
+  home: https://github.com/hgaburton/quantel
+  license: MIT
+  summary: A library for state-specific electronic structure calculations
