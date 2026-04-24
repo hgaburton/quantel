@@ -1,4 +1,4 @@
-name: quantel-conda
+name: quantel
 
 channels:
   - conda-forge
