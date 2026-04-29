@@ -6,7 +6,7 @@ import numpy as np
 import scipy, quantel, h5py
 from quantel.utils.csf_utils import verify_spin_coupling, get_shells, get_shell_exchange, get_csf_vector
 from quantel.utils.linalg import orthogonalise, stable_eigh, matrix_print
-from quantel.gnme.csf_noci import csf_coupling, csf_coupling_slater_condon 
+from quantel.gnme.csf_noci import csf_coupling, csf_coupling_slater_condon  
 from .wavefunction import Wavefunction
 from quantel.utils.csf_utils import csf_reorder_orbitals
 from quantel.utils.scf_utils import shell_sort
@@ -259,7 +259,7 @@ class CSF(Wavefunction):
         overlap = self.integrals.overlap_matrix() 
         tdm = np.zeros(3)
         for x in range(3):
-            tdm[x] = csf_coupling_slater_condon(self, them, overlap, hcore=ao_dip[x], enuc=nucl_dip[x])
+            _, tdm[x] = csf_coupling(self, them, overlap, hcore=ao_dip[x], enuc=nucl_dip[x])
         return tdm
         
     def print(self,verbose=1):
@@ -559,10 +559,7 @@ class CSF(Wavefunction):
     def hamiltonian(self, them, comp=False):
         """ Compute the Hamiltonian coupling between two CSF objects
         """
-        if comp: 
-            return altered_csf_coupling_slater_condon(self, them, self.integrals)
-        else: 
-            return csf_coupling_slater_condon(self, them, self.integrals)
+        return csf_coupling_slater_condon(self, them, self.integrals)
     
 
     def get_orbital_guess(self, method="gwh",avas_ao_labels=None,reorder=True, localise=True):
@@ -834,7 +831,7 @@ class CSF(Wavefunction):
         nocc = self.nocc
 
         # Get required two-electron MO integrals
-        Cocc = self.mo_coeff[:,:nocc].copy() #exactly we dont need the occupied ones since we know the constants will be zero! 
+        Cocc = self.mo_coeff[:,:nocc].copy()  
         ppoo = self.integrals.tei_ao_to_mo(self.mo_coeff,self.mo_coeff,Cocc,Cocc,True,False)
         popo = self.integrals.tei_ao_to_mo(self.mo_coeff,Cocc,self.mo_coeff,Cocc,True,False)
 
