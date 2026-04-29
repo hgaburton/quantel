@@ -192,12 +192,18 @@ def _delete_pair_moves(sc, prefix):
     return seen
 
 
-def coupling_neighbours(sc):
+def coupling_neighbours(sc, nmo, nelec):
     """Union of all local coupling moves from *sc* (excluding *sc* itself)."""
     prefix = _prefix_sums(sc)
     neighbours = _swap_moves(sc, prefix) | _add_pair_moves(sc, prefix) | _delete_pair_moves(sc, prefix)
     neighbours.discard(sc)
-    return sorted(neighbours)
+    # Filter out any coupling where number of occupied orbitals (core + open) exceeds number of available orbitals.
+    new_neighbours = []
+    for sc in neighbours:
+        ncore = int((nelec - len(sc)) // 2)
+        if ncore + len(sc) <= nmo:
+            new_neighbours.append(sc)
+    return sorted(new_neighbours)
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +246,7 @@ class CSFDisco:
         self.gthresh         = kwargs.get("gthresh", 1e-6)
         self.temperature     = kwargs.get("temperature", 0.5)
         self.n_hop           = kwargs.get("n_hop", 10)
-        self.hop_step        = kwargs.get("hop_step", 0.3)
+        self.hop_step        = kwargs.get("hop_step", 0.2)
         self.hop_temperature = kwargs.get("hop_temperature", 0.05)
         self.select_temperature = kwargs.get("select_temperature", 0.1)
         self.adapt_rate      = kwargs.get("adapt_rate", 0.1)
@@ -339,7 +345,7 @@ class CSFDisco:
             csf.take_step(perturb)
 
             # ── Minimization ─────────────────────────────────────────────
-            self.lbfgs.run(csf, thresh=self.gthresh, maxit=lbfgs_maxit, plev=0)
+            conv = self.lbfgs.run(csf, thresh=self.gthresh, maxit=lbfgs_maxit, plev=0)
             e_hop = csf.energy
             delta = e_hop - e_current
             # Check to see if we have a distinct minimum
@@ -347,7 +353,6 @@ class CSFDisco:
                 # Record every converged minimum regardless of acceptance.
                 print(f"  New minimum recorded with energy = {e_hop: .10f} Eh and spin coupling = {sc!r}") if plev > 1 else None
                 self.all_minima.append((csf.energy, csf.copy()))
-
             # ── Metropolis acceptance ─────────────────────────────────────
             if delta < 0.0:
                 accepted = True
@@ -372,10 +377,14 @@ class CSFDisco:
             if delta >= 0.0:
                 self.hop_temperature, self.hop_ema = self._adapt_temperature(self.hop_temperature, self.hop_ema, accepted)
 
+            if e_hop < e_best + 1e-12:
+                csf.save_to_disk(f"global_min")
+                csf.write_fcidump(f"global_min.fcidump")
+                csf.write_cidump(f"global_min.cidump")
             if plev > 0:
                 tag = "*" if e_hop < e_best + 1e-12 else " "
                 print(f"  Hop {ihop:3d}{tag}:  E = {e_hop: .10f}  {comment}  "
-                      f"T_hop={self.hop_temperature:.4e}")
+                      f"T_hop={self.hop_temperature:.4e}   Conv={conv}")
                 sys.stdout.flush()
 
         # Restore to the global best minimum found across all hops.
@@ -386,7 +395,7 @@ class CSFDisco:
     # Minimum deduplication by overlap
     # ------------------------------------------------------------------
 
-    def _is_new_minimum(self, csf, ovlp_thresh=1e-6):
+    def _is_new_minimum(self, csf, ovlp_thresh=1e-6, energy_thresh=1e-6):
         """Return True if (mo, sc) is distinct from every minimum in *existing*.
 
         Two minima are considered the same if |<i|j>| > ovlp_thresh.
@@ -404,18 +413,18 @@ class CSFDisco:
             return True
         for ej,csfj in self.all_minima:
             # Compare energies
-            if(abs(csf.energy - csfj.energy) < 1e-10):
+            if(abs(csf.energy - csfj.energy) < energy_thresh):
                 return False
-            # Compare overlap
-            if(abs(1-csf.overlap(csfj)) < ovlp_thresh):
-                return False
+                ov = abs(csf.overlap(csfj))
+                if(abs(1-ov) < ovlp_thresh): 
+                    return False
         return True
 
     # ------------------------------------------------------------------
     # Phase 2 — combined discrete coupling + orbital reordering search
     # ------------------------------------------------------------------
 
-    def _best_ordering_for_coupling(self, csf, mo_coeff, sc):
+    def _best_ordering_for_coupling(self, integrals, mo_coeff, sc, nelec):
         """Return mo_coeff with active orbitals reordered for coupling *sc*.
 
         Uses csf_reorder_orbitals to localise and permute the active orbitals
@@ -435,30 +444,30 @@ class CSFDisco:
         ndarray, shape (nbsf, nmo)
             Copy of mo_coeff with reordered active columns.
         """
-        nopen_sc = len(sc)
-        ncore    = csf.ncore
-        nocc_sc  = ncore + nopen_sc
-
         mo_try = mo_coeff.copy()
-
-        if nopen_sc < 2:
-            return mo_try
+        nopen = len(sc)
+        nmo = mo_coeff.shape[1]
+        # Check nelec-nopen is even and non-negative; if not, the coupling is invalid and we just return the input orbitals unchanged.
+        assert(nelec >= nopen and (nelec - nopen) % 2 == 0), f"Invalid coupling {sc} for nelec={nelec}"
+        ncore = int((nelec - nopen) / 2)
+        if nopen < 2: return mo_try
+        nocc = ncore + nopen
 
         # Active orbitals for this coupling (may include virtuals for add-pair moves)
-        cinit = mo_try[:, ncore:nocc_sc]
+        cinit = mo_try[:,:nocc]
 
         # Exchange coupling matrix for sc: shape (nopen_sc, nopen_sc)
-        _, bij = get_vector_coupling(csf.nmo, ncore, nocc_sc, sc)
-        exchange_matrix = bij[ncore:nocc_sc, ncore:nocc_sc]
+        aij, bij = get_vector_coupling(nmo, ncore, nocc, sc)
+        exchange_matrix = aij[:nocc,:nocc] + bij[:nocc, :nocc]
 
         # Suppress the verbose prints from csf_reorder_orbitals unless plev >= 2
         if self.plev < 2:
             with contextlib.redirect_stdout(io.StringIO()):
-                cinit_opt = csf_reorder_orbitals(csf.integrals, exchange_matrix, cinit)
+                cinit_opt = csf_reorder_orbitals(integrals, exchange_matrix, cinit)
         else:
-            cinit_opt = csf_reorder_orbitals(csf.integrals, exchange_matrix, cinit)
+            cinit_opt = csf_reorder_orbitals(integrals, exchange_matrix, cinit)
 
-        mo_try[:, ncore:nocc_sc] = cinit_opt
+        mo_try[:, :nocc] = cinit_opt
         return mo_try
 
     def _eval_coupling_neighbours(self, csf, mo_coeff, sc_current, e_current):
@@ -477,10 +486,12 @@ class CSFDisco:
             Sorted (ascending energy) list of (energy, coupling, mo_coeff,
             boltzmann_weight) tuples.
         """
-        neighbours = coupling_neighbours(sc_current)
+        nelec = csf.nalfa + csf.nbeta
+        nmo = mo_coeff.shape[1]
+        neighbours = coupling_neighbours(sc_current, nmo, nelec)
         results = []
         for sc in neighbours:
-            mo_try = self._best_ordering_for_coupling(csf, mo_coeff, sc)
+            mo_try = self._best_ordering_for_coupling(csf.integrals, mo_coeff, sc, nelec)
             csf.initialise(mo_try, sc)
             self.lbfgs.run(csf, thresh=self.gthresh, plev=0)
             results.append((csf.energy, sc, mo_try))
@@ -562,11 +573,11 @@ class CSFDisco:
         print("  ================================================================")
         print(f"  All distinct L-BFGS minima found  ({n} unique)")
         print("  ================================================================")
-        print(f"  {'#':>4s}  {'Coupling':>14s}  {'Energy / Eh':>16s}  {'ΔE from best / Eh':>18s}")
-        print(f"  {'─'*4}  {'─'*14}  {'─'*16}  {'─'*18}")
+        print(f"  {'#':>4s}  {'Coupling':>20s}  {'Energy / Eh':>16s}  {'ΔE from best / Eh':>18s}")
+        print(f"  {'─'*4}  {'─'*20}  {'─'*16}  {'─'*18}")
         for idx, (e, csf) in enumerate(unique):
             tag = "  <-- global min" if idx == 0 else ""
-            print(f"  {idx+1:4d}  {csf.spin_coupling!r:>14s}  {e: 16.10f}  {e - e_global: 18.6e}{tag}")
+            print(f"  {idx+1:4d}  {csf.spin_coupling!r:>20s}  {e: 16.10f}  {e - e_global: 18.6e}{tag}")
 
         sys.stdout.flush()
         return
@@ -607,6 +618,10 @@ class CSFDisco:
         e_best_all = np.inf
         sc_best_all = None
 
+        # Before we start, select best ordering for initial coefficients
+        mo_opt = self._best_ordering_for_coupling(csf.integrals, csf.mo_coeff, csf.spin_coupling, csf.nalfa + csf.nbeta)
+        csf.initialise(mo_opt, csf.spin_coupling)
+
         for outer_it in range(1, self.maxit + 1):
 
             if plev > 0:
@@ -637,7 +652,9 @@ class CSFDisco:
             taboo = {sc: it for sc, it in taboo.items()
                      if outer_it - it < self.taboo_tenure}
 
-            neighbours = coupling_neighbours(sc_before)
+            nmo = csf.mo_coeff.shape[1]
+            nelec = csf.nalfa + csf.nbeta
+            neighbours = coupling_neighbours(sc_before,nmo,nelec)
             # Filter out any coupling currently on the taboo list.
             allowed = [sc for sc in neighbours if sc not in taboo]
 
@@ -666,13 +683,13 @@ class CSFDisco:
                 
                 ## Report coupling
                 if plev > 0:
-                    print(f"    {'Coupling':>14s}  {'Energy / Eh':>16s}  {'Delta E / Eh':>14s}  {'Selection weight':>11s}")
-                    print(f"    {'─'*14}  {'─'*16}  {'─'*14}  {'─'*11}")
+                    print(f"    {'Coupling':>20s}  {'Energy / Eh':>16s}  {'Delta E / Eh':>14s}  {'Selection weight':>11s}")
+                    print(f"    {'─'*20}  {'─'*16}  {'─'*14}  {'─'*11}")
                     for i in range(len(results)):
                         e_sc, sc, _ = results[i]
                         w = weights[i]
                         tag = " <-- best" if sc == results[0][1] else ""
-                        print(f"    {sc:>14s}  {e_sc: 16.10f}  {e_sc - e_before: 14.6e}  {w: 11.4f}{tag}")
+                        print(f"    {sc:>20s}  {e_sc: 16.10f}  {e_sc - e_before: 14.6e}  {w: 11.4f}{tag}")
                     sys.stdout.flush()
                 
                 ## Decide whether to take the step
