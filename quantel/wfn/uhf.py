@@ -7,7 +7,7 @@ from quantel.utils.linalg import orthogonalise, matrix_print
 from quantel.gnme.uhf_noci import uhf_coupling 
 from .wavefunction import Wavefunction
 from pyscf.tools import cubegen 
-
+from copy import deepcopy 
 
 class UHF(Wavefunction):
     """ Unrestricted Hartree-Fock method
@@ -523,6 +523,13 @@ class UHF(Wavefunction):
         Sa = np.linalg.multi_dot([self.mo_coeff[0][:,:self.nalfa].T, ovlp, other.mo_coeff[0][:,:self.nalfa]])
         Sb = np.linalg.multi_dot([self.mo_coeff[1][:,:self.nbeta].T, ovlp, other.mo_coeff[1][:,:self.nbeta]])
         return np.linalg.det(Sa)*np.linalg.det(Sb)
+
+    def get_spin_flip(self): 
+        other = deepcopy(self)
+        other.mo_coeff[0] = self.mo_coeff[1].copy()
+        other.mo_coeff[1] = self.mo_coeff[0].copy()
+        other.update()
+        return other 
  
     def hamiltonian(self, other):
         """Compute the Hamiltonian coupling with another wavefunction of this type"""
