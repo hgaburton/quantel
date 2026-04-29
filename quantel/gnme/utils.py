@@ -1,21 +1,7 @@
 #!/usr/bin/python3 
-
 import unittest
 import numpy as np
 import pygnme
-
-def get_chergwin_coulson_weights(overlap_matrix, evecs): 
-    """Construct the Chergwin-Coulson weights for a given overlap matrix and eigenvector of the generalised eigenvalue problem
-    
-       Inputs:
-       -------
-           overlap_matrix  2d-array containing the overlap matrix for the nonorthogonal states
-           evecs           1d-array containing the eigenvector of the generalised eigenvalue problem
-        Outputs:
-        --------
-            W              1d-array containing the Chergwin-Coulson weights
-    """
-    return evecs * (overlap_matrix @ evecs)
 
 def orthogonalisation_matrix(M, thresh=1e-8):
     """Construct an orthogonalisation matrix X such that X^T M X = I for a symmetric matrix M
@@ -309,66 +295,6 @@ def generalised_slater_condon(Cax,Cbx,Caw,Cbw,ints,ktol=1e-8,stol=1e-8):
         H -= 0.5 * ek * np.einsum('ij,ji',vk[nd+2+t], Pb[t])
     return S, H
 
-def altered_generalised_slater_condon(Cax,Cbx,Caw,Cbw,ints,ktol=1e-8,stol=1e-8):
-    """ 
-    Compute a matrix element for two-body operator using generalised Slater-Condon rules
-     
-       Inputs:
-       -------
-           Cax, Cbx     2x 1d-arrays containing alfa and beta coefficients for bra state
-           Caw, Cbw     2x 1d-arrays containing alfa and beta coefficients for ket state
-           ints         Integral object holding relevant AO integrals
-           ktol (optional) Threshold for cutting off kappa singular values.
-           stol (optional) Threshold for cutting of zero overlap orbital pairs.
-
-       Outputs:
-       --------
-           S       Overlap of the two determinants
-           H       Hamiltonian coupling of the two determinants
-
-       return S, H
-    """
-    metric = ints.overlap_matrix()
-    hcore  = ints.oei_matrix(True)
-
-    S, (Wa,Ma,Pa), (Wb,Mb,Pb), kt = factorised_densities(Cax,Cbx,Caw,Cbw,metric,stol,ktol)
-    nd = 2 + len(kt)
-
-    # Overlap term
-    H = S * ints.scalar_potential()
-
-    # One-body matrix
-    H += S * np.einsum('ij,ji', hcore, Wa + Wb) + np.einsum('ij,ji', hcore, Ma + Mb)
-    Hob = H 
-
-    # JK builds
-    vd = np.zeros((2*nd,ints.nbsf(),ints.nbsf()))
-    vd[0] = Wa
-    vd[1] = Ma
-    vd[2:nd] = Pa
-    vd[nd] = Wb
-    vd[nd+1] = Mb
-    vd[nd+2:] = Pb
-
-    # Call the JK build
-    vj, vk = ints.build_JK(vd,vd)
-
-    # Compute two-electron contributions
-    jw_t = vj[0] + vj[nd]
-    Wt = Wa + Wb
-    Mt = Ma + Mb
-    H += 0.5 * np.einsum('ij,ji',jw_t, S * Wt + 2 * Mt)
-    H -= 0.5 * np.einsum('ij,ji',vk[0],  S * Wa + 2 * Ma)
-    H -= 0.5 * np.einsum('ij,ji',vk[nd], S * Wb + 2 * Mb)
-    for t, ek in enumerate(kt):
-        Pk = Pa[t] + Pb[t]
-        Jk = vj[2+t] + vj[nd+2+t]
-
-        H += 0.5 * ek * np.einsum('ij,ji',Jk, Pk)
-        H -= 0.5 * ek * np.einsum('ij,ji',vk[2+t], Pa[t])
-        H -= 0.5 * ek * np.einsum('ij,ji',vk[nd+2+t], Pb[t])
-    print("changed generalised slater condon and csf coupling slater condon") 
-    return S, H, Hob
 
 def reduced_overlap(Sxx, thresh=1e-8):
     '''Evaluate the reduced overlap from an array of biorthogonal overlap elements
