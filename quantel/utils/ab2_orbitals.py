@@ -50,13 +50,13 @@ def reorthogonalise_virs(wfn, additional_virs):
     # Reconstruct virtual MO basis
     vir = np.c_[additional_virs, wfn.mo_coeff[:,wfn.nocc:].copy()]
     # Remove linear dependencies and re-orthogonalise
-    ortho_virs = orthogonalise(vir, wfn.integrals.overlap_matrix(), fill=False) 
+    ortho_virs = orthogonalise(vir, wfn.integrals.overlap_matrix(), fill=False, modified=True) 
      
     # Return orthogonalise virs with correct shape
     if ortho_virs.shape[1]==(wfn.nmo-wfn.nocc):
         return ortho_virs 
     else:
-        print(f"Warning: GS failed to remove all linearly dependent vectors, cutoff {ortho_vir.shape[1]} vecs -> {wfn.nmo-wfn.nocc}")
+        print(f"Warning: GS yielded incorrect number of linearly dependent vectors, result {ortho_virs.shape[1]} vecs -> desired {wfn.nmo-wfn.nocc}")
         return ortho_virs[:,:wfn.nmo-wfn.nocc] 
 
 

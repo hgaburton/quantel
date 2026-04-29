@@ -120,8 +120,8 @@ def inner_prod(a,b,metric=None):
 
 def gram_schmidt(mat, metric=None):
     '''
-    Perform Modified Gram-Schmidt orthogonalisation for a set of vectors with respect to a metric S.
-    Removes linearly dependent vectors using a norm threshold(NOT TOTALLY NUMERICALLY STABLE) 
+    Perform Gram-Schmidt orthogonalisation for a set of vectors with respect to a metric S.
+    Removes linearly dependent vectors using a norm threshold. 
      
     Parameters: 
         mat (ndarray)    : Matrix with columns containing the vectors to be orthogonlised
@@ -135,6 +135,7 @@ def gram_schmidt(mat, metric=None):
     Sv = np.copy(mat) if (metric is None) else metric @ mat
 
     # Orthogonalise each vector sequentially
+    lin_indep=[]
     for i in range(0,mat.shape[1]):
         # Target vector
         vi  = mat[:,i]
@@ -142,39 +143,33 @@ def gram_schmidt(mat, metric=None):
         vj  = mat[:,:i]
         # Perform the projection
         vi -= vj @ (vj.conj().T @ Sv[:,i])
-        # Renormalise
-        vi /= norm(vi,metric)
-    return mat
+        vi_norm = norm(vi,metric) 
+        if vi_norm > 1e-8: 
+            lin_indep.append(i) 
+            # Renormalise
+            vi /= vi_norm
+    return mat[:,lin_indep] 
 
-    #idx_indep = []   
-    #if(metric is None):
-    #    print(mat.T @ mat)
-    #else:
-    #    print(mat.T @ metric @ mat)
-    #for i in range(mat.shape[1]): 
-    #    # Target vector
-    #    vi = mat[:,i] 
-    #    vi_norm = norm(vi, metric)
-    #    # Reject linearly dependent vectors
-    #    if vi_norm > 1e-8: 
-    #        vi = mat[:,i]
-    #        vj = mat[:,:i]
-    #        vi -= vj @ ()
-    #        if metric is None:
-    #            vi = vi - mat[:,:i] @ mat[:,:i].T @ vi
-    #        else:
-    #            vi = vi - mat[:,:i] @ metric @ mat[:,:i].T @ vi
-    #        vi /= vi_norm 
-    #        idx_indep.append(i)
-    #        # Project out current direction from subsequent vectors
-    #            
-    #        if metric is None: 
-    #            mat[:,i+1:mat.shape[1]] -=  np.outer(vi, np.einsum("i,ij", vi, mat[:,i+1:mat.shape[1] ]))
-    #        else: 
-    #            mat[:,i+1:mat.shape[1]] -=  np.outer(vi, np.einsum("i,ij,jk", vi, metric, mat[:,i+1:mat.shape[1]]))
-    #return mat[:,idx_indep]
+def modified_gram_schmidt(mat, metric=None):     
+    lin_indep = []   
+    for i in range(mat.shape[1]): 
+        # Target vector
+        vi = mat[:,i] 
+        vi_norm = norm(vi, metric)
+        # Reject linearly dependent vectors
+        if vi_norm > 1e-8: 
+            vi = mat[:,i]
+            vj = mat[:,:i]
+            vi /= vi_norm 
+            lin_indep.append(i)
+            # Project out current direction from subsequent vectors
+            if metric is None: 
+                mat[:,i+1:] -=  np.outer(vi, np.einsum("i,ij", vi, mat[:,i+1: ]))
+            else: 
+                mat[:,i+1:] -=  np.outer(vi, np.einsum("i,ij,jk", vi, metric, mat[:,i+1: ]))
+    return mat[:,lin_indep]
 
-def orthogonalise(mat, metric=None, thresh=1e-10, fill=True):
+def orthogonalise(mat, metric=None, thresh=1e-10, fill=True, modified=False):
     '''
     Orthogonalise the columns of mat with respect to the metric tensor.
 
@@ -204,7 +199,10 @@ def orthogonalise(mat, metric=None, thresh=1e-10, fill=True):
     # If the orthogonality test fails, we need to orthogonalise
     if ortho_test > thresh:
         # Perform Gram-Schmidt twice for stability
-        mat = gram_schmidt(gram_schmidt(mat,metric),metric)
+        if modified: 
+            mat = modified_gram_schmidt(modified_gram_schmidt(mat,metric),metric)
+        else: 
+            mat = gram_schmidt(gram_schmidt(mat,metric),metric)
         # Re-check the orthogonality
         ortho = inner_prod(mat,mat,metric)
         for i in range(mat.shape[1]):
