@@ -74,7 +74,7 @@ render POV3 [lindex \$argv 0].pov
 exit
 " > plot.tcl 
 
-vmd -dispdev none -e plot.tcl -args $1 $2 $3 
-rm $1.png &> /dev/null
-povray +W900 +H900 +FN +A +C -D +UA -I$1.pov -O$1.png
-rm plot.tcl
+vmd -dispdev none -e plot.tcl -args $1 $2 $3 &> vlog.txt & 
+wait 
+rm $1.png plot.tcl &> /dev/null
+povray +W900 +H900 +FN +A +C -D +UA -I$1.pov -O$1.png &> vlog.txt & 
