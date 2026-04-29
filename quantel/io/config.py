@@ -230,7 +230,8 @@ class Config(dict):
 
         if self["jobcontrol"]["noci"]:
             self["jobcontrol"]["noci_job"] = dict(lindep_tol = getvalue(self.lines,"lindep_tol",float,False,default=1e-8), 
-                                                  plev = getvalue(self.lines,"plevel",int,False,default=1)
+                                                  plev = getvalue(self.lines,"plevel",int,False,default=1), 
+                                                  natorb_states = getvalue(self.lines,"noci_natorb_states",int,False,default=0), 
                                                  )
         if self["jobcontrol"]["analyse"]:
             self["jobcontrol"]["analyse"] = dict(states = getlist(self.lines,"states",str,False,default=["all"]),
