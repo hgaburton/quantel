@@ -299,7 +299,7 @@ class PySCF_MO_Integrals:
 
     def nmo(self):
         """Return the number of molecular orbitals"""
-        return self.ints.nmo()
+        return self.nact()
     
     def nact(self):
         """Return the number of active orbitals"""
@@ -350,7 +350,7 @@ class PySCF_MO_Integrals:
             Pcore = Ccore @ Ccore.T
             # Compute inactive JK matrix (2J-K) in AO basis
             J,K = self.ints.build_JK(Pcore)
-            JK = 2*J[0] - K[0]
+            JK = 2*J - K
 
             # Compute scalar core energy 
             Hao = self.ints.oei_matrix()
@@ -445,6 +445,7 @@ class PySCF_MO_Integrals:
             Returns:
                 MOintegrals : The quantel MOintegrals object
         """
+        print(self.m_nact)
         if not hasattr(self, 'Vc'):
             raise ValueError("Molecular integrals have not been computed yet")
         if not hasattr(self, 'oei_a'):

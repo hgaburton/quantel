@@ -85,12 +85,14 @@ class FCI(ArbitraryCI):
             self.mo_ints = mo_ints.get_quantel_ints()
         else:
             self.mo_ints = mo_ints
+        print("HERE")
         # Number of correlated orbitals
         self.nmo = mo_ints.nmo()
         # Number of electrons
         self.nalfa = nelec[0]
         self.nbeta = nelec[1]
 
+        print(self.nmo,self.nalfa,self.nbeta)
 
 
         # Check the input
