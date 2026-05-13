@@ -14,6 +14,8 @@
 #include "ci_space2.h"
 #include "four_array.h"
 #include "two_array.h"
+#include "configuration.h"
+#include "matrix_element_calculator.h"
 
 namespace py = pybind11;
 using namespace pybind11::literals;
@@ -102,6 +104,33 @@ PYBIND11_MODULE(_quantel, m) {
      py::class_<Eph>(m, "Eph").def(py::init<size_t,size_t>(), "Constructor with indices");
      py::class_<Epphh>(m, "Epphh").def(py::init<size_t,size_t,size_t,size_t>(), "Constructor with indices");
 
+     py::class_<Configuration>(m, "Configuration")
+          .def(py::init<std::vector<uint8_t>>(), "Constructor from step vectors")
+          .def("__lt__", &Configuration::operator<,"Comparison operator" )
+          .def("generate_paldus", [](Configuration &self){
+               size_t nrows = self.m_nmo + 1; 
+               size_t ncols = 3; 
+               arma::imat paldus_table = self.generate_paldus();
+               arma::mat tmp = arma::conv_to<arma::mat>::from(paldus_table.t());
+               arma::vec v = arma::vectorise(tmp); 
+               std::vector<double> v_std(v.begin(), v.end()); 
+               return vec_to_np_array(nrows, ncols, v_std.data());
+          })
+          .def("construct_drt", [](Configuration &self){
+               arma::imat drt = self.construct_drt();
+               size_t nrows = drt.n_rows; 
+               size_t ncols = drt.n_cols; 
+               arma::mat tmp = arma::conv_to<arma::mat>::from(drt.t());
+               arma::vec v = arma::vectorise(tmp); 
+               std::vector<double> v_std(v.begin(), v.end()); 
+               return vec_to_np_array(nrows, ncols, v_std.data());
+          });
+
+     py::class_<MatrixElementCalculator>(m, "MatrixElementCalculator")
+          .def(py::init<>(), "Default Constructor")
+          .def("one_body_coupling", &MatrixElementCalculator::one_body_coupling, " Compute one body matrix element" ) 
+          .def("two_body_coupling", &MatrixElementCalculator::two_body_coupling, " Compute two body matrix element" ); 
+          
      py::class_<CIspace>(m, "CIspace")
           .def(py::init<MOintegrals &,size_t,size_t,size_t>(), "Constructor with number of electrons and orbitals")
           .def("initialize", [](CIspace &self, std::string citype, std::vector<std::string> detlist)
