@@ -1,6 +1,7 @@
 #include "configuration.h"
 #include "matrix_element_calculator.h"
 #include "lookup_table.h"
+#include "excitation.h"
 using namespace LookupTables ; 
 #include <armadillo> 
 #include <vector> 
@@ -26,8 +27,7 @@ int MatrixElementCalculator::get_Dind(const int &delta_b) const {
     else{std::cerr << "An error occurred " << std:: endl ; return 500 ;}
 }
 
-double MatrixElementCalculator::one_body_coupling(const Configuration &bra, const Configuration &ket, const uint8_t i, const uint8_t j) const { 
-    // should take in excitation object! 
+double MatrixElementCalculator::one_body_coupling(const Configuration &bra, const Configuration &ket, const Eph &Eph) const { 
     
     // Calculate the one body coupling matrix element 
     // Check same number of electrons, orbitals and S 
@@ -40,20 +40,26 @@ double MatrixElementCalculator::one_body_coupling(const Configuration &bra, cons
     const arma::imat bra_paldus = bra.generate_paldus() ; 
     const arma::imat ket_paldus = ket.generate_paldus() ;
 
+    // Define excitation index loop
+    int i = (int) Eph.particle ; 
+    int j = (int) Eph.hole ; 
+    int head = std::max(i,j) ; 
+    int tail = std::min(i,j) ; 
     // Make sure both indices are in range 
-    assert( std::max(i,j) < bra.m_nmo ) ; 
-    assert( std::min(i,j) > 0 ) ;
-    // Define excitation index loop 
-    int head = std::min(i,j) ; 
-    int tail = std::max(i,j) ;  
+    // KEY POINT!!! 
+    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
+    // treating these as 1 indexed!  
+    assert( head <= bra.m_nmo ) ; 
+    assert( tail > 0 ) ;
     
     // Check outside loops are the same  
-    for (int a = 0 ; a < std::min(i,j) ; a ++ ) { 
+    for (int a = 0 ; a < tail ; a ++ ) { 
         if ( arma::all( bra_paldus.row(a) != ket_paldus.row(a) ) ) { 
             return 0.0 ; 
         }
     }
-    for (int a = std::max(i,j) + 1 ; a <= nmo ; a ++ ) { 
+
+    for (int a = head + 1 ; a <= nmo ; a ++ ) { 
         if ( arma::all( bra_paldus.row(a) != ket_paldus.row(a) ) ) { 
             return 0.0 ; 
         }
@@ -61,16 +67,16 @@ double MatrixElementCalculator::one_body_coupling(const Configuration &bra, cons
 
     // Calc loop values 
     // Diagonals 
-    if ( i == j ) { 
+    if ( Eph.hole == Eph.particle ) { 
         // i - 1, as i = 1 is at bra[0] position
         // paldus table has top row 0,0,0 so index with i 
-        return ob_table_one[bra.m_step_vec[i-1] ][ ket.m_step_vec[i-1] ][0]( ket_paldus(i,1) );
+        return ob_table_one[bra.m_step_vec[i-1] ][ ket.m_step_vec[i-1] ][0]( ket_paldus((int) Eph.particle,1) );
     }
 
     // Off-diagonals 
-    int RorL =  ( i -j > 0 );
+    int RorL =  ( i - j > 0 );
     double matrix_element = 1.0 ; 
-    for ( int a = tail ; a <= head ; a++) {    
+    for ( int a = tail ; a <= head ; a++) {
         const int d1 = bra.m_step_vec[a-1]; 
         const int d2 = ket.m_step_vec[a-1];
         const int b = ket_paldus(a, 1) ; 
@@ -106,7 +112,7 @@ double MatrixElementCalculator::one_body_fragment(const int &level, const int &d
 
 
 
-double MatrixElementCalculator::two_body_coupling( const Configuration &bra, const Configuration &ket, const uint8_t i, const uint8_t j , const uint8_t k, const uint8_t l ) const { 
+double MatrixElementCalculator::two_body_coupling( const Configuration &bra, const Configuration &ket, const Epphh &Epphh ) const { 
     // Check same number of electrons, orbitals and S 
     if ( (bra.m_nmo != ket.m_nmo) || (bra.m_nelec != ket.m_nelec) || (bra.m_totspin != ket.m_totspin)  ) { 
         std::cout << "Different N, n or S values" << std::endl ; 
@@ -116,10 +122,13 @@ double MatrixElementCalculator::two_body_coupling( const Configuration &bra, con
     const arma::imat bra_paldus = bra.generate_paldus() ; 
     const arma::imat ket_paldus = ket.generate_paldus() ;
 
-    // Make sure both indices are in range 
-    assert( std::max({i,j,k,l}) < bra.m_nmo ) ;
+    // Make sure both sets of indices are in range 
+    int i = (int) Epphh.particle1 ; 
+    int j = (int) Epphh.hole1 ; 
+    int k = (int) Epphh.particle2 ; 
+    int l = (int) Epphh.hole2; 
+    assert( std::max({i,j,k,l}) <= bra.m_nmo ) ;
     assert( std::min({i,j,k,l}) > 0 ) ; 
-    
     // Check path outside loop 
     for (int a = 0 ; a < nmo ; a++ ) {
         // iterate over the full loop  
@@ -134,9 +143,20 @@ double MatrixElementCalculator::two_body_coupling( const Configuration &bra, con
     // Deal with possible number operators 
     double matrix_element = 0.0 ;
     if ( i==j || k==l ){  
-        matrix_element += one_body_coupling(bra, ket, i, j)*one_body_coupling(bra, ket, k, l);
-        if (j == k) {             
-            matrix_element -= one_body_coupling(bra, ket, i, l);
+        Eph E1={ (size_t) i,(size_t) j}; 
+        Eph E2={(size_t)k, (size_t)l}; 
+        if (i==j && k==l) {         
+        matrix_element += one_body_coupling(bra, ket, E1 )*one_body_coupling(bra, ket, E2);
+        }
+        else if (i==j) {  
+        matrix_element += one_body_coupling(bra, bra, E1)*one_body_coupling(bra, ket, E2);
+        }
+        else if (k==l) {  
+        matrix_element += one_body_coupling(bra, ket, E1)*one_body_coupling(ket, ket, E2);
+        }
+        if (j == k) {
+            Eph E3={(size_t)i,(size_t)l};              
+            matrix_element -= one_body_coupling(bra, ket, E3);
         }
         return matrix_element ; 
     }
@@ -178,6 +198,28 @@ double MatrixElementCalculator::two_body_coupling( const Configuration &bra, con
     std::vector<std::set<int>> S2 = { S2a, S2b} ;
     std::vector<int> tail_inds = { std::min(i,j), std::min(k,l)} ;
     std::vector<int> head_inds = { std::max(i,j), std::max(k,l)} ;
+    std::cout << "tail inds " << " " ; 
+    for (const int a : tail_inds) { 
+        std::cout << std::to_string(a) << " " ; 
+    }
+    std::cout <<  std::endl ; 
+    std::cout << "head inds " << " " ; 
+    for (const int a : head_inds) { 
+        std::cout << std::to_string(a) << " " ; 
+    }
+    std::cout <<  std::endl ; 
+    
+    std::cout << "S2a " << " " ; 
+    for (const int a : S2a) { 
+        std::cout << std::to_string(a) << " " ; 
+    }
+    std::cout << std::endl ; 
+    std::cout << "S2b " << " " ; 
+    for (const int a : S2b) { 
+        std::cout << std::to_string(a) << " " ; 
+    }
+    std::cout << std::endl ; 
+    
     for (int a = 0 ; a < 2 ; a++ ){
         int tail_ind = tail_inds[a]; 
         int head_ind = tail_inds[a];    
@@ -194,6 +236,14 @@ double MatrixElementCalculator::two_body_coupling( const Configuration &bra, con
             }
         }
     }    
+
+
+    std::cout << "S1 " << " " ; 
+    for (const int a : S1) { 
+        std::cout << std::to_string(a) << " " ; 
+    }
+    std::cout << std::endl ; 
+    
 
     // overlapping range 
     double x0 = 1.0 ; 
