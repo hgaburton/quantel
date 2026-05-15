@@ -67,11 +67,26 @@ j = 5
 #bra=np.array([1,3,2,0,0,1])
 #i = 2
 #j = 4
+braobj = quantel.Configuration((bra))
+ketobj = quantel.Configuration((ket))
 print("bra", bra )
 print("ket", ket)
 print("i, j", i, j)
-matrix_element = one_body_matrix_element(bra, ket, i, j)
+
+
+matrix_element = one_body_matrix_element(bra, ket, i,j)
 print("matrix element", matrix_element)
 matrix_element = testing_one_body_matrix_element(bra, ket, i, j)
 print("test matrix element", matrix_element)
- 
+mb = quantel.MatrixElementCalculator() 
+matrix_element = mb.one_body_coupling(braobj, ketobj, i, j) 
+print("C++ matrix element", matrix_element)
+
+
+print("testing 22 : ", testing_one_body_matrix_element(bra, ket, 2, 2)) 
+print("testing 66 : ", testing_one_body_matrix_element(bra, ket, 6, 6)) 
+print("C++ one body 22: ", mb.one_body_coupling(braobj, ketobj, 2,2) ) 
+
+i,j,k,l = 2, 2, 2, 5
+print("Benchmark two body: ", two_body_matrix_element(bra, ket, i,j,k,l) ) 
+print("C++ two body: ", mb.two_body_coupling(braobj, ketobj, i,j,k,l) ) 

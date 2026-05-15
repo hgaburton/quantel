@@ -388,31 +388,45 @@ def two_body_matrix_element( bra, ket, i, j, k, l):
     ab_classes = [ a_class, b_class ] 
     #print("ab_classes", ab_classes)  
     
-    # tells us which are diagonal if any 
-    diags = [ ind for ind, value in enumerate(ab_classes) if value =="D" ] 
-    #print("diags", diags)  
-    if len(diags)==2:
-        #print("Inside diags len 2")  
-        # One diagonal element is nonzero < bra |e_ijkl| bra > 
-        if np.allclose(bra,ket):  
-            matrix_element =  ob.table_one[bra[i-1],bra[i-1], 0]( bra_paldus[i,1] )*ob.table_one[bra[k-1],bra[k-1], 0]( bra_paldus[k,1] ) 
-            if j==k: 
-                matrix_element -= ob.table_one[bra[i-1],bra[i-1], 0]( bra_paldus[i,1] )
-            return matrix_element
-        else:
-            #print("Zero by off diag") 
-            return 0.0  
-    
-    elif len(diags)==1: 
-        #print("Inside diags len 1")  
-        # Example: Pop.(i) in bra * <bra| Ekl | ket > (resolution of identity with Eii) 
-        if k == l :
-            matrix_element =  one_body_matrix_element(bra, ket, i, j)*ob.table_one[ket[k-1],ket[k-1], 0]( ket_paldus[k,1] )
-        elif i == j : 
-            # Pop.(i) in bra * <bra| Ekl | ket > (resolution of identity with Eii) 
-            matrix_element =  ob.table_one[bra[i-1],bra[i-1], 0]( bra_paldus[i,1] )*one_body_matrix_element(bra, ket, k, l)  
-        if j == k: 
-                matrix_element -= one_body_matrix_element(bra,ket, i,l) 
+    ## tells us which are diagonal if any 
+    #diags = [ ind for ind, value in enumerate(ab_classes) if value =="D" ] 
+    ##print("diags", diags)  
+    #if len(diags)==2:
+    #    #print("Inside diags len 2")  
+    #    # One diagonal element is nonzero < bra |e_ijkl| bra > 
+    #    if np.allclose(bra,ket):  
+    #        matrix_element =  ob.table_one[bra[i-1],bra[i-1], 0]( bra_paldus[i,1] )*ob.table_one[bra[k-1],bra[k-1], 0]( bra_paldus[k,1] ) 
+    #        if j==k: 
+    #            matrix_element -= ob.table_one[bra[i-1],bra[i-1], 0]( bra_paldus[i,1] )
+    #        return matrix_element
+    #    else:
+    #        #print("Zero by off diag") 
+    #        return 0.0  
+    #
+    #elif len(diags)==1: 
+    #    #print("Inside diags len 1")  
+    #    # Example: Pop.(i) in bra * <bra| Ekl | ket > (resolution of identity with Eii) 
+    #    if k == l :
+    #        matrix_element =  one_body_matrix_element(bra, ket, i, j)*ob.table_one[ket[k-1],ket[k-1], 0]( ket_paldus[k,1] )
+    #    elif i == j : 
+    #        # Pop.(i) in bra * <bra| Ekl | ket > (resolution of identity with Eii) 
+    #        matrix_element =  ob.table_one[bra[i-1],bra[i-1], 0]( bra_paldus[i,1] )*one_body_matrix_element(bra, ket, k, l)  
+    #    if j == k:
+    #            print("matrix element here ", matrix_element)  
+    #            matrix_element -= one_body_matrix_element(bra,ket, i,l) 
+    #    return matrix_element 
+
+    matrix_element = 0.0 
+    if (i==j or j==k): 
+        if (i==j and k==l) : 
+            matrix_element += one_body_matrix_element(bra, ket, i, j)*one_body_matrix_element(bra, ket, k, l)
+        elif (i==j): 
+            matrix_element += one_body_matrix_element(bra, bra, i, j)*one_body_matrix_element(bra, ket, k, l)
+        elif (k==l): 
+            matrix_element += one_body_matrix_element(bra, ket, i, j)*one_body_matrix_element(ket, ket, k, l)
+
+        if j==k: 
+            matrix_element -= one_body_matrix_element(bra, ket, i, l)
         return matrix_element 
 
     S1 = seta & setb 

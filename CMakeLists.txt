@@ -85,6 +85,9 @@ pybind11_add_module(_quantel
     "${SOURCE_DIR}/determinant.cpp"
     "${SOURCE_DIR}/ci_space.cpp"
     "${SOURCE_DIR}/ci_space2.cpp"
+    "${SOURCE_DIR}/configuration.cpp"
+    "${SOURCE_DIR}/matrix_element_calculator.cpp"
+    "${SOURCE_DIR}/lookup_table.cpp"
 )
 
 target_include_directories(_quantel PRIVATE
