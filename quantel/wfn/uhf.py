@@ -4,10 +4,10 @@ import numpy as np
 import quantel
 from quantel.utils.scf_utils import mom_select
 from quantel.utils.linalg import orthogonalise, matrix_print
-from quantel.gnme.uhf_noci import uhf_coupling 
+from quantel.gnme.uhf_noci import uhf_coupling, uhf_rdm1, evaluate_s2 
 from .wavefunction import Wavefunction
 from pyscf.tools import cubegen 
-from copy import deepcopy 
+from copy import copy, deepcopy 
 
 class UHF(Wavefunction):
     """ Unrestricted Hartree-Fock method
@@ -525,17 +525,32 @@ class UHF(Wavefunction):
         return np.linalg.det(Sa)*np.linalg.det(Sb)
 
     def get_spin_flip(self): 
-        other = deepcopy(self)
-        other.mo_coeff[0] = self.mo_coeff[1].copy()
-        other.mo_coeff[1] = self.mo_coeff[0].copy()
+        other = UHF(self.integrals)
+        other.initialise(mo_guess = np.array([ self.mo_coeff[1], self.mo_coeff[0] ], dtype=float) )  
         other.update()
         return other 
  
     def hamiltonian(self, other):
         """Compute the Hamiltonian coupling with another wavefunction of this type"""
         eri = self.integrals.tei_array().reshape(self.nbsf**2, self.nbsf**2) 
-        return uhf_coupling(self, other, self.integrals.overlap_matrix(), hcore=self.integrals.oei_matrix(), eri=eri, enuc=self.integrals.scalar_potential()) 
-    
+        hcore = self.integrals.oei_matrix() 
+        metric = self.integrals.overlap_matrix()  
+        return uhf_coupling(self, other, metric, hcore=hcore, eri=eri, enuc = self.integrals.scalar_potential() )
+ 
+    def trans_rdm1(self, other, thresh=1e-10):
+        """Compute one-body transition density with another wavefunction of this type"""
+        metric = self.integrals.overlap_matrix()  
+        s, rdm1a_mo, rdm1b_mo  =  uhf_rdm1(self, other, metric, thresh)
+        rdm1a_ao = np.linalg.multi_dot(( self.mo_coeff[0] , rdm1a_mo, other.mo_coeff[0].T))
+        rdm1b_ao = np.linalg.multi_dot(( self.mo_coeff[1] , rdm1b_mo, other.mo_coeff[1].T))
+        rdm1_ao = rdm1a_ao + rdm1b_ao 
+        return s, rdm1_ao 
+        #return uhf_rdm1(self, other, metric, thresh)
+   
+    def s2_coupling(self, other): 
+        """ Compute the S^2 coupling between two UHF objects """ 
+        return evaluate_s2(self, other)
+ 
     def deallocate(self):
         pass
     

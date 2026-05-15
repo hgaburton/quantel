@@ -1,59 +1,8 @@
-from pygnme import utils, wick, owndata
+from pygnme import wick, owndata
 from quantel.gnme.utils import occstring_to_bitset, generalised_slater_condon
 from quantel.utils.csf_utils import get_csf_vector
 import quantel
 import numpy as np
-
-def csf_rdm1(csf1, csf2, metric, thresh=1e-10, enuc = 0.0):
-    # Convert integral matrices to pygnme-friendly format
-    ovlp = owndata(metric)
-
-    # Number of orbitals and basis functions
-    assert(csf1.nmo == csf2.nmo)
-    assert(csf1.nbsf == csf2.nbsf)
-    nmo = csf1.nmo
-    nbsf = csf1.nbsf
-
-    # Initialize output
-    Hxw, Sxw = 0, 0
-
-    # Setup biorthogonalised orbital pair
-    c1 = csf1.mo_coeff.copy()
-    c2 = csf2.mo_coeff.copy()
-    refxa = wick.reference_state[float](nbsf,nmo,csf1.nalfa,csf1.nopen,csf1.ncore,owndata(c1))
-    refxb = wick.reference_state[float](nbsf,nmo,csf1.nbeta,csf1.nopen,csf1.ncore,owndata(c1))
-    refwa = wick.reference_state[float](nbsf,nmo,csf2.nalfa,csf2.nopen,csf2.ncore,owndata(c2))
-    refwb = wick.reference_state[float](nbsf,nmo,csf2.nbeta,csf2.nopen,csf2.ncore,owndata(c2))
-
-    # x : csf1  
-    # w : csf2
-    # xwD_pq = < w | E_pq | x >   
-
-    # Setup paired orbitals
-    orba = wick.wick_orbitals[float, float](refxa, refwa, ovlp)
-    orbb = wick.wick_orbitals[float, float](refxb, refwb, ovlp)
-
-    # Setup matrix builder object
-    mb = wick.wick_uscf[float, float, float](orba, orbb, enuc)
- 
-    RDM1 = np.zeros((nmo,nmo), dtype=float)  
-    for (detx, cix) in get_csf_vector(csf1.spin_coupling):
-        if(abs(cix) < thresh):
-            continue
-        bax, bbx = occstring_to_bitset(detx)
-        for detw, ciw in get_csf_vector(csf2.spin_coupling):
-            if(abs(ciw) < thresh):
-                continue
-            baw, bbw = occstring_to_bitset(detw)
-            Pa, Pb = (np.zeros((nmo,nmo), dtype=float), np.zeros((nmo,nmo), dtype=float)) 
-            Pa, Pb = ( owndata(Pa), owndata(Pb) )
-            stmp = mb.evaluate_rdm1(bax, bbx, baw, bbw, 0.0, Pa, Pb)
-            RDM1 += ( Pa.copy() + Pb.copy()  ) * cix * ciw
-            Sxw += stmp * cix * ciw
-            
-    # Yields RDM1 in mo basis, swap order for correct density matrix
-    RDM1 = RDM1.T  
-    return Sxw, RDM1
 
 def csf_coupling(csf1, csf2, metric, hcore=None, eri=None, enuc=0.0, thresh=1e-10):
     # Convert integral matrices to pygnme-friendly format
@@ -66,6 +15,7 @@ def csf_coupling(csf1, csf2, metric, hcore=None, eri=None, enuc=0.0, thresh=1e-1
     nbsf = csf1.nbsf
 
     # Initialize output
+    # for the diple we would only care about the TDM output 
     Hxw, Sxw = 0, 0
 
     # Setup biorthogonalised orbital pair
@@ -82,6 +32,8 @@ def csf_coupling(csf1, csf2, metric, hcore=None, eri=None, enuc=0.0, thresh=1e-1
 
     # Setup matrix builder object
     mb = wick.wick_uscf[float, float, float](orba, orbb, enuc)
+    # would this just be the nuclear dipole as the scalar component 
+    #mb = wick.wick_uscf[float, float, float](orba, orbb, nuc_dip)
 
     # Add one- and two-body contributions
     if(hcore is not None):
@@ -90,10 +42,16 @@ def csf_coupling(csf1, csf2, metric, hcore=None, eri=None, enuc=0.0, thresh=1e-1
     if(eri is not None):
         h2e = owndata(eri)
         mb.add_two_body(h2e)
+    # there is only a one body component for the TDM right so would be something like this: 
+    #if(ao_dip is not None):
+    #    ao_dip1e = owndata(ao_dip)
+    #    mb.add_one_body(ao_dip1e)
 
+    # this converts the csf vector - i.e determinant expansion
     for (detx, cix) in get_csf_vector(csf1.spin_coupling):
-        if(abs(cix) < thresh):
+        if(abs(cix) < thresh): #if coefficient is above a threshold
             continue
+        # this is the bitset representation of the determinants. (what is the big diference here - arent they all in binary representation?) 
         bax, bbx = occstring_to_bitset(detx)
         
         for detw, ciw in get_csf_vector(csf2.spin_coupling):
@@ -101,10 +59,13 @@ def csf_coupling(csf1, csf2, metric, hcore=None, eri=None, enuc=0.0, thresh=1e-1
                 continue
             baw, bbw = occstring_to_bitset(detw)
 
-            stmp, htmp = mb.evaluate(bax, bbx, baw, bbw)
+            stmp, htmp = mb.evaluate(bax, bbx, baw, bbw) # ok are these then the overlap and the Hamiltonian coupling terms between the determinants
 
+            # transforming them again
             Hxw += htmp * cix * ciw
             Sxw += stmp * cix * ciw
+    # these are two scalars which then are the couplings between the two csfs (sum of all of the couplings between all of the determinants in the CSF)  
+    # and Sxw is the overlap 
     return Sxw, Hxw
 
 def csf_coupling_slater_condon(csf1, csf2, ints, thresh=1e-10):

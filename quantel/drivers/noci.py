@@ -2,7 +2,7 @@
 import numpy
 from pygnme import utils
 from pyscf.tools import cubegen 
-from quantel.gnme.analysis_utils import compute_wfnlist_1rdms, natural_orbitals, get_chergwin_coulson_weights, osc_strength, noci_osc_strength
+from quantel.gnme.analysis_utils import compute_noci_1rdms, natural_orbitals, get_chergwin_coulson_weights, wfnlist_osc_strength, noci_osc_strength
 
 def overlap(wfnlist, lindep_tol=1e-8, plev=1, save=True):
     """"Perform a NOCI calculation for wavefunctions defined in wfnlist"""
@@ -32,13 +32,13 @@ def overlap(wfnlist, lindep_tol=1e-8, plev=1, save=True):
 
     return Swx
 
-def noci(wfnlist, natorb_states, lindep_tol=1e-8, plev=1):
+def noci(wfnlist, config, lindep_tol=1e-8, plev=1): 
+#def noci(wfnlist, natorb_states, lindep_tol=1e-8, plev=1):
     """"Perform a NOCI calculation for wavefunctions defined in wfnlist"""
-
-    #oscillator_strengths(wfnlist, 0)
 
     # Get number of states
     nstate = len(wfnlist)
+    natorb_states = config["jobcontrol"]["noci_job"]["natorb_states"] if config["jobcontrol"]["noci_job"]["natorb_states"] < nstate else nstate 
 
     print()
     print("-----------------------------------------------")
@@ -54,8 +54,9 @@ def noci(wfnlist, natorb_states, lindep_tol=1e-8, plev=1):
             if(i<j): continue
             Swx[i,j], Hwx[i,j] = state_i.hamiltonian(state_j)
             Swx[j,i], Hwx[j,i] = Swx[i,j], Hwx[i,j]
+    
     if plev > 0: print(" done")
-
+    
     # Save to disk for safekeeping
     numpy.savetxt('noci_ov',  Swx, fmt="% 8.6f")
     numpy.savetxt('noci_ham', Hwx, fmt="% 8.6f")
@@ -80,7 +81,27 @@ def noci(wfnlist, natorb_states, lindep_tol=1e-8, plev=1):
     # Calc Chergwin-Coulson weights and save overlap 
     ccW = get_chergwin_coulson_weights(Swx, v) 
     numpy.savetxt('noci_weights', ccW, fmt="% 8.6f")
-    
+   
+    # If UHF wave function, calculate S2 expectation values
+    if config["wavefunction"]["method"]=="uhf": 
+        S2_wfnlist_array = numpy.zeros((nstate, nstate), dtype=float) 
+        for i in range(nstate): 
+            for j in range(i+1): 
+                S2 = wfnlist[i].s2_coupling(wfnlist[j]) 
+                S2_wfnlist_array[i,j] =  S2 
+                S2_wfnlist_array[j,i] =  S2 
+
+        print("  S2 shape: ", S2_wfnlist_array.shape) 
+        print("  v shape : ", v.shape) 
+        # Calc the NOCI spin expectation values 
+        S2_values = []
+        for i in range(nstate): 
+            tempS2 = numpy.linalg.multi_dot([v[:,i].T, S2_wfnlist_array , v[:,i]])
+            S2_values.append(tempS2)
+        
+        S2_values = numpy.array(S2_values) 
+        numpy.savetxt("noci_s2", S2_values, fmt="% 16.10f")
+
     print("\n NOCI Eigenvalues")
     print(w)
     if plev > 0:
@@ -95,7 +116,7 @@ def noci(wfnlist, natorb_states, lindep_tol=1e-8, plev=1):
     # Natural Orbitals
     noon_thresh = 0.1 
     state_indices = numpy.arange(v.shape[1])
-    noci_rdm1_array = compute_wfnlist_1rdms(wfnlist, v) 
+    wfnlist_rdm1_array, noci_rdm1_array = compute_noci_1rdms(wfnlist, v) 
     for state_index in range(natorb_states): 
         noons, norbs = natural_orbitals(noci_rdm1_array, state_index, wfnlist[0].integrals.overlap_matrix() ) 
         for ind, noon in enumerate(noons): 
@@ -103,10 +124,8 @@ def noci(wfnlist, natorb_states, lindep_tol=1e-8, plev=1):
                 cubegen.orbital(wfnlist[0].integrals.mol, f"state_{state_index}.norb.{ind}.cube", norbs[:,ind])
  
     nucl_dip, ao_dip = wfnlist[0].integrals.dipole_matrix() 
-    metric = wfnlist[0].integrals.overlap_matrix() 
-    noci_osc_strengths = noci_osc_strength(noci_rdm1_array, w, ao_dip, metric)
+    noci_osc_strengths = noci_osc_strength(noci_rdm1_array, w, ao_dip)
     numpy.savetxt("noci_oscillators", noci_osc_strengths, fmt="% 16.10f")
-    ### Then we are going to do what with this? we should compare this against the CSF oscillators ... 
 
     print("\n-----------------------------------------------")
     return Hwx, Swx, eigval, v

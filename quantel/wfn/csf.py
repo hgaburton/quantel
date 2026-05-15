@@ -6,7 +6,7 @@ import numpy as np
 import scipy, quantel, h5py
 from quantel.utils.csf_utils import verify_spin_coupling, get_shells, get_shell_exchange, get_csf_vector
 from quantel.utils.linalg import orthogonalise, stable_eigh, matrix_print
-from quantel.gnme.csf_noci import csf_coupling, csf_coupling_slater_condon  
+from quantel.gnme.csf_noci import csf_coupling, csf_coupling_slater_condon, csf_rdm1 
 from .wavefunction import Wavefunction
 from quantel.utils.csf_utils import csf_reorder_orbitals
 from quantel.utils.scf_utils import shell_sort
@@ -527,7 +527,7 @@ class CSF(Wavefunction):
             else: 
                 spin_coupling = 'cs'  
            
-            # Override spin coupling of wave function  
+            # Override spin coupling of wave function from disk  
             if override_spin_coupling:
                 spin_coupling = self.spin_coupling
  
@@ -556,11 +556,17 @@ class CSF(Wavefunction):
         return csf_coupling(self, them, ovlp)[0]
 
 
-    def hamiltonian(self, them, comp=False):
+    def hamiltonian(self, them):
         """ Compute the Hamiltonian coupling between two CSF objects
         """
         return csf_coupling_slater_condon(self, them, self.integrals)
     
+    def trans_rdm1(self, them, thresh=1e-10): 
+        """ Compute the one-body transition density matrix between two CSF objects, return in Contravariant AO basis""" 
+        metric = self.integrals.overlap_matrix()
+        s, rdm1_mo = csf_rdm1(self, them, metric, thresh)
+        rdm1_ao = np.linalg.multi_dot(( self.mo_coeff, rdm1_mo, them.mo_coeff.T ))
+        return s, rdm1_ao 
 
     def get_orbital_guess(self, method="gwh",avas_ao_labels=None,reorder=True, localise=True):
         """Get a guess for the molecular orbital coefficients"""
