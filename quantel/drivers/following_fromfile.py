@@ -61,12 +61,11 @@ def follow(ints, config):
     i_list    = []
 
     # Reconverge target solutions
-    target_index = config["optimiser"]["keywords"]["index"]
     count = 0
     for prefix in config["jobcontrol"]["read_dir"]:
         print(" Reading solutions from directory {:s}".format(prefix))
         #nstates = len(glob.glob(prefix+"*.solution"))
-        for old_tag in glob.glob(prefix+"*solution"):
+        for old_tag in glob.glob(prefix+"*.solution"):
             with open(old_tag, "r") as file: 
                 hess_index = file.readline().split()[1]
                 hess_index = int(hess_index)
@@ -80,6 +79,7 @@ def follow(ints, config):
             
             # Run the optimisation
             if config["optimiser"]["algorithm"]=="adaptive": 
+                target_index = hess_index
                 if hess_index==0:
                     lbfgsconfig=optconfig["lbfgs"]
                     myopt = LBFGS(**lbfgsconfig)
@@ -87,6 +87,7 @@ def follow(ints, config):
                     if not myopt.run(myfun, **config["optimiser"]["keywords"]):
                         continue
             elif config["optimiser"]["algorithm"]=="adaptive_evf": 
+                target_index = hess_index
                 if hess_index==0:
                     lbfgsconfig=optconfig["lbfgs"]
                     myopt = LBFGS(**lbfgsconfig)
@@ -102,6 +103,7 @@ def follow(ints, config):
                     if not myopt.run(myfun, **config["optimiser"]["keywords"]):
                         continue
             else: 
+                target_index = config["optimiser"]["keywords"]["index"]
                 myopt = OPT(**optconfig)
                 if not myopt.run(myfun, **config["optimiser"]["keywords"]):
                     continue
