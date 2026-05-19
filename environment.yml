@@ -23,6 +23,7 @@ dependencies:
 
   # Linear algebra backends
   - openblas
+  - conda-forge::mkl
 
   # Python scientific stack
   - numpy
