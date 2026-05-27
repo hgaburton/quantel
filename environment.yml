@@ -1,4 +1,4 @@
-name: quantel-conda
+name: quantel
 
 channels:
   - conda-forge
@@ -23,6 +23,7 @@ dependencies:
 
   # Linear algebra backends
   - openblas
+  - conda-forge::mkl
 
   # Python scientific stack
   - numpy
