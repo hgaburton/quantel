@@ -202,15 +202,15 @@ class BasinHopping():
                 self.naccept += 1
             else:
                 self.nreject += 1
-
-            # Update acceptance rate and adjust step-size if necessary
-            if((hop+1) % self.control["change_accept"] == 0):
-                self.update_acceptreject()
             
             # Print progress
             if self.plev > 0:
                 print(f"  Hop {hop+1:6d}:  E = {trial_wfn.energy: .10f}  E_markov = {wfn.energy: .10f}  {comment}")
                 sys.stdout.flush()
+
+            # Update acceptance rate and adjust step-size if necessary
+            if((hop+1) % self.control["change_accept"] == 0):
+                self.update_acceptreject()
         
             # Check if the new solution is distinct and save it if so
             if(self.new_solution(trial_wfn)): 
@@ -235,5 +235,7 @@ class BasinHopping():
                 print(f" Final quench of solution {idx+1: 5d}", end="")
             if(self.new_solution(state)): 
                 self.save_solution(state)
-        
+                tag=f"{len(self.all_solutions):04d}"
+                state.save_to_disk(tag)
+
         return self.all_solutions
