@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 
+import copy
 import sys
 import numpy as np
 from quantel.opt.lbfgs import LBFGS
@@ -25,7 +26,7 @@ class BasinHopping():
         # Maximum number of iterations for the L-BFGS optimization
         self.control["opt_maxit"] = kwargs.get("opt_maxit", 1000)
         # Loose convergence threshold for BH steps
-        self.control["loose_convergence"] = kwargs.get("loose_convergence", 1e-3)
+        self.control["loose_convergence"] = kwargs.get("loose_convergence", 1e-4)
         # Tight convergence threshold for final optimization of minima
         self.control["tight_convergence"] = kwargs.get("tight_convergence", 1e-7)
         # Energy tolerance for considering two minima as distinct
@@ -224,11 +225,15 @@ class BasinHopping():
         ''' 
             Perform a final quench of all solutions found to ensure they are fully converged.
         '''
+        test_minima = [state.copy() for (_,state) in self.all_solutions]
+        self.all_solutions = []
         if self.plev > 0:
             print("\nPerforming final quench of all saved solutions...")
-        for idx, (_, state) in enumerate(self.all_solutions):
+        for idx, state in enumerate(test_minima):
             converged = self.optimizer.run(state, **{**self.control["opt_kwargs"], "thresh": self.control["tight_convergence"]})
             if self.plev > 0:
-                print(f" Final quench of solution {idx+1: 5d} with energy {state.energy: 20.10f} Eh")
+                print(f" Final quench of solution {idx+1: 5d}", end="")
+            if(self.new_solution(state)): 
+                self.save_solution(state)
         
         return self.all_solutions

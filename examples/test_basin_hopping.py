@@ -8,7 +8,7 @@ import numpy as np
 mol = PySCFMolecule("mol/h6.xyz", "sto-3g", "angstrom", spin=0)
 ints = PySCFIntegrals(mol)
 
-wfn = CSF(ints, "+++---")
+wfn = CSF(ints, "+-+-+-")
 wfn.initialise(np.random.rand(wfn.nbsf, wfn.nmo))
 opt = HybridEF(maxstep=0.5)
 #opt = LBFGS(maxstep=0.5, with_transport=True, with_canonical=True)
