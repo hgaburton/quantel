@@ -54,8 +54,9 @@ def from_file(ints, config):
     for prefix in config["jobcontrol"]["read_dir"]:
         print(" Reading solutions from directory {:s}".format(prefix))
         
-        for old_tag in glob.glob(prefix+"*.solution"):
+        for old_tag in sorted(glob.glob(prefix+"*.solution")):
             old_tag = old_tag[:-9]
+            print("\n  Original solution: ", old_tag)
 
             # Initialise optimisation object
             try: del myfun
