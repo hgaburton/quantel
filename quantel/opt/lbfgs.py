@@ -155,7 +155,7 @@ class LBFGS:
 
                 # Need to make sure s.g < 0 to maintain positive-definite L-BFGS Hessian 
                 if(np.dot(step,grad_ref) > 0):
-                    print("  Step has positive overlap with gradient - reversing direction")
+                    if plev>0: print("  Step has positive overlap with gradient - reversing direction")
                     step *= -1
                     reset = True
                 

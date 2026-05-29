@@ -8,3 +8,4 @@ from .evlinesearch import ev_linesearch
 from .following_fromfile import follow
 from .rand_from_file import rand_fromfile 
 from .ladder_from_file import ladder_from_file 
+from .network_search import Network
