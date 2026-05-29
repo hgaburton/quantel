@@ -15,21 +15,15 @@ class LBFGS:
     def __init__(self, **kwargs):
         '''Initialise the LBFGS instance'''
         self.control = dict()
-        self.control["minstep"] = 0.01
-        self.control["maxstep"] = 0.5
-        self.control["max_subspace"] = 20
-        self.control["backtrack_scale"] = 0.1
-        self.control["with_transport"] = True
-        self.control["with_canonical"] = True
-        self.control["canonical_interval"] = 10
-        self.control['gamma_preconditioner'] = False
-        self.control['preconditioner_interval'] = 1
-
-        for key in kwargs:
-            if not key in self.control.keys():
-                print("ERROR: Keyword [{:s}] not recognised".format(key))
-            else: 
-                self.control[key] = kwargs[key]
+        self.control["minstep"] = kwargs.get("minstep", 0.01)
+        self.control["maxstep"] = kwargs.get("maxstep", 0.5)
+        self.control["max_subspace"] = kwargs.get("max_subspace", 20)
+        self.control["backtrack_scale"] = kwargs.get("backtrack_scale", 0.1)
+        self.control["with_transport"] = kwargs.get("with_transport", True)
+        self.control["with_canonical"] = kwargs.get("with_canonical", True)
+        self.control["canonical_interval"] = kwargs.get("canonical_interval", 10)
+        self.control['gamma_preconditioner'] = kwargs.get("gamma_preconditioner", False)
+        self.control['preconditioner_interval'] = kwargs.get("preconditioner_interval", 1)
         
         self.ls = LineSearch()
 
@@ -61,7 +55,7 @@ class LBFGS:
             print(f"    > Num. MOs       = {obj.nmo: 6d}")
             print(f"    > Num. params    = {dim: 6d}")
             print(f"    > Max subspace   = {max_subspace: 6d}")
-            print(f"    > Max step size   = {self.control['maxstep']: 6.3f}")
+            print(f"    > Max step size  = {self.control['maxstep']: 6.3f}")
             print(f"    > Backtracking   = {self.control['backtrack_scale']: 6.3f}")
             print(f"    > Parallel tr.   = {self.control['with_transport']}")
             print(f"    > Pseudo-canon.  = {self.control['with_canonical']}")
