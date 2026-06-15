@@ -240,7 +240,7 @@ def optimise_order(K, X):
 
     return order
 
-def csf_reorder_orbitals(integrals, exchange_matrix, cinit, pop_method='becke'):  
+def csf_reorder_orbitals(integrals, exchange_matrix, cinit, pop_method='becke', localise=True):  
     """
     Optimise the order of the CSF orbitals using the exchange matrix 
     to minimise the exchange energy
