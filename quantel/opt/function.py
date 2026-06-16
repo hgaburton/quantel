@@ -130,7 +130,7 @@ class Function(metaclass=ABCMeta):
             else:         nzero +=1 
         return (ndown, nzero, nuphl)
 
-    def get_davidson_hessian_index(self, ntarget=5, eps=1e-5, approx_hess=True, plev=1, tol=1e-16):
+    def get_davidson_hessian_index(self, ntarget=5, eps=1e-5, approx_hess=False, plev=1, tol=1e-16):
         """Iteratively compute Hessian index from gradient only. 
            This approach uses the Davidson algorithm."""
         # Get approximate diagonal terms

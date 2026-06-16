@@ -563,7 +563,7 @@ class UHF(Wavefunction):
         D1a = np.einsum('pa,ai,qi->pq', Ca_alfa, Xai_alfa, Ci_alfa, optimize="optimal")
         D1b = np.einsum('pa,ai,qi->pq', Ca_beta, Xai_beta, Ci_beta, optimize="optimal")
         # Coulomb and exchange contributions
-        J, K = self.integrals.build_JK([D1a,D1b], Kxc=False)
+        J, K = self.integrals.build_JK(np.array([D1a,D1b]), Kxc=False)
         # Build ground-state density and xc kernel
         if(not (self.integrals.xc is None)):
             rho0, vxc, fxc = self.integrals.cache_xc_kernel(self.mo_coeff,self.mo_occ,spin=1)
