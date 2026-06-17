@@ -72,6 +72,7 @@ def main():
                             config["molecule"]["unit"],
                             charge=charge,spin=spin)
         ints = PySCFIntegrals(mol,xc=config["jobcontrol"]["xc_functional"],
+                                  with_df=config["jobcontrol"]["with_df"],
                                   kscale=config["jobcontrol"]["kscale"])
     elif(config["jobcontrol"]["integrals"]=='libint'):
         print(" *** Using Libint for integral evaluation ***\n")

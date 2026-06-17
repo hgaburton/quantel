@@ -40,6 +40,7 @@ def standard_guess(ints, config):
     elif config["optimiser"]["algorithm"] == "mode_control":
         from quantel.opt.mode_controlling import ModeControl as OPT
 
+
     # Initialise wavefunction list
     wfn_list  = []
     e_list    = []

@@ -439,6 +439,20 @@ class PySCF_MO_Integrals:
             self.tei_aa = self.compute_tei(self.m_Cact,True,True)
             self.tei_ab = self.compute_tei(self.m_Cact,True,False)
             self.tei_bb = self.compute_tei(self.m_Cact,False,False)
+
+    def dipole_matrix(self):
+        """ Return the dipole matrix in MO basis
+            Returns:
+                ndarray : The dipole matrix in MO basis
+        """
+        nucl_dip, ao_dip = self.ints.dipole_matrix()
+        mo_dip = np.einsum('xij,ip,jq->xpq',ao_dip,self.m_C,self.m_C,optimize="optimal")
+        nmo = self.m_C.shape[1]
+        mo_dip = np.zeros((3,nmo,nmo))
+        for i in range(3):
+            mo_dip[i] = self.m_C.T @ ao_dip[i] @ self.m_C
+            mo_dip[i] += nucl_dip[i] * np.eye(nmo)
+        return mo_dip
             
     def get_quantel_ints(self):
         """ Convert to quantel MOintegrals object
