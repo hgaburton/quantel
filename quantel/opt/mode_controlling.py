@@ -42,10 +42,8 @@ class ModeControl:
         for istep in range(maxit+1):
             # Get gradient and check convergence
             grad = obj.gradient
-            prec = obj.get_preconditioner()
             conv = np.linalg.norm(grad) * np.sqrt(1.0/grad.size)
             eref = obj.energy
-
 
             # Get Hessian eigen-decomposition
             hess_eig, hess_vec = np.linalg.eigh(obj.hessian) 
