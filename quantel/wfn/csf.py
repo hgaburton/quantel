@@ -272,8 +272,9 @@ class CSF(Wavefunction):
             for key, value in self.energy_components.items():
                 print(f" {key.replace('_',' '):>20s} = {value:14.8f} Eh")
             print(" ---------------------------------------------")
-            print(f"        <Sz> = {self.sz:5.2f}")
-            print(f"        <S2> = {self.s2:5.2f}")
+            print(f"           <Sz> = {self.sz:5.2f}")
+            print(f"           <S2> = {self.s2:5.2f}")
+            print(f"  Spin Coupling = {self.spin_coupling}")
         if(verbose > 1):
             Ipqpq, Ipqqp = self.get_open_JK()
             matrix_print(self.exchange_matrix, title="Open-Shell Exchange Matrix <Ψ|Êpq Êqp|Ψ> - Np")
@@ -465,7 +466,7 @@ class CSF(Wavefunction):
     def write_fcidump(self, tag):
         """ Write an FCIDUMP file for the current CSF object """
         from quantel.ints.utils import write_fcidump
-        write_fcidump(self.integrals, tag+'.fcid', mo_coeff=self.mo_coeff)
+        write_fcidump(self.integrals, mo_coeff=self.mo_coeff, filename=tag+'.fcid')
 
     def write_cidump(self, tag):
         # Write the CI vector dump
@@ -523,9 +524,9 @@ class CSF(Wavefunction):
         else:
             Cguess = orbital_guess(self.integrals,method,avas_ao_labels=avas_ao_labels,rohf_ms=0.5*self.nopen)
         if localise:
-            self.initialise(Cguess, spin_coupling=self.nopen*"+")
-            self.localise_orbitals()
-            Cguess = self.mo_coeff.copy() 
+            # Localise the open-shell and closed-shell orbitals separately, then combine and orthogonalise
+            Cguess[:,:self.ncore], isstable = localise_orbitals(self.integrals.molecule(), Cguess[:,:self.ncore])
+            Cguess[:,self.ncore:self.nocc], isstable = localise_orbitals(self.integrals.molecule(), Cguess[:,self.ncore:self.nocc])
         # Optimise the order of the CSF orbitals and return
         if(reorder and (self.spin_coupling != '')):
             Cguess[:,self.ncore:self.nocc] = csf_reorder_orbitals(self.integrals,self.exchange_matrix,

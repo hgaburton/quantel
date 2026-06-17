@@ -2,8 +2,9 @@
 #define FOUR_ARRAY_H
 
 #include <vector>
-#include <string>        // added
-#include <algorithm>     // for std::min/std::max
+#include <string>
+#include <tuple>
+#include <algorithm>
 #include <stdexcept> 
 
 /// \brief Class for handling four-index arrays
