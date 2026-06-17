@@ -64,7 +64,10 @@ class CSF(Wavefunction):
 
         # DIIS parameters 
         self.scale_core_dens = scale_core_dens 
-        self.mom_method = mom_method 
+        if mom_method == None:
+            self.mom_method = None
+        else:
+            self.mom_method = mom_method.upper() 
     
     def sanity_check(self):
         '''Need to be run at the start of the kernel to verify that the number of 

@@ -37,6 +37,8 @@ def standard_guess(ints, config):
         from quantel.opt.gmf import GMF as OPT
     elif config["optimiser"]["algorithm"] == "lbfgs":
         from quantel.opt.lbfgs import LBFGS as OPT
+    elif config["optimiser"]["algorithm"] == "diis":
+        from quantel.opt.diis import DIIS as OPT
     elif config["optimiser"]["algorithm"] == "mode_control":
         from quantel.opt.mode_controlling import ModeControl as OPT
 
