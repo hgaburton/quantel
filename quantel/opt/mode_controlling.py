@@ -46,14 +46,6 @@ class ModeControl:
             conv = np.linalg.norm(grad) * np.sqrt(1.0/grad.size)
             eref = obj.energy
 
-            from scipy.sparse.linalg import LinearOperator, gmres, cg
-            print("Try linear operator")
-            linop = LinearOperator((obj.dim,obj.dim), matvec=obj.hess_on_vec)
-            call = lambda pr: print(np.linalg.norm(-grad - obj.hess_on_vec(pr)))
-            step = cg(linop, -grad, M=np.diag(1/prec), callback=call)
-            print(step)
-            quit()
-
 
             # Get Hessian eigen-decomposition
             hess_eig, hess_vec = np.linalg.eigh(obj.hessian) 
