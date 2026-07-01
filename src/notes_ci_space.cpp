@@ -42,18 +42,28 @@ void CIspace::initialize(std::string citype, std::vector<std::string> detlist)
 
 void CIspace::build_fci_determinants()
 { 
+    // we get out of this m_dets - now each FCI determinant is mapped to an integer. 
     // Populate m_det with FCI space
+    // number of determinants in full ci space 
     m_ndet = 0;
+
+    // false means vector if filled with 0/false! 
     std::vector<uint8_t> occ_alfa(m_nmo,false);
     std::vector<uint8_t> occ_beta(m_nmo,false);
+
+    // fill the first m_nalfa and m_nbeta positions with 1 of occ_alfa vector etc 
     std::fill_n(occ_alfa.begin(), m_nalfa, 1);
     std::fill_n(occ_beta.begin(), m_nbeta, 1);
     do {
+        // defined in private section of class file 
         m_ndeta++;
         do {
             m_ndetb++;
+            // mdets also defined in private section of class file as a map of determinants 
+            // Map means that maps the determinant to an integer key index 
             m_dets[Determinant(occ_alfa,occ_beta)] = m_ndet++;
         } while(std::prev_permutation(occ_beta.begin(), occ_beta.end()));
+    // outside loop 
     } while(std::prev_permutation(occ_alfa.begin(), occ_alfa.end()));
 }
 
@@ -103,19 +113,22 @@ void CIspace::build_custom_determinants(std::vector<std::string> detlist)
 
 void CIspace::build_memory_map1()
 {
+    // this is called right after building m_dets with our selected constructor. 
+
     // Populate m_map with connected determinants
     //#pragma omp parallel for collapse(2)
     for(size_t p=0; p<m_nmo; p++)
     for(size_t q=0; q<m_nmo; q++)
     {
         if(q>p) continue;
-        // Make an exitation
+        // Make excitations 
         Eph Epq = {p,q};
         Eph Eqp = {q,p};
 
         // Initialise map vectors
         #pragma omp critical 
         {
+            //initialise the vectors 
             m_map_a[Epq] = std::vector<std::tuple<size_t,size_t,int> >();
             m_map_b[Epq] = std::vector<std::tuple<size_t,size_t,int> >();
             if(Epq != Eqp)
@@ -125,21 +138,32 @@ void CIspace::build_memory_map1()
             }
         }
 
+        
         // Loop over determinants
+        // looping over the amp 
         for(auto &[detJ, indJ] : m_dets)
         {
             {   // Alfa
+                // so this is detI|Epq|detJ
                 Determinant detI = detJ;
                 // Get alfa excitation
+                // so the detI is the excited determinant  
                 int phase = detI.apply_excitation(Epq,true);
                 if(phase != 0) 
                     try {
+                        // find the location of the new excitation in the map - so our determinant key 
                         size_t indI = m_dets.at(detI);
+                        // append the connection 
+                        // detI is the excited determinant
+                        // m_map_a -> (ket, excitated determinant, phase)  
                         m_map_a[Epq].push_back(std::make_tuple(indJ,indI,phase));
                         if(Epq != Eqp)
+                            // Adjoint via detJ | Eqp | detI
                             m_map_a[Eqp].push_back(std::make_tuple(indI,indJ,phase));
                     } catch(const std::out_of_range& e) { }
-            }
+            }       //catch block acting as except; e here is a stand in - for an empty result 
+                    // basically this just does nothing when m_dets.at(detI) gives an failed key error 
+                    // ie. that our determinant isnt in the CI space - therefore we move on an ignore... 
             {   // Beta
                 Determinant detI = detJ;
                 // Get alfa excitation
@@ -254,8 +278,10 @@ void CIspace::H_on_vec(const std::vector<double> &ci_vec, std::vector<double> &s
     omp_device dev;
     // Tolerance 
     double tol = m_ints.tol();
-    
+   
+    // this is the thing, we also need the integrals, because the matrix elements or the integrals could also be zero 
     // Get thread-safe memory for sigma vector
+    // this is keeping the space for sigma_t 
     std::vector<double> sigma_t(dev.nthreads*m_ndet);
     std::fill(sigma_t.begin(), sigma_t.end(), 0.0);
     
@@ -266,13 +292,16 @@ void CIspace::H_on_vec(const std::vector<double> &ci_vec, std::vector<double> &s
     {
         // Access memory 
         size_t ithread = dev.thread_id();
+        // so accesing the value at sigma_t 
         double *st = &sigma_t[ithread*m_ndet];
 
+        // get the integral factos     
         double hpq = m_ints.oei(p,q);
         if(std::abs(hpq) > tol)
         {
             // Alfa contribution
             for(auto &[indJ, indI, phase] : m_map_a.at({p,q}))
+                // ci is an input - with the same ordering as the map 
                 st[indI] += phase * hpq * ci_vec[indJ];
             // Beta contribution
             for(auto &[indJ, indI, phase] : m_map_b.at({p,q}))
@@ -281,6 +310,8 @@ void CIspace::H_on_vec(const std::vector<double> &ci_vec, std::vector<double> &s
     }
 
     // Two-electron part
+    // the two electron part we could also try and do this map? 
+    // this is going to be a fair bit harder I think, that maybe we can try a little work-around here? 
     //#pragma omp parallel for collapse(4)
     for(size_t p=0; p<m_nmo; p++)
     for(size_t r=0; r<m_nmo; r++)

@@ -15,7 +15,9 @@
 #include "four_array.h"
 #include "two_array.h"
 #include "configuration.h"
+#include "csf_ci_space.h"
 #include "matrix_element_calculator.h"
+#include "drt.h"
 
 namespace py = pybind11;
 using namespace pybind11::literals;
@@ -107,6 +109,7 @@ PYBIND11_MODULE(_quantel, m) {
      py::class_<Configuration>(m, "Configuration")
           .def(py::init<std::vector<uint8_t>>(), "Constructor from step vectors")
           .def("__lt__", &Configuration::operator<,"Comparison operator" )
+          .def("get_vec", &Configuration::get_vec, " get step vector")
           .def("generate_paldus", [](Configuration &self){
                size_t nrows = self.m_nmo + 1; 
                size_t ncols = 3; 
@@ -115,22 +118,45 @@ PYBIND11_MODULE(_quantel, m) {
                arma::vec v = arma::vectorise(tmp); 
                std::vector<double> v_std(v.begin(), v.end()); 
                return vec_to_np_array(nrows, ncols, v_std.data());
-          })
-          .def("construct_drt", [](Configuration &self){
-               arma::imat drt = self.construct_drt();
-               size_t nrows = drt.n_rows; 
-               size_t ncols = drt.n_cols; 
-               arma::mat tmp = arma::conv_to<arma::mat>::from(drt.t());
+          });
+          //.def("construct_drt", [](Configuration &self){
+          //     arma::imat drt = self.construct_drt();
+          //     size_t nrows = drt.n_rows; 
+          //     size_t ncols = drt.n_cols; 
+          //     arma::mat tmp = arma::conv_to<arma::mat>::from(drt.t());
+          //     arma::vec v = arma::vectorise(tmp); 
+          //     std::vector<double> v_std(v.begin(), v.end()); 
+          //     return vec_to_np_array(nrows, ncols, v_std.data());
+          //});
+
+     py::class_<DRT>(m, "DRT")
+          .def(py::init<size_t,size_t,double>(), "Constructor from nmo, nelec, totspin")
+          .def("apply_excitation", py::overload_cast<Configuration&, Eph&>(&DRT::apply_excitation), "Apply single excitation operator")
+          .def("apply_excitation", py::overload_cast<Configuration&,Epphh&>(&DRT::apply_excitation), "Apply double excitation operator")
+          .def("get_drt", [](DRT &self){
+               size_t nrows = self.m_drt.n_rows; 
+               size_t ncols = self.m_drt.n_cols; 
+               arma::mat tmp = arma::conv_to<arma::mat>::from(self.m_drt.t());
                arma::vec v = arma::vectorise(tmp); 
                std::vector<double> v_std(v.begin(), v.end()); 
                return vec_to_np_array(nrows, ncols, v_std.data());
           });
 
+
+     
      py::class_<MatrixElementCalculator>(m, "MatrixElementCalculator")
           .def(py::init<>(), "Default Constructor")
           .def("one_body_coupling", &MatrixElementCalculator::one_body_coupling, " Compute one body matrix element" ) 
           .def("two_body_coupling", &MatrixElementCalculator::two_body_coupling, " Compute two body matrix element" ); 
           
+     py::class_<CSF_CIspace>(m, "CSF_CIspace")
+          .def(py::init<size_t, size_t, double>(), "Constructor")
+          .def_readonly("m_drtobj", &CSF_CIspace::m_drtobj, "returns the DRT object")  // expose m_drt
+          .def("get_fci_basis", [](CSF_CIspace &self ) { 
+               self.build_fci_configs();
+               return self.get_basis(); 
+          }); 
+     
      py::class_<CIspace>(m, "CIspace")
           .def(py::init<MOintegrals &,size_t,size_t,size_t>(), "Constructor with number of electrons and orbitals")
           .def("initialize", [](CIspace &self, std::string citype, std::vector<std::string> detlist)

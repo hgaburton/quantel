@@ -13,7 +13,12 @@
 #include "mo_integrals.h"
 #include "fmt/core.h"
 
+// defines a type for ease of use later in the code 
+// map which takes a one electron excitation operator to a vector of tuples 
+// so stores which determinants are connected via this operator and their phase 
+// can be int since its either 1, 0 or -1 - in CSF world it should be a double. 
 typedef std::map<Eph, std::vector<std::tuple<size_t,size_t,int> > > mem_map_1;
+
 typedef std::map<Epphh, std::vector<std::tuple<size_t,size_t,int> > > mem_map_2;
 
 /// \brief Container for information about a CI space
@@ -33,8 +38,7 @@ public:
             throw std::runtime_error("CIspace::CIspace: Invalid number of alpha electrons");
         if(m_nbeta > m_nmo)
             throw std::runtime_error("CIspace::CIspace: Invalid number of beta electrons");
-    }
-
+    } 
     /// Build the CI space
     void initialize(std::string citype, std::vector<std::string> detlist={});
 
@@ -139,9 +143,11 @@ private:
     std::vector<double> m_Hd;
 
     /// 1-electron memory map
+    // so these are the memory maps for one electron alpha and beta excitations 
     mem_map_1 m_map_a;
     mem_map_1 m_map_b;
     /// 2-electron memory maps
+    // memory maps for two electron alpha/alpha, alpha/beta, beta/alpha and beta/beta excitations 
     mem_map_2 m_map_aa;
     mem_map_2 m_map_ab;
     mem_map_2 m_map_bb;
@@ -156,6 +162,7 @@ private:
     }
 
     /// Determinant list
+    // therefore m_dets is maps a determinant to an integer key index 
     std::map<Determinant,int> m_dets;
 
     /// Build FCI determinants

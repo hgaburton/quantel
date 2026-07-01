@@ -5,6 +5,14 @@
 #include <vector> 
 #include <armadillo> 
 #include <algorithm>
+#include "excitation.h"
+
+inline const arma::imat step_vecs = { 
+    {0, 0, 1},
+    {0, 1, 0}, 
+    {1,-1, 1}, 
+    {1, 0, 0} 
+};
 
 class Configuration { 
 public: 
@@ -17,9 +25,6 @@ public:
     // Constructor from step-vector representation 
     Configuration(std::vector<uint8_t> step_vec) 
     {
-        // should introduce a check here to ensure drt is valid 
-        // i.e. every 2 has been balanced by a 1 before it. 
-        // its going to have to iterate through the drt and count the number of ones and two at the same time 
         int count1 = 0;
         int count2 = 0;
         for (int i=0 ; i < step_vec.size() ; i++) {
@@ -56,15 +61,22 @@ public:
     uint8_t m_nmo; 
     uint8_t m_nelec; 
     double m_totspin;
-    std::vector<uint8_t> m_step_vec; 
+    arma::imat m_drt ; 
+    std::vector<uint8_t> m_step_vec;
+     
 
     // Define functions here 
-
-    // generate Paldus table representation from drt
-    // trailing const means function cant modify class variabels
+    std::vector<uint8_t> get_vec() const {
+        return m_step_vec;
+    }
     arma::imat generate_paldus() const;
-    // better in s Configuration space object? 
-    arma::imat construct_drt() const; 
+    //std::vector<std::tuple<Configuration,double>> old_apply_excitation(arma::imat &drt, const Eph &Epq) ;
+    //std::vector<std::tuple<Configuration,double>> non_drt_apply_excitation(arma::imat &drt, const Eph &Epq) ;
+    //std::vector<std::tuple<Configuration,double>> apply_excitation(arma::imat &drt, const Eph &Epq) ;
+
+    // then we should make wrapper objects for the functions.
+    // cant have as wrapper functions because then would need to include DRT object - this means unfortunately that 
+    // apply_excitation is an method of the DRT rather than of the configuration.... this is quite annoying 
 }; 
 
 

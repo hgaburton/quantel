@@ -28,7 +28,6 @@ int MatrixElementCalculator::get_Dind(const int &delta_b) const {
 }
 
 double MatrixElementCalculator::one_body_coupling(const Configuration &bra, const Configuration &ket, const Eph &Eph) const { 
-    
     // Calculate the one body coupling matrix element 
     // Check same number of electrons, orbitals and S 
     if ( (bra.m_nmo != ket.m_nmo) || (bra.m_nelec != ket.m_nelec) || (bra.m_totspin != ket.m_totspin)  ) { 
@@ -54,13 +53,13 @@ double MatrixElementCalculator::one_body_coupling(const Configuration &bra, cons
     
     // Check outside loops are the same  
     for (int a = 0 ; a < tail ; a ++ ) { 
-        if ( arma::all( bra_paldus.row(a) != ket_paldus.row(a) ) ) { 
+        if (!arma::all( bra_paldus.row(a) == ket_paldus.row(a) ) ) {
             return 0.0 ; 
         }
     }
-
-    for (int a = head + 1 ; a <= nmo ; a ++ ) { 
-        if ( arma::all( bra_paldus.row(a) != ket_paldus.row(a) ) ) { 
+    //for (int a = head + 1 ; a <= nmo ; a ++ ) { 
+    for (int a = head ; a <= nmo ; a ++ ) { 
+        if (!arma::all( bra_paldus.row(a) == ket_paldus.row(a) ) ) {
             return 0.0 ; 
         }
     }
@@ -110,8 +109,6 @@ double MatrixElementCalculator::one_body_fragment(const int &level, const int &d
     return factor;
 }
 
-
-
 double MatrixElementCalculator::two_body_coupling( const Configuration &bra, const Configuration &ket, const Epphh &Epphh ) const { 
     // Check same number of electrons, orbitals and S 
     if ( (bra.m_nmo != ket.m_nmo) || (bra.m_nelec != ket.m_nelec) || (bra.m_totspin != ket.m_totspin)  ) { 
@@ -126,15 +123,15 @@ double MatrixElementCalculator::two_body_coupling( const Configuration &bra, con
     int i = (int) Epphh.particle1 ; 
     int j = (int) Epphh.hole1 ; 
     int k = (int) Epphh.particle2 ; 
-    int l = (int) Epphh.hole2; 
+    int l = (int) Epphh.hole2 ; 
     assert( std::max({i,j,k,l}) <= bra.m_nmo ) ;
     assert( std::min({i,j,k,l}) > 0 ) ; 
     // Check path outside loop 
     for (int a = 0 ; a < nmo ; a++ ) {
         // iterate over the full loop  
-        if ( ( a > std::max({i,j,k}) ) || ( a < std::min({i,j,k}) )  ) {
+        if ( ( a >= std::max({i,j,k}) ) || ( a < std::min({i,j,k}) )  ) {
             // if a is outside the "true_loop" 
-            if ( arma::all( bra_paldus.row(a) != ket_paldus.row(a) ) ) { 
+            if (!arma::all( bra_paldus.row(a) == ket_paldus.row(a) ) ) { 
                 return 0.0 ; 
             }
         } 
@@ -170,34 +167,39 @@ double MatrixElementCalculator::two_body_coupling( const Configuration &bra, con
     else if (k - l < 0) {ab_classes[1] = "R"; RorLs[1] = 0 ;}
  
     std::set<int> S1;
-    std::set<int> S2a;
-    std::set<int> S2b; 
-    for (int a = std::min({i,j,k,l}); a < std::max({i,j,k,l}) ; a++){ 
-        // Overlapping range 
+    std::set<int> S2;
+    //std::set<int> S2a;
+    //std::set<int> S2b; 
+    // I think the head should be included in this iteration... 
+    for (int a = std::min({i,j,k,l}); a <= std::max({i,j,k,l}) ; a++){ 
+        // Overlapping range
         if (( (a <= std::max(k,l)) &&  (a >= std::min(k,l)) ) && ( (a <= std::max(i,j)) &&  (a >= std::min(i,j)) ) ){ 
             S1.insert(a);
+        }
+        else { 
+            // Since S2 is the union minus S1 we dont need additional conditions...  
+            S2.insert(a);
         } 
-        // Non-overlapping range 
-        if ( (a > std::max(k,l)) &&  (a < std::min(k,l)) ) { 
-            S2a.insert(a);
-        }
-        else if  ( (a > std::max(i,j)) &&  (a < std::min(i,j)) ) { 
-            S2b.insert(a);
-        }
+        //// Non-overlapping range 
+        //if ( (a > std::max(k,l)) || (a < std::min(k,l)) ) { 
+        //    S2a.insert(a);
+        //}
+        //else if ( (a > std::max(i,j)) ||  (a < std::min(i,j)) ) { 
+        //    S2b.insert(a);
+        //}
     }
     // Construct overlapping and non-overlapping ranges 
     //std::set_union(seta.begin(), seta.end(), setb.begin(), setb.end(), std::inserter(Sunion), Sunion.begin()); 
     //std::set_intersection(seta.begin(), seta.end(), setb.begin(), setb.end(), std::inserter(S1), S1.begin());
     //std::set_difference(Sunion.begin(), Sunion.end(), S1.begin(), S1.end(), std::inserter(S2), S2.begin() ) ;  
-
      
-    // non overlapping range 
-    // There is a better way to do this right - we should be able to do the one body fragment in this way
-    matrix_element = 1.0 ; 
     // could we just add these
-    std::vector<std::set<int>> S2 = { S2a, S2b} ;
+    //std::vector<std::set<int>> S2 = { S2a, S2b} ;
     std::vector<int> tail_inds = { std::min(i,j), std::min(k,l)} ;
+    // head should be included else there is not head level in the iteration
     std::vector<int> head_inds = { std::max(i,j), std::max(k,l)} ;
+    
+    // toggle print statements 
     std::cout << "tail inds " << " " ; 
     for (const int a : tail_inds) { 
         std::cout << std::to_string(a) << " " ; 
@@ -209,35 +211,56 @@ double MatrixElementCalculator::two_body_coupling( const Configuration &bra, con
     }
     std::cout <<  std::endl ; 
     
-    std::cout << "S2a " << " " ; 
-    for (const int a : S2a) { 
-        std::cout << std::to_string(a) << " " ; 
-    }
-    std::cout << std::endl ; 
-    std::cout << "S2b " << " " ; 
-    for (const int a : S2b) { 
-        std::cout << std::to_string(a) << " " ; 
-    }
-    std::cout << std::endl ; 
-    
-    for (int a = 0 ; a < 2 ; a++ ){
-        int tail_ind = tail_inds[a]; 
-        int head_ind = tail_inds[a];    
-        int RorL = RorLs[a] ;
+    // non overlapping range 
+    // There is a better way to do this right - we should be able to do the one body fragment in this way
+    std::cout << "S2 loop " << std::endl ; 
+    matrix_element = 1.0 ; 
+    for (int ind : S2  ){
+        std::cout << "S2 val: " << std::to_string(ind) << std::endl;
+        int tail_ind ; 
+        int head_ind ; 
+        int RorL ; 
+        if ( (ind >= std::min(i,j)) && (ind <= std::max(i,j))) { 
+            tail_ind = tail_inds[0]; 
+            head_ind = tail_inds[0];    
+            RorL = RorLs[0] ;
+        } 
+        else if ( (ind >= std::min(k,l)) && (ind <= std::max(k,l))) { 
+            tail_ind = tail_inds[1]; 
+            head_ind = tail_inds[1];    
+            RorL = RorLs[1] ;
+        } 
 
-        for (const int ind : S2[a]) { 
-            const int d1 = bra.m_step_vec[ind-1]; 
-            const int d2 = ket.m_step_vec[ind-1];
-            const int b = ket_paldus(ind, 1) ; 
-            const int delta_b = ket_paldus( ind, 1) - bra_paldus(ind, 1); 
-            matrix_element *= one_body_fragment( ind, d1, d2, b, delta_b, tail_ind, head_ind, RorL) ;
-            if (matrix_element == 0.0) { 
-                return matrix_element ; 
-            }
+         const int d1 = bra.m_step_vec[ind-1]; 
+         const int d2 = ket.m_step_vec[ind-1];
+         const int b = ket_paldus(ind, 1) ; 
+         const int delta_b = ket_paldus( ind, 1) - bra_paldus(ind, 1); 
+         matrix_element *= one_body_fragment( ind, d1, d2, b, delta_b, tail_ind, head_ind, RorL) ;
+         if (matrix_element == 0.0) { 
+             return matrix_element ; 
         }
-    }    
+    } 
+    // testing S2 non overlapping range 
+    //for (size_t a = 0 ; a < 2 ; a++ ){
+    //    std::cout << "a val: " << std::to_string(a) << std::endl; 
+    //    int tail_ind = tail_inds[a]; 
+    //    int head_ind = tail_inds[a];    
+    //    int RorL = RorLs[a] ;
 
+    //    for (const int ind : S2[a]) {
+    //        std::cout << "S2 val: " << std::to_string(ind) << std::endl;  
+    //        const int d1 = bra.m_step_vec[ind-1]; 
+    //        const int d2 = ket.m_step_vec[ind-1];
+    //        const int b = ket_paldus(ind, 1) ; 
+    //        const int delta_b = ket_paldus( ind, 1) - bra_paldus(ind, 1); 
+    //        matrix_element *= one_body_fragment( ind, d1, d2, b, delta_b, tail_ind, head_ind, RorL) ;
+    //        if (matrix_element == 0.0) { 
+    //            return matrix_element ; 
+    //        }
+    //    }
+    //}    
 
+    // toggle print statements 
     std::cout << "S1 " << " " ; 
     for (const int a : S1) { 
         std::cout << std::to_string(a) << " " ; 
@@ -371,3 +394,113 @@ double MatrixElementCalculator::two_body_coupling( const Configuration &bra, con
     matrix_element  *= x0 + x1 ; 
     return matrix_element ; 
 }
+
+// this should be in a helper functions files I reckon - this doesn't need to be in a class ...
+//std::vector<int> MatrixElementCalculator::one_body_drt_step(int &ref_step, int &level, Eph &Epq) { 
+//    
+//    int p = (int) Epq.particle; 
+//    int q = (int) Epq.hole; 
+//
+//    std::string oclass ; 
+//    std::vector<int> allowed_steps  = {} ; 
+//    //
+//    if ( p < q ) { oclass = "R" ; } 
+//    else if ( p > q ) { oclass = "L" ; }
+//    else { allowed_steps = {ref_step} ; return allowed_steps ;  } 
+//    
+//    if (level==std::min(p,q)) { oclass = "t" + oclass ;}
+//    else if (level==std::max(p,q)) { oclass = "h" + oclass ;}
+//
+//    if ( (oclass=="tR") || (oclass="hL") ) { 
+//        if (ref_step==0) { allowed_steps = {1,2} ;}
+//        else if ( (ref_step==1) || (ref_step==2) ) { allowed_steps = {0} ;}
+//    }
+//    else if ( (oclass=="hR") || (oclass="tL") ) { 
+//        if ( ref_step==3) { allowed_steps={1,2} ;}
+//        else if ( (ref_step==1) || (ref_step==2) ) { allowed_steps = {0} ; }
+//    } 
+//    else if ( (oclass=="R") || (oclass="L") ) {
+//        if ( (ref_step==3) || (ref_step==0)) { allowed_steps={ref_step} ;}
+//        else if ( (ref_step==1) || (ref_step==2) ) { allowed_steps = {1,2} ; }
+//    } 
+//
+//    return allowed_steps;  
+//} 
+
+//std::vector<int> MatrixElementCalculator::two_body_drt_step(int &ref_step, int &level, Epphh &Epqrs) { 
+//    int i = (int) Epq.particle1; 
+//    int j = (int) Epq.hole1; 
+//    int k = (int) Epq.particle2; 
+//    int l = (int) Epq.hole2; 
+//
+//    std::vector<int> allowed_steps ; 
+//    std::vector<std::string> op_classes ; 
+//
+//    if (i < j ) { op_classes.push_back("R"); }
+//    else if ( i > j ) { op_classes.push_back("L"); }
+//    else { std::cerr "Error: two_body_drt_step does not deal with diagonal value, should've been caught earlier";}
+//    //
+//    if (k <  ) { op_classes.push_back("R"); }
+//    else if ( k > l ) { op_classes.push_back("L"); }
+//    else { std::cerr "Error: two_body_drt_step does not deal with diagonal value, should've been caught earlier";}
+//    // 
+//    std::vector<int> heads = { std::max(i,j), std::max(k,l)}; 
+//    std::vector<int> tails = { std::min(i,j), std::min(k,l)}; 
+//    //
+//    if (level==heads[0]) { op_classes[0] = "h" + op_classes[0] ; }
+//    if (level==heads[1]) { op_classes[1] = "h" + op_classes[1] ; }
+//    if (level==tails[0]) { op_classes[0] = "t" + op_classes[0] ; }
+//    if (level==tails[1]) { op_classes[1] = "t" + op_classes[1] ; }
+//
+//    // helper lambda to check if value is in vector
+//    auto contains = [&](const std::string& val) {
+//        return std::find(op_classes.begin(), op_classes.end(), val) != op_classes.end();
+//    };
+//
+//    if ( (op_classes == std::vector<std::string>{"hR","hR"})
+//      || (op_classes == std::vector<std::string>{"tL","tL"})
+//      || (contains("hR") && contains("tL")) ) {
+//        if (ref_step == 3) {
+//            allowed_steps = {0};
+//        }
+//    } else if ( (op_classes == std::vector<std::string>{"tR","tR"})
+//              || (op_classes == std::vector<std::string>{"hL","hL"})
+//              || (contains("tR") && contains("hL")) ) {
+//        if (ref_step == 0) {
+//            allowed_steps = {3};
+//        }
+//    } else if ( (contains("hR") && contains("hL"))
+//              || (contains("tR") && contains("tL"))
+//              || (contains("tR") && contains("hR"))
+//              || (contains("tL") && contains("hL"))
+//              || (op_classes == std::vector<std::string>{"R","R"})
+//              || (op_classes == std::vector<std::string>{"L","L"})
+//              || (contains("R") && contains("L")) ) {
+//        if (ref_step == 0 || ref_step == 3) {
+//            allowed_steps = {ref_step};
+//        } else if (ref_step == 1 || ref_step == 2) {
+//            allowed_steps = {1, 2};
+//        }
+//    } else if ( (contains("R") && contains("hR"))
+//              || (contains("L") && contains("tL"))
+//              || (contains("hR") && contains("L"))
+//              || (contains("R") && contains("tL")) ) {
+//        if (ref_step == 1 || ref_step == 2) {
+//            allowed_steps = {0};
+//        } else if (ref_step == 3) {
+//            allowed_steps = {1, 2};
+//        }
+//    } else if ( (contains("L") && contains("hL"))
+//              || (contains("R") && contains("tR"))
+//              || (contains("R") && contains("hL"))
+//              || (contains("tR") && contains("L")) ) {
+//        if (ref_step == 1 || ref_step == 2) {
+//            allowed_steps = {3};
+//        } else if (ref_step == 0) {
+//            allowed_steps = {1, 2};
+//        }
+//    } else {
+//        std::cerr << "Fell through Error: " << op_classes[0] << " " << op_classes[1] << std::endl;
+//    }
+//    return allowed_steps; 
+//} 
