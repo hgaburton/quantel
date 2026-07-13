@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <string>
+#include <tuple>
 #include <algorithm>
 #include <stdexcept> 
 
