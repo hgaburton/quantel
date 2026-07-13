@@ -589,12 +589,11 @@ class UHF(Wavefunction):
         HX[self.nrot[0]:] += np.linalg.multi_dot([Ca_beta.T, kernel_b, Ci_beta]).ravel()
         return HX
     
-    def mo_cubegen(self, a_idx, b_idx, fname=""): 
+    def mo_cubegen(self, idxs, fname=""): 
         """ Generate and store cube files for specified MOs
                 a_idx, b_idx : lists of indices of alpha and beta MOs
         """
-        spins = ["a","b"]
-        for i, spin in enumerate([self.alfa, self.beta]):    
-            for mo in [a_idx,b_idx][i]: 
-                cubegen.orbital(self.integrals.mol, fname+f".{spins[i]}.mo.{mo}.cube", spin.mo_coeff[:,mo])
+        for idx in idxs: 
+            cubegen.orbital(self.integrals.mol, fname+f".alfa.mo.{idx}.cube", self.mo_coeff[0,:,idx])
+            cubegen.orbital(self.integrals.mol, fname+f".beta.mo.{idx}.cube", self.mo_coeff[1,:,idx])
 
