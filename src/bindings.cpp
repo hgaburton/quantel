@@ -15,9 +15,11 @@
 #include "four_array.h"
 #include "two_array.h"
 #include "configuration.h"
-#include "csf_ci_space.h"
+#include "gUGA_ci_space.h"
 #include "matrix_element_calculator.h"
 #include "drt.h"
+
+#include <pybind11/stl.h>
 
 namespace py = pybind11;
 using namespace pybind11::literals;
@@ -103,13 +105,22 @@ PYBIND11_MODULE(_quantel, m) {
           .def("apply_excitation", py::overload_cast<Epphh &, bool, bool>(&Determinant::apply_excitation), "Apply double excitation operator")
           .def("__lt__", &Determinant::operator<, "Comparison operator");
 
-     py::class_<Eph>(m, "Eph").def(py::init<size_t,size_t>(), "Constructor with indices");
-     py::class_<Epphh>(m, "Epphh").def(py::init<size_t,size_t,size_t,size_t>(), "Constructor with indices");
+     py::class_<Eph>(m, "Eph")
+          .def(py::init<size_t,size_t>(), "Constructor with indices")
+          .def_readonly("particle", &Eph::particle, "returns particle") 
+          .def_readonly("hole", &Eph::hole, "returns hole"); 
+     py::class_<Epphh>(m, "Epphh")
+          .def(py::init<size_t,size_t,size_t,size_t>(), "Constructor with indices")
+          .def_readonly("particle1", &Epphh::particle1, "returns particle1") 
+          .def_readonly("hole1", &Epphh::hole1, "returns hole1") 
+          .def_readonly("particle2", &Epphh::particle2, "returns particle2") 
+          .def_readonly("hole2", &Epphh::hole2, "returns hole2") ;
 
      py::class_<Configuration>(m, "Configuration")
           .def(py::init<std::vector<uint8_t>>(), "Constructor from step vectors")
           .def("__lt__", &Configuration::operator<,"Comparison operator" )
           .def("get_vec", &Configuration::get_vec, " get step vector")
+          .def("config_str", &Configuration::config_str, " get string")
           .def("generate_paldus", [](Configuration &self){
                size_t nrows = self.m_nmo + 1; 
                size_t ncols = 3; 
@@ -119,20 +130,12 @@ PYBIND11_MODULE(_quantel, m) {
                std::vector<double> v_std(v.begin(), v.end()); 
                return vec_to_np_array(nrows, ncols, v_std.data());
           });
-          //.def("construct_drt", [](Configuration &self){
-          //     arma::imat drt = self.construct_drt();
-          //     size_t nrows = drt.n_rows; 
-          //     size_t ncols = drt.n_cols; 
-          //     arma::mat tmp = arma::conv_to<arma::mat>::from(drt.t());
-          //     arma::vec v = arma::vectorise(tmp); 
-          //     std::vector<double> v_std(v.begin(), v.end()); 
-          //     return vec_to_np_array(nrows, ncols, v_std.data());
-          //});
 
      py::class_<DRT>(m, "DRT")
           .def(py::init<size_t,size_t,double>(), "Constructor from nmo, nelec, totspin")
-          .def("apply_excitation", py::overload_cast<Configuration&, Eph&>(&DRT::apply_excitation), "Apply single excitation operator")
-          .def("apply_excitation", py::overload_cast<Configuration&,Epphh&>(&DRT::apply_excitation), "Apply double excitation operator")
+          .def("apply_excitation", py::overload_cast<const Configuration&, Eph&>(&DRT::apply_excitation), "Apply single excitation operator")
+          .def("apply_excitation", py::overload_cast<const Configuration&,Epphh&>(&DRT::apply_excitation), "Apply double excitation operator")
+          .def("build_fci_configs", &DRT::build_fci_configs, "returns the FCI configs") 
           .def("get_drt", [](DRT &self){
                size_t nrows = self.m_drt.n_rows; 
                size_t ncols = self.m_drt.n_cols; 
@@ -141,18 +144,64 @@ PYBIND11_MODULE(_quantel, m) {
                std::vector<double> v_std(v.begin(), v.end()); 
                return vec_to_np_array(nrows, ncols, v_std.data());
           });
-
-
      
      py::class_<MatrixElementCalculator>(m, "MatrixElementCalculator")
           .def(py::init<>(), "Default Constructor")
           .def("one_body_coupling", &MatrixElementCalculator::one_body_coupling, " Compute one body matrix element" ) 
-          .def("two_body_coupling", &MatrixElementCalculator::two_body_coupling, " Compute two body matrix element" ); 
+          .def("two_body_coupling", &MatrixElementCalculator::two_body_coupling, " Compute two body matrix element" ) 
+          .def("resolve_two_body_matrix_element", &MatrixElementCalculator::resolve_two_body_matrix_element, " Compute two body matrix element" ); 
           
-     py::class_<CSF_CIspace>(m, "CSF_CIspace")
-          .def(py::init<size_t, size_t, double>(), "Constructor")
-          .def_readonly("m_drtobj", &CSF_CIspace::m_drtobj, "returns the DRT object")  // expose m_drt
-          .def("get_fci_basis", [](CSF_CIspace &self ) { 
+     py::class_<GUGA_CIspace>(m, "GUGA_CIspace")
+          .def(py::init<MOintegrals &, size_t, size_t, double>(), "Constructor")
+          .def("initialize", [](GUGA_CIspace &self, std::string citype, std::vector<std::string> configlist)
+               {
+                    self.initialize(citype, configlist);
+               },py::arg("citype"), py::arg("detlist") = std::vector<std::string>(),
+               "Initialize the CI space")
+          .def("map1_couplings", &GUGA_CIspace::map1_couplings, "Print map1")
+          .def("map2_couplings", &GUGA_CIspace::map2_couplings, "Print map2")
+          .def("print_map_couplings", &GUGA_CIspace::print_map_couplings, "Print off diagonals")
+          .def("print", &GUGA_CIspace::print, "Print the CI space")
+          .def("print_vector", &GUGA_CIspace::print_vector, "Print a CI vector")
+          .def("nconfigs", &GUGA_CIspace::nconfigs, "Get the number of configs")
+          .def("get_config_index", &GUGA_CIspace::get_config_index, "Get the index of a configuration")
+          .def("get_config_list", &GUGA_CIspace::get_config_list, "Get the list of configurations")
+          .def("H_on_vec", [](GUGA_CIspace &ci, py::array_t<double> &V)
+               {
+                    size_t nconfigs = ci.nconfigs();
+                    auto Vbuf = V.request();
+                    std::vector<double> v_V((double *) Vbuf.ptr, (double *) Vbuf.ptr + Vbuf.size);
+                    std::vector<double> sigma(nconfigs, 0.0);
+                    ci.H_on_vec(v_V, sigma);
+                    return vec_to_np_array(nconfigs, sigma.data());
+               },
+               "Compute the one-electron part of the sigma vector? Err think it does all of it")
+          .def("build_Hd", [](GUGA_CIspace &ci) 
+               {
+                    size_t nconfigs = ci.nconfigs();
+                    std::vector<double> Hdiag(nconfigs,0.0);
+                    ci.build_Hd(Hdiag);
+                    return vec_to_np_array(nconfigs,Hdiag.data());
+               },
+               "Build the Hamiltonian matrix diagonal")
+          .def("resolve_build_Hd", [](GUGA_CIspace &ci) 
+               {
+                    size_t nconfigs = ci.nconfigs();
+                    std::vector<double> Hdiag(nconfigs,0.0);
+                    ci.resolve_build_Hd(Hdiag);
+                    return vec_to_np_array(nconfigs,Hdiag.data());
+               },
+               "Build the Hamiltonian matrix diagonal via resolve")
+          .def("build_Hmat", [](GUGA_CIspace &ci) 
+               {
+                    size_t nconfigs = ci.nconfigs();
+                    std::vector<double> Hmat(nconfigs*nconfigs,0.0);
+                    ci.build_Hmat(Hmat);
+                    return vec_to_np_array(nconfigs,nconfigs,Hmat.data());
+               },
+               "Build the Hamiltonian matrix")
+          .def_readonly("m_drtobj", &GUGA_CIspace::m_drtobj, "returns the DRT object")  
+          .def("get_fci_basis", [](GUGA_CIspace &self ) { 
                self.build_fci_configs();
                return self.get_basis(); 
           }); 

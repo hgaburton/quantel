@@ -9,7 +9,7 @@ namespace {
     double A(double b, double x, double y) { return std::sqrt((b+x)/(b+y)); }
     double C(double b, double x)           { return std::sqrt((b+x-1.0)*(b+x+1.0))/(b+x); }
     double B(double b, double p, double q) { return std::sqrt(2.0/((b+p)*(b+q))); }
-    double D(double b, double p)           { return std::sqrt(((b+p-1.0)*(2.0*p+2.0))/((b+p)*(b+p+1.0))); }
+    double D(double b, double p)           { return std::sqrt(((b+p-1.0)*(b+p+2.0))/((b+p)*(b+p+1.0))); }
 }
 
 OBTableOne   ob_table_one;
@@ -72,7 +72,7 @@ void init_tables() {
     ob_table_two[0][0][1][0] = [](double)   { return 1.0; };
     ob_table_two[1][1][1][0] = [](double b) { return C(b, 1); };
     ob_table_two[1][2][1][0] = [](double b) { return 1.0/(b+1.0); };
-    ob_table_two[2][2][1][0] = [](double)   { return -1.0; };
+    ob_table_two[2][2][1][0] = [](double)   { return -1; };
     ob_table_two[3][3][1][0] = [](double)   { return -1.0; };
     // L, deltab=+1
     ob_table_two[0][0][1][1] = [](double)   { return 1.0; };
@@ -96,7 +96,7 @@ void init_tables() {
     tb_table_one[2][1][2][1] = [](double)   { return 1.0; };
     tb_table_one[2][2][2][1] = [](double b) { return t*A(b, 3, 1); };
     // tRtL, x=0
-    tb_table_one[1][1][3][0] = [](double)   { return t; };
+    tb_table_one[1][1][3][0] = [](double)   { return -t; };
     tb_table_one[2][2][3][0] = [](double)   { return -t; };
     tb_table_one[3][3][3][0] = [](double)   { return -2.0*t; };
     // tRtL, x=1
@@ -124,8 +124,8 @@ void init_tables() {
     tb_table_two[0][3][2][0] = [](double b) { return A(b, 2, 1); };
     tb_table_two[0][3][2][1] = [](double b) { return A(b, 0, 1); };
     // tRhL
-    tb_table_two[0][3][3][0] = [](double b) { return A(b, 1, 1); };
-    tb_table_two[0][3][3][1] = [](double b) { return A(b, 1, 0); };
+    tb_table_two[3][0][3][0] = [](double b) { return A(b, 1, 2); };
+    tb_table_two[3][0][3][1] = [](double b) { return A(b, 1, 0); };
 
     // ==================== tb_table_three ====================
     // RhR, deltab=-1, x=0
@@ -136,6 +136,7 @@ void init_tables() {
     tb_table_three[0][2][0][0][1] = [](double b) { return t*A(b, 3, 2); };
     tb_table_three[1][3][0][0][1] = [](double b) { return -t*A(b, 0, 2); };
     tb_table_three[2][3][0][0][1] = [](double b) { return A(b, 3, 2); };
+    //sign flipped (where necessary) 
     // hRR, deltab=-1, x=0
     tb_table_three[0][2][1][0][0] = [](double b) { return t*A(b, 1, 2); };
     tb_table_three[1][3][1][0][0] = [](double)   { return -t; };
@@ -144,6 +145,8 @@ void init_tables() {
     tb_table_three[0][2][1][0][1] = [](double b) { return -t*A(b, 3, 2); };
     tb_table_three[1][3][1][0][1] = [](double b) { return t*A(b, 0, 2); };
     tb_table_three[2][3][1][0][1] = [](double b) { return -A(b, 3, 2); };
+    //
+
     // RhR, deltab=+1, x=0
     tb_table_three[0][1][0][1][0] = [](double b) { return t*A(b, 1, 0); };
     tb_table_three[2][3][0][1][0] = [](double)   { return -t; };
@@ -152,6 +155,7 @@ void init_tables() {
     tb_table_three[0][2][0][1][1] = [](double)   { return 1.0; };
     tb_table_three[1][3][0][1][1] = [](double b) { return A(b, -1, 0); };
     tb_table_three[2][3][0][1][1] = [](double b) { return t*A(b, 2, 0); };
+    //sign flipped (where necessary) 
     // hRR, deltab=+1, x=0
     tb_table_three[0][1][1][1][0] = [](double b) { return t*A(b, 1, 0); };
     tb_table_three[2][3][1][1][0] = [](double)   { return -t; };
@@ -160,51 +164,63 @@ void init_tables() {
     tb_table_three[0][2][1][1][1] = [](double)   { return -1.0; };
     tb_table_three[1][3][1][1][1] = [](double b) { return -A(b, -1, 0); };
     tb_table_three[2][3][1][1][1] = [](double b) { return -t*A(b, 2, 0); };
+
+
     // hLL, deltab=-1, x=0
     tb_table_three[1][0][2][0][0] = [](double b) { return t*A(b, 2, 1); };
     tb_table_three[3][2][2][0][0] = [](double)   { return -t; };
-    // LhL, deltab=-1, x=0
-    tb_table_three[1][0][3][0][0] = [](double b) { return t*A(b, 2, 1); };
-    tb_table_three[3][2][3][0][0] = [](double)   { return -t; };
     // hLL, deltab=-1, x=1
     tb_table_three[1][0][2][0][1] = [](double b) { return -t*A(b, 0, 1); };
     tb_table_three[2][0][2][0][1] = [](double)   { return 1.0; };
     tb_table_three[3][1][2][0][1] = [](double b) { return A(b, 0, 1); };
     tb_table_three[3][2][2][0][1] = [](double b) { return t*A(b, 3, 1); };
+    // sign flipped (where necessary)
+    // LhL, deltab=-1, x=0
+    tb_table_three[1][0][3][0][0] = [](double b) { return t*A(b, 2, 1); };
+    tb_table_three[3][2][3][0][0] = [](double)   { return -t; };
     // LhL, deltab=-1, x=1
     tb_table_three[1][0][3][0][1] = [](double b) { return t*A(b, 0, 1); };
     tb_table_three[2][0][3][0][1] = [](double)   { return -1.0; };
     tb_table_three[3][1][3][0][1] = [](double b) { return -A(b, 0, 1); };
     tb_table_three[3][2][3][0][1] = [](double b) { return -t*A(b, 3, 1); };
+
     // hLL, deltab=+1, x=0
     tb_table_three[2][0][2][1][0] = [](double b) { return t*A(b, 0, 1); };
     tb_table_three[3][1][2][1][0] = [](double)   { return -t; };
-    // LhL, deltab=+1, x=0
-    tb_table_three[2][0][3][1][0] = [](double b) { return t*A(b, 0, 1); };
-    tb_table_three[3][1][3][1][0] = [](double)   { return -t; };
     // hLL, deltab=+1, x=1
     tb_table_three[1][0][2][1][1] = [](double)   { return 1.0; };
     tb_table_three[2][0][2][1][1] = [](double b) { return t*A(b, 2, 1); };
     tb_table_three[3][1][2][1][1] = [](double b) { return -t*A(b, -1, 1); };
     tb_table_three[3][2][2][1][1] = [](double b) { return A(b, 2, 1); };
+    // sign flipped (where necessary)
+    // LhL, deltab=+1, x=0
+    tb_table_three[2][0][3][1][0] = [](double b) { return t*A(b, 0, 1); };
+    tb_table_three[3][1][3][1][0] = [](double)   { return -t; };
     // LhL, deltab=+1, x=1
     tb_table_three[1][0][3][1][1] = [](double)   { return -1.0; };
     tb_table_three[2][0][3][1][1] = [](double b) { return -t*A(b, 2, 1); };
     tb_table_three[3][1][3][1][1] = [](double b) { return t*A(b, -1, 1); };
     tb_table_three[3][2][3][1][1] = [](double b) { return -A(b, 2, 1); };
-    // hRL, deltab=-1: x=0 entries were overwritten by x=1 in the source, both land at [...,4,0,0]
-    tb_table_three[0][1][4][0][0] = [](double)   { return 1.0; };
-    tb_table_three[0][2][4][0][0] = [](double b) { return t*A(b, 3, 1); };
-    tb_table_three[1][3][4][0][0] = [](double b) { return t*A(b, 0, 1); };
-    tb_table_three[2][3][4][0][0] = [](double b) { return -A(b, 2, 1); };
+    
+    // Mixed operators
+
+    // hRL, deltab=-1, x=0 
+    tb_table_three[0][2][4][0][0] = [](double b) { return t; };
+    tb_table_three[1][3][4][0][0] = [](double b) { return t*A(b, 2, 1); };
+    // hRL, deltab=-1, x=1
+    tb_table_three[0][1][4][0][1] = [](double)   { return 1.0; };
+    tb_table_three[0][2][4][0][1] = [](double b) { return t*A(b, 3, 1); };
+    tb_table_three[1][3][4][0][1] = [](double b) { return t*A(b, 0, 1); };
+    tb_table_three[2][3][4][0][1] = [](double b) { return -A(b, 2, 1); };
     // hRL, deltab=+1, x=0
-    tb_table_three[0][1][4][1][0] = [](double)   { return t; };
+    tb_table_three[0][1][4][1][0] = [](double b) { return t; };
     tb_table_three[2][3][4][1][0] = [](double b) { return t*A(b, 0, 1); };
     // hRL, deltab=+1, x=1
     tb_table_three[0][1][4][1][1] = [](double b) { return -t*A(b, -1, 1); };
     tb_table_three[0][2][4][1][1] = [](double)   { return 1.0; };
     tb_table_three[1][3][4][1][1] = [](double b) { return -A(b, 0, 1); };
     tb_table_three[2][3][4][1][1] = [](double b) { return -t*A(b, 2, 1); };
+
     // RhL, deltab=-1, x=0
     tb_table_three[1][0][5][0][0] = [](double)   { return t; };
     tb_table_three[3][2][5][0][0] = [](double b) { return t*A(b, 1, 2); };
@@ -227,13 +243,13 @@ void init_tables() {
     tb_table_four[1][0][0][0][1] = [](double)   { return 1.0; };
     tb_table_four[3][2][0][0][1] = [](double b) { return A(b, 1, 2); };
     // RtR, deltab=-2, x=1
-    tb_table_four[1][0][1][0][1] = [](double)   { return 1.0; };
+    tb_table_four[1][0][1][0][1] = [](double)   { return -1.0; };
     tb_table_four[3][2][1][0][1] = [](double b) { return -A(b, 1, 2); };
     // tRR, deltab=0, x=0
-    tb_table_four[0][1][0][1][0] = [](double b) { return t*A(b, 0, 1); };
-    tb_table_four[0][2][0][1][0] = [](double b) { return t*A(b, 2, 1); };
-    tb_table_four[1][3][0][1][0] = [](double)   { return -t; };
-    tb_table_four[2][3][0][1][0] = [](double)   { return -t; };
+    tb_table_four[1][0][0][1][0] = [](double b) { return t*A(b, 0, 1); };
+    tb_table_four[2][0][0][1][0] = [](double b) { return t*A(b, 2, 1); };
+    tb_table_four[3][1][0][1][0] = [](double)   { return -t; };
+    tb_table_four[3][2][0][1][0] = [](double)   { return -t; };
     // RtR, deltab=0, x=0
     tb_table_four[1][0][1][1][0] = [](double b) { return t*A(b, 0, 1); };
     tb_table_four[2][0][1][1][0] = [](double b) { return t*A(b, 2, 1); };

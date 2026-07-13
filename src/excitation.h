@@ -2,11 +2,16 @@
 #define EXCITATION_H
 
 #include <cstddef>
+#include <algorithm> 
 
 /// Single particle-hole excitation
 struct Eph {
     size_t particle; // Particle index
     size_t hole; // Hole index
+
+    // Adding this in for CSF code  
+    size_t head = std::max(particle, hole) ; 
+    size_t tail = std::min(particle, hole) ; 
 
     inline bool operator< (const Eph &rhs) const {
         if(particle < rhs.particle) return true;
@@ -22,6 +27,7 @@ struct Eph {
     inline bool operator== (const Eph &rhs) const {
         return (particle == rhs.particle) && (hole == rhs.hole);
     }
+
 };
 
 /// Double particle-hole excitation
@@ -31,6 +37,10 @@ struct Epphh {
     size_t hole1; // First hole index
     size_t hole2; // Second hole index
 
+    // Adding this in for CSF code  
+    size_t head = std::max({particle1, hole1, particle2, hole2}) ; 
+    size_t tail = std::min({particle1, hole1, particle2, hole2}) ; 
+    
     inline bool operator< (const Epphh &rhs) const {
         if(particle1 < rhs.particle1) return true;
         if(particle1 > rhs.particle1) return false;

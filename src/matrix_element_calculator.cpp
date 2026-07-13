@@ -109,7 +109,8 @@ double MatrixElementCalculator::one_body_fragment(const int &level, const int &d
     return factor;
 }
 
-double MatrixElementCalculator::two_body_coupling( const Configuration &bra, const Configuration &ket, const Epphh &Epphh ) const { 
+
+double MatrixElementCalculator::two_body_coupling( const Configuration &bra, const Configuration &ket, const Epphh &Epqrs ) const { 
     // Check same number of electrons, orbitals and S 
     if ( (bra.m_nmo != ket.m_nmo) || (bra.m_nelec != ket.m_nelec) || (bra.m_totspin != ket.m_totspin)  ) { 
         std::cout << "Different N, n or S values" << std::endl ; 
@@ -120,42 +121,65 @@ double MatrixElementCalculator::two_body_coupling( const Configuration &bra, con
     const arma::imat ket_paldus = ket.generate_paldus() ;
 
     // Make sure both sets of indices are in range 
-    int i = (int) Epphh.particle1 ; 
-    int j = (int) Epphh.hole1 ; 
-    int k = (int) Epphh.particle2 ; 
-    int l = (int) Epphh.hole2 ; 
+    int i = (int) Epqrs.particle1 ; 
+    int j = (int) Epqrs.hole1 ; 
+    int k = (int) Epqrs.particle2 ; 
+    int l = (int) Epqrs.hole2 ;
+    
+    // Print
+    //std::cout << "-------------" << std::endl ;  
+    //std::cout << "e ( " << std::to_string(i) << ", " << std::to_string(k) << ", " << ", " << std::to_string(j) << ", " << std::to_string(l) << " )" << std::endl ; 
+
     assert( std::max({i,j,k,l}) <= bra.m_nmo ) ;
     assert( std::min({i,j,k,l}) > 0 ) ; 
+    
     // Check path outside loop 
-    for (int a = 0 ; a < nmo ; a++ ) {
-        // iterate over the full loop  
-        if ( ( a >= std::max({i,j,k}) ) || ( a < std::min({i,j,k}) )  ) {
-            // if a is outside the "true_loop" 
-            if (!arma::all( bra_paldus.row(a) == ket_paldus.row(a) ) ) { 
+    std::vector<int> tail_inds = {std::min(i,j),std::min(k,l)} ;
+    std::vector<int> head_inds = {std::max(i,j),std::max(k,l)} ;
+    for (int a = 1 ; a <= nmo ; a ++ ) { 
+        if (!((( a < head_inds[0]) && (a >= tail_inds[0])) || (( a < head_inds[1]) && (a >= tail_inds[1])))) { 
+            if (!arma::all( bra_paldus.row(a) == ket_paldus.row(a) ) ) {
+                //std::cout << "No overlap outside loop! " << std::endl ;  
                 return 0.0 ; 
             }
-        } 
+        }
     }
     
     // Deal with possible number operators 
     double matrix_element = 0.0 ;
     if ( i==j || k==l ){  
-        Eph E1={ (size_t) i,(size_t) j}; 
-        Eph E2={(size_t)k, (size_t)l}; 
         if (i==j && k==l) {         
-        matrix_element += one_body_coupling(bra, ket, E1 )*one_body_coupling(bra, ket, E2);
+            matrix_element += one_body_coupling(bra, ket, {(size_t) i , (size_t) i} )*one_body_coupling(bra, ket, {(size_t) k , (size_t) k});
+            //std::cout << "Diag 1" << std::endl ; 
         }
         else if (i==j) {  
-        matrix_element += one_body_coupling(bra, bra, E1)*one_body_coupling(bra, ket, E2);
+            matrix_element += one_body_coupling(bra, bra, {(size_t) i , (size_t) i} )*one_body_coupling(bra, ket, {(size_t) k , (size_t) l});
+            //std::cout << "Diag 2" << std::endl ; 
         }
         else if (k==l) {  
-        matrix_element += one_body_coupling(bra, ket, E1)*one_body_coupling(ket, ket, E2);
+            matrix_element += one_body_coupling(bra, ket, {(size_t) i , (size_t) j} )*one_body_coupling(ket, ket, {(size_t) k , (size_t) k});
+            //std::cout << "Diag 3" << std::endl ; 
         }
         if (j == k) {
-            Eph E3={(size_t)i,(size_t)l};              
-            matrix_element -= one_body_coupling(bra, ket, E3);
+            matrix_element -= one_body_coupling(bra, ket, {(size_t) i , (size_t) l} ) ;
+            //std::cout << "Diag 4" << std::endl ; 
         }
         return matrix_element ; 
+    }
+    
+
+    // S1 and S2 loops
+    std::vector<int> S1 ;
+    std::vector<int> S2 ;
+    // Nope this is not true since we need to make sure that these are in the correct loops
+    for (int a = std::min({i,j,k,l}); a <= std::max({i,j,k,l}) ; a++){ 
+        // Overlapping range
+        if (( (a <= head_inds[1]) &&  (a >= tail_inds[1]) ) && ( (a <= head_inds[0]) &&  (a >= tail_inds[0]) ) ){ 
+            S1.push_back(a);
+        }
+        else if (( (a <= head_inds[1]) &&  (a >= tail_inds[1]) ) || ( (a <= head_inds[0]) &&  (a >= tail_inds[0]) ) ){ 
+            S2.push_back(a);
+        } 
     }
     
     // Choose if R, L - there shouldnt be any D values left
@@ -165,138 +189,77 @@ double MatrixElementCalculator::two_body_coupling( const Configuration &bra, con
     else if (i - j < 0) {ab_classes[0] = "R"; RorLs[0] = 0 ;}
     if (k - l > 0) {ab_classes[1] = "L"; RorLs[1] = 1 ;}
     else if (k - l < 0) {ab_classes[1] = "R"; RorLs[1] = 0 ;}
- 
-    std::set<int> S1;
-    std::set<int> S2;
-    //std::set<int> S2a;
-    //std::set<int> S2b; 
-    // I think the head should be included in this iteration... 
-    for (int a = std::min({i,j,k,l}); a <= std::max({i,j,k,l}) ; a++){ 
-        // Overlapping range
-        if (( (a <= std::max(k,l)) &&  (a >= std::min(k,l)) ) && ( (a <= std::max(i,j)) &&  (a >= std::min(i,j)) ) ){ 
-            S1.insert(a);
-        }
-        else { 
-            // Since S2 is the union minus S1 we dont need additional conditions...  
-            S2.insert(a);
-        } 
-        //// Non-overlapping range 
-        //if ( (a > std::max(k,l)) || (a < std::min(k,l)) ) { 
-        //    S2a.insert(a);
-        //}
-        //else if ( (a > std::max(i,j)) ||  (a < std::min(i,j)) ) { 
-        //    S2b.insert(a);
-        //}
-    }
-    // Construct overlapping and non-overlapping ranges 
-    //std::set_union(seta.begin(), seta.end(), setb.begin(), setb.end(), std::inserter(Sunion), Sunion.begin()); 
-    //std::set_intersection(seta.begin(), seta.end(), setb.begin(), setb.end(), std::inserter(S1), S1.begin());
-    //std::set_difference(Sunion.begin(), Sunion.end(), S1.begin(), S1.end(), std::inserter(S2), S2.begin() ) ;  
-     
-    // could we just add these
-    //std::vector<std::set<int>> S2 = { S2a, S2b} ;
-    std::vector<int> tail_inds = { std::min(i,j), std::min(k,l)} ;
-    // head should be included else there is not head level in the iteration
-    std::vector<int> head_inds = { std::max(i,j), std::max(k,l)} ;
     
+
     // toggle print statements 
-    std::cout << "tail inds " << " " ; 
-    for (const int a : tail_inds) { 
-        std::cout << std::to_string(a) << " " ; 
-    }
-    std::cout <<  std::endl ; 
-    std::cout << "head inds " << " " ; 
-    for (const int a : head_inds) { 
-        std::cout << std::to_string(a) << " " ; 
-    }
-    std::cout <<  std::endl ; 
-    
-    // non overlapping range 
-    // There is a better way to do this right - we should be able to do the one body fragment in this way
-    std::cout << "S2 loop " << std::endl ; 
+    //std::cout << "tail inds " << " " ; 
+    //for (const int a : tail_inds) { 
+    //    std::cout << std::to_string(a) << " " ; 
+    //}
+    //std::cout <<  std::endl ; 
+    //std::cout << "head inds " << " " ; 
+    //for (const int a : head_inds) { 
+    //    std::cout << std::to_string(a) << " " ; 
+    //}
+    //std::cout <<  std::endl ; 
+    //non overlapping range 
+    //There is a better way to do this right - we should be able to do the one body fragment in this way
+    //std::cout << "S2 loop " << std::endl ; 
     matrix_element = 1.0 ; 
     for (int ind : S2  ){
-        std::cout << "S2 val: " << std::to_string(ind) << std::endl;
+        //std::cout << "S2 val: " << std::to_string(ind) << std::endl;
         int tail_ind ; 
         int head_ind ; 
         int RorL ; 
+        
+        // identitfing which loop it belongs to 
         if ( (ind >= std::min(i,j)) && (ind <= std::max(i,j))) { 
             tail_ind = tail_inds[0]; 
-            head_ind = tail_inds[0];    
+            head_ind = head_inds[0];    
             RorL = RorLs[0] ;
-        } 
+        }
         else if ( (ind >= std::min(k,l)) && (ind <= std::max(k,l))) { 
             tail_ind = tail_inds[1]; 
-            head_ind = tail_inds[1];    
+            head_ind = head_inds[1];    
             RorL = RorLs[1] ;
         } 
+        //std::cout << "inl: tail,head,RorL " << std::to_string(tail_ind) << " " << std::to_string(head_ind) << " " <<  std::to_string(RorL) << std::endl ; 
 
          const int d1 = bra.m_step_vec[ind-1]; 
          const int d2 = ket.m_step_vec[ind-1];
          const int b = ket_paldus(ind, 1) ; 
          const int delta_b = ket_paldus( ind, 1) - bra_paldus(ind, 1); 
-         matrix_element *= one_body_fragment( ind, d1, d2, b, delta_b, tail_ind, head_ind, RorL) ;
+         //std::cout << " d1, d2, b, deltab " << std::to_string(d1) << " " << std::to_string(d2) << " " << std::to_string(b)<< " " << std::to_string(delta_b) << std::endl; 
+         matrix_element *= one_body_fragment( ind, d1, d2, b, delta_b, head_ind, tail_ind, RorL) ;
+         //std::cout << "Matrix element: " << std::to_string(matrix_element) << std::endl ; 
          if (matrix_element == 0.0) { 
              return matrix_element ; 
         }
     } 
-    // testing S2 non overlapping range 
-    //for (size_t a = 0 ; a < 2 ; a++ ){
-    //    std::cout << "a val: " << std::to_string(a) << std::endl; 
-    //    int tail_ind = tail_inds[a]; 
-    //    int head_ind = tail_inds[a];    
-    //    int RorL = RorLs[a] ;
-
-    //    for (const int ind : S2[a]) {
-    //        std::cout << "S2 val: " << std::to_string(ind) << std::endl;  
-    //        const int d1 = bra.m_step_vec[ind-1]; 
-    //        const int d2 = ket.m_step_vec[ind-1];
-    //        const int b = ket_paldus(ind, 1) ; 
-    //        const int delta_b = ket_paldus( ind, 1) - bra_paldus(ind, 1); 
-    //        matrix_element *= one_body_fragment( ind, d1, d2, b, delta_b, tail_ind, head_ind, RorL) ;
-    //        if (matrix_element == 0.0) { 
-    //            return matrix_element ; 
-    //        }
-    //    }
-    //}    
+   
+    if (S1.size()==0) {
+        return matrix_element ; 
+    }
 
     // toggle print statements 
-    std::cout << "S1 " << " " ; 
-    for (const int a : S1) { 
-        std::cout << std::to_string(a) << " " ; 
-    }
-    std::cout << std::endl ; 
-    
-
+    //std::cout << "S1 " ;
+    //for (auto a : S1 ) { 
+    //    std::cout << std::to_string(a) << " " ; 
+    //}  
+    //std::cout << " end " << std::endl; 
     // overlapping range 
-    double x0 = 1.0 ; 
-    double x1 = 1.0 ; 
-    for ( const int ind : S1 ) { 
+
+    if (S1.size()==1) { 
         std::vector<std::string> operators(2); 
-        operators[0] = HeadsOrTails(ind, i, j) + ab_classes[0]; 
-        operators[1] = HeadsOrTails(ind, k, l) + ab_classes[1];
-        const int d1 = bra.m_step_vec[ind-1]; 
-        const int d2 = ket.m_step_vec[ind-1];
-        const int b = ket_paldus(ind, 1) ; 
-        const int delta_b = ket_paldus( ind, 1) - bra_paldus( ind, 1); 
-        if ((operators[0] == "hR" && operators[1] == "hR") || (operators[0] == "tL" && operators[1] == "tL")) {
-            
-            x0 *= tb_table_one[d1][d2][0][0](b);
-            x1 *= tb_table_one[d1][d2][0][1](b);
-        }
-        else if ((operators[0] == "tR" && operators[1] == "tR") || (operators[0] == "hL" && operators[1] == "hL")) {
-            x0 *= tb_table_one[d1][d2][1][0](b);
-            x1 *= tb_table_one[d1][d2][1][1](b);
-        }
-        else if (contains(operators, "hR") && contains(operators, "hL")) {
-            x0 *= tb_table_one[d1][d2][2][0](b);
-            x1 *= tb_table_one[d1][d2][2][1](b);
-        }
-        else if (contains(operators, "tR") && contains(operators, "tL")) {
-            x0 *= tb_table_one[d1][d2][3][0](b);
-            x1 *= tb_table_one[d1][d2][3][1](b);
-        }
-        else if (contains(operators, "tR") && contains(operators, "hR")) {
+        operators[0] = HeadsOrTails(S1[0], i, j) + ab_classes[0]; 
+        operators[1] = HeadsOrTails(S1[0], k, l) + ab_classes[1];
+        const int d1 = bra.m_step_vec[S1[0]-1]; 
+        const int d2 = ket.m_step_vec[S1[0]-1];
+        const int b = ket_paldus(S1[0], 1) ; 
+        const int delta_b = ket_paldus( S1[0], 1) - bra_paldus( S1[0], 1); 
+
+        // Check if its any of the loop ending operators 
+        if (contains(operators, "tR") && contains(operators, "hR")) {
             if (std::abs(delta_b) != 1) { return 0.0; }
             matrix_element *= tb_table_two[d1][d2][0][get_Dind(delta_b)](b);
         }
@@ -312,195 +275,171 @@ double MatrixElementCalculator::two_body_coupling( const Configuration &bra, con
             if (std::abs(delta_b) != 1) { return 0.0; }
             matrix_element *= tb_table_two[d1][d2][3][get_Dind(delta_b)](b);
         }
-        else if (operators[0] == "R" && operators[1] == "hR") {
-            if (std::abs(delta_b) != 1) { return 0.0; }
-            x0 *= tb_table_three[d1][d2][0][get_Dind(delta_b)][0](b);
-            x1 *= tb_table_three[d1][d2][0][get_Dind(delta_b)][1](b);
-        }
-        else if (operators[0] == "hR" && operators[1] == "R") {
-            if (std::abs(delta_b) != 1) { return 0.0; }
-            x0 *= tb_table_three[d1][d2][1][get_Dind(delta_b)][0](b);
-            x1 *= tb_table_three[d1][d2][1][get_Dind(delta_b)][1](b);
-        }
-        else if (operators[0] == "hL" && operators[1] == "L") {
-            if (std::abs(delta_b) != 1) { return 0.0; }
-            x0 *= tb_table_three[d1][d2][2][get_Dind(delta_b)][0](b);
-            x1 *= tb_table_three[d1][d2][2][get_Dind(delta_b)][1](b);
-        }
-        else if (operators[0] == "L" && operators[1] == "hL") {
-            if (std::abs(delta_b) != 1) { return 0.0; }
-            x0 *= tb_table_three[d1][d2][3][get_Dind(delta_b)][0](b);
-            x1 *= tb_table_three[d1][d2][3][get_Dind(delta_b)][1](b);
-        }
-        else if (contains(operators, "hR") && contains(operators, "L")) {
-            if (std::abs(delta_b) != 1) { return 0.0; }
-            x0 *= tb_table_three[d1][d2][4][get_Dind(delta_b)][0](b);
-            x1 *= tb_table_three[d1][d2][4][get_Dind(delta_b)][1](b);
-        }
-        else if (contains(operators, "R") && contains(operators, "hL")) {
-            if (std::abs(delta_b) != 1) { return 0.0; }
-            x0 *= tb_table_three[d1][d2][5][get_Dind(delta_b)][0](b);
-            x1 *= tb_table_three[d1][d2][5][get_Dind(delta_b)][1](b);
-        }
-        else if (operators[0] == "tR" && operators[1] == "R") {
-            if (std::abs(delta_b) != 2 && std::abs(delta_b) != 0) { return 0.0; }
-            x0 *= tb_table_four[d1][d2][0][get_Dind(delta_b)][0](b);
-            x1 *= tb_table_four[d1][d2][0][get_Dind(delta_b)][1](b);
-        }
-        else if (operators[0] == "R" && operators[1] == "tR") {
-            if (std::abs(delta_b) != 2 && std::abs(delta_b) != 0) { return 0.0; }
-            x0 *= tb_table_four[d1][d2][1][get_Dind(delta_b)][0](b);
-            x1 *= tb_table_four[d1][d2][1][get_Dind(delta_b)][1](b);
-        }
-        else if (operators[0] == "L" && operators[1] == "tL") {
-            if (std::abs(delta_b) != 2 && std::abs(delta_b) != 0) { return 0.0; }
-            x0 *= tb_table_four[d1][d2][2][get_Dind(delta_b)][0](b);
-            x1 *= tb_table_four[d1][d2][2][get_Dind(delta_b)][1](b);
-        }
-        else if (operators[0] == "tL" && operators[1] == "L") {
-            if (std::abs(delta_b) != 2 && std::abs(delta_b) != 0) { return 0.0; }
-            x0 *= tb_table_four[d1][d2][3][get_Dind(delta_b)][0](b);
-            x1 *= tb_table_four[d1][d2][3][get_Dind(delta_b)][1](b);
-        }
-        else if (operators[0] == "R" && operators[1] == "R") {
-            if (std::abs(delta_b) != 2 && std::abs(delta_b) != 0) { return 0.0; }
-            x0 *= tb_table_four[d1][d2][4][get_Dind(delta_b)][0](b);
-            x1 *= tb_table_four[d1][d2][4][get_Dind(delta_b)][1](b);
-        }
-        else if (operators[0] == "L" && operators[1] == "L") {
-            if (std::abs(delta_b) != 2 && std::abs(delta_b) != 0) { return 0.0; }
-            x0 *= tb_table_four[d1][d2][5][get_Dind(delta_b)][0](b);
-            x1 *= tb_table_four[d1][d2][5][get_Dind(delta_b)][1](b);
-        }
-        else if (contains(operators, "R") && contains(operators, "tL")) {
-            if (std::abs(delta_b) != 2 && std::abs(delta_b) != 0) { return 0.0; }
-            x0 *= tb_table_four[d1][d2][6][get_Dind(delta_b)][0](b);
-            x1 *= tb_table_four[d1][d2][6][get_Dind(delta_b)][1](b);
-        }
-        else if (contains(operators, "tR") && contains(operators, "L")) {
-            if (std::abs(delta_b) != 2 && std::abs(delta_b) != 0) { return 0.0; }
-            x0 *= tb_table_four[d1][d2][7][get_Dind(delta_b)][0](b);
-            x1 *= tb_table_four[d1][d2][7][get_Dind(delta_b)][1](b);
-        }
-        else if (contains(operators, "R") && contains(operators, "L")) {
-            if (std::abs(delta_b) != 2 && std::abs(delta_b) != 0) { return 0.0; }
-            x0 *= tb_table_four[d1][d2][8][get_Dind(delta_b)][0](b);
-            x1 *= tb_table_four[d1][d2][8][get_Dind(delta_b)][1](b);
-        }
         else {
-            std::cerr << "Fell through Error: " << operators[0] << " " << operators[1] << std::endl;
-        }        
+            std::cerr << "Fell through Error1: " << operators[0] << " " << operators[1] << std::endl;
+        }
+        //std::cout << "S1 index " << std::to_string(S1[0]) << " MatEl: " << std::to_string(matrix_element) << std::endl ;         
+        //std::cout << " d1, d2, b, deltab " << std::to_string(d1) << " " << std::to_string(d2) << " " << std::to_string(b)<< " " << std::to_string(delta_b) << std::endl; 
+        //std::cout << " Operators: " << operators[0] << " " << operators[1] << std::endl ; 
+        return matrix_element; 
     }
-    matrix_element  *= x0 + x1 ; 
-    return matrix_element ; 
+    else {
+        // x0 and x1 contributions 
+        double x0 = 1.0 ; 
+        double x1 = 1.0 ; 
+        for ( const int ind : S1 ) { 
+            std::vector<std::string> operators(2); 
+            operators[0] = HeadsOrTails(ind, i, j) + ab_classes[0]; 
+            operators[1] = HeadsOrTails(ind, k, l) + ab_classes[1];
+            const int d1 = bra.m_step_vec[ind-1]; 
+            const int d2 = ket.m_step_vec[ind-1];
+            const int b = ket_paldus(ind, 1) ; 
+            const int delta_b = ket_paldus( ind, 1) - bra_paldus( ind, 1); 
+
+            if ((operators[0] == "hR" && operators[1] == "hR") || (operators[0] == "tL" && operators[1] == "tL")) {
+                x0 *= tb_table_one[d1][d2][0][0](b);
+                x1 *= tb_table_one[d1][d2][0][1](b);
+            }
+            else if ((operators[0] == "tR" && operators[1] == "tR") || (operators[0] == "hL" && operators[1] == "hL")) {
+                x0 *= tb_table_one[d1][d2][1][0](b);
+                x1 *= tb_table_one[d1][d2][1][1](b);
+            }
+            else if (contains(operators, "hR") && contains(operators, "hL")) {
+                x0 *= tb_table_one[d1][d2][2][0](b);
+                x1 *= tb_table_one[d1][d2][2][1](b);
+            }
+            else if (contains(operators, "tR") && contains(operators, "tL")) {
+                x0 *= tb_table_one[d1][d2][3][0](b);
+                x1 *= tb_table_one[d1][d2][3][1](b);
+            }
+            else if (operators[0] == "R" && operators[1] == "hR") {
+                if (std::abs(delta_b) != 1) { return 0.0; }
+                x0 *= tb_table_three[d1][d2][0][get_Dind(delta_b)][0](b);
+                x1 *= tb_table_three[d1][d2][0][get_Dind(delta_b)][1](b);
+            }
+            else if (operators[0] == "hR" && operators[1] == "R") {
+                if (std::abs(delta_b) != 1) { return 0.0; }
+                x0 *= tb_table_three[d1][d2][1][get_Dind(delta_b)][0](b);
+                x1 *= tb_table_three[d1][d2][1][get_Dind(delta_b)][1](b);
+            }
+            else if (operators[0] == "hL" && operators[1] == "L") {
+                if (std::abs(delta_b) != 1) { return 0.0; }
+                x0 *= tb_table_three[d1][d2][2][get_Dind(delta_b)][0](b);
+                x1 *= tb_table_three[d1][d2][2][get_Dind(delta_b)][1](b);
+            }
+            else if (operators[0] == "L" && operators[1] == "hL") {
+                if (std::abs(delta_b) != 1) { return 0.0; }
+                x0 *= tb_table_three[d1][d2][3][get_Dind(delta_b)][0](b);
+                x1 *= tb_table_three[d1][d2][3][get_Dind(delta_b)][1](b);
+            }
+            else if (contains(operators, "hR") && contains(operators, "L")) {
+                if (std::abs(delta_b) != 1) { return 0.0; }
+                x0 *= tb_table_three[d1][d2][4][get_Dind(delta_b)][0](b);
+                x1 *= tb_table_three[d1][d2][4][get_Dind(delta_b)][1](b);
+            }
+            else if (contains(operators, "R") && contains(operators, "hL")) {
+                if (std::abs(delta_b) != 1) { return 0.0; }
+                x0 *= tb_table_three[d1][d2][5][get_Dind(delta_b)][0](b);
+                x1 *= tb_table_three[d1][d2][5][get_Dind(delta_b)][1](b);
+            }
+            else if (operators[0] == "tR" && operators[1] == "R") {
+                if (std::abs(delta_b) != 2.0 && std::abs(delta_b) != 0.0) { return 0.0; }
+                x0 *= tb_table_four[d1][d2][0][get_Dind(delta_b)][0](b);
+                x1 *= tb_table_four[d1][d2][0][get_Dind(delta_b)][1](b);
+            }
+            else if (operators[0] == "R" && operators[1] == "tR") {
+                if (std::abs(delta_b) != 2.0 && std::abs(delta_b) != 0.0) { return 0.0; }
+                x0 *= tb_table_four[d1][d2][1][get_Dind(delta_b)][0](b);
+                x1 *= tb_table_four[d1][d2][1][get_Dind(delta_b)][1](b);
+            }
+            else if (operators[0] == "L" && operators[1] == "tL") {
+                if (std::abs(delta_b) != 2 && std::abs(delta_b) != 0) { return 0.0; }
+                x0 *= tb_table_four[d1][d2][2][get_Dind(delta_b)][0](b);
+                x1 *= tb_table_four[d1][d2][2][get_Dind(delta_b)][1](b);
+            }
+            else if (operators[0] == "tL" && operators[1] == "L") {
+                if (std::abs(delta_b) != 2 && std::abs(delta_b) != 0) { return 0.0; }
+                x0 *= tb_table_four[d1][d2][3][get_Dind(delta_b)][0](b);
+                x1 *= tb_table_four[d1][d2][3][get_Dind(delta_b)][1](b);
+            }
+            else if (operators[0] == "R" && operators[1] == "R") {
+                if (std::abs(delta_b) != 2 && std::abs(delta_b) != 0) { return 0.0; }
+                x0 *= tb_table_four[d1][d2][4][get_Dind(delta_b)][0](b);
+                x1 *= tb_table_four[d1][d2][4][get_Dind(delta_b)][1](b);
+            }
+            else if (operators[0] == "L" && operators[1] == "L") {
+                if (std::abs(delta_b) != 2 && std::abs(delta_b) != 0) { return 0.0; }
+                x0 *= tb_table_four[d1][d2][5][get_Dind(delta_b)][0](b);
+                x1 *= tb_table_four[d1][d2][5][get_Dind(delta_b)][1](b);
+            }
+            else if (contains(operators, "R") && contains(operators, "tL")) {
+                if (std::abs(delta_b) != 2 && std::abs(delta_b) != 0) { return 0.0; }
+                x0 *= tb_table_four[d1][d2][6][get_Dind(delta_b)][0](b);
+                x1 *= tb_table_four[d1][d2][6][get_Dind(delta_b)][1](b);
+            }
+            else if (contains(operators, "tR") && contains(operators, "L")) {
+                if (std::abs(delta_b) != 2 && std::abs(delta_b) != 0) { return 0.0; }
+                x0 *= tb_table_four[d1][d2][7][get_Dind(delta_b)][0](b);
+                x1 *= tb_table_four[d1][d2][7][get_Dind(delta_b)][1](b);
+            }
+            else if (contains(operators, "R") && contains(operators, "L")) {
+                if (std::abs(delta_b) != 2 && std::abs(delta_b) != 0) { return 0.0; }
+                x0 *= tb_table_four[d1][d2][8][get_Dind(delta_b)][0](b);
+                x1 *= tb_table_four[d1][d2][8][get_Dind(delta_b)][1](b);
+            }
+            else {
+                std::cerr << "Fell through Error2: " << operators[0] << " " << operators[1] << std::endl;
+            }
+            //std::cout << "S1 index " << std::to_string(ind) << " MatEl x0: " << std::to_string(x0) << " x1: " << std::to_string(x1) << std::endl ;         
+            //std::cout << " d1, d2, b, deltab " << std::to_string(d1) << " " << std::to_string(d2) << " " << std::to_string(b)<< " " << std::to_string(delta_b) << std::endl; 
+            //std::cout << " Operators: " << operators[0] << " " << operators[1] << std::endl ; 
+    
+        }
+        matrix_element  *= x0 + x1 ; 
+        return matrix_element ;
+    } 
 }
 
-// this should be in a helper functions files I reckon - this doesn't need to be in a class ...
-//std::vector<int> MatrixElementCalculator::one_body_drt_step(int &ref_step, int &level, Eph &Epq) { 
-//    
-//    int p = (int) Epq.particle; 
-//    int q = (int) Epq.hole; 
-//
-//    std::string oclass ; 
-//    std::vector<int> allowed_steps  = {} ; 
-//    //
-//    if ( p < q ) { oclass = "R" ; } 
-//    else if ( p > q ) { oclass = "L" ; }
-//    else { allowed_steps = {ref_step} ; return allowed_steps ;  } 
-//    
-//    if (level==std::min(p,q)) { oclass = "t" + oclass ;}
-//    else if (level==std::max(p,q)) { oclass = "h" + oclass ;}
-//
-//    if ( (oclass=="tR") || (oclass="hL") ) { 
-//        if (ref_step==0) { allowed_steps = {1,2} ;}
-//        else if ( (ref_step==1) || (ref_step==2) ) { allowed_steps = {0} ;}
-//    }
-//    else if ( (oclass=="hR") || (oclass="tL") ) { 
-//        if ( ref_step==3) { allowed_steps={1,2} ;}
-//        else if ( (ref_step==1) || (ref_step==2) ) { allowed_steps = {0} ; }
-//    } 
-//    else if ( (oclass=="R") || (oclass="L") ) {
-//        if ( (ref_step==3) || (ref_step==0)) { allowed_steps={ref_step} ;}
-//        else if ( (ref_step==1) || (ref_step==2) ) { allowed_steps = {1,2} ; }
-//    } 
-//
-//    return allowed_steps;  
-//} 
 
-//std::vector<int> MatrixElementCalculator::two_body_drt_step(int &ref_step, int &level, Epphh &Epqrs) { 
-//    int i = (int) Epq.particle1; 
-//    int j = (int) Epq.hole1; 
-//    int k = (int) Epq.particle2; 
-//    int l = (int) Epq.hole2; 
-//
-//    std::vector<int> allowed_steps ; 
-//    std::vector<std::string> op_classes ; 
-//
-//    if (i < j ) { op_classes.push_back("R"); }
-//    else if ( i > j ) { op_classes.push_back("L"); }
-//    else { std::cerr "Error: two_body_drt_step does not deal with diagonal value, should've been caught earlier";}
-//    //
-//    if (k <  ) { op_classes.push_back("R"); }
-//    else if ( k > l ) { op_classes.push_back("L"); }
-//    else { std::cerr "Error: two_body_drt_step does not deal with diagonal value, should've been caught earlier";}
-//    // 
-//    std::vector<int> heads = { std::max(i,j), std::max(k,l)}; 
-//    std::vector<int> tails = { std::min(i,j), std::min(k,l)}; 
-//    //
-//    if (level==heads[0]) { op_classes[0] = "h" + op_classes[0] ; }
-//    if (level==heads[1]) { op_classes[1] = "h" + op_classes[1] ; }
-//    if (level==tails[0]) { op_classes[0] = "t" + op_classes[0] ; }
-//    if (level==tails[1]) { op_classes[1] = "t" + op_classes[1] ; }
-//
-//    // helper lambda to check if value is in vector
-//    auto contains = [&](const std::string& val) {
-//        return std::find(op_classes.begin(), op_classes.end(), val) != op_classes.end();
-//    };
-//
-//    if ( (op_classes == std::vector<std::string>{"hR","hR"})
-//      || (op_classes == std::vector<std::string>{"tL","tL"})
-//      || (contains("hR") && contains("tL")) ) {
-//        if (ref_step == 3) {
-//            allowed_steps = {0};
-//        }
-//    } else if ( (op_classes == std::vector<std::string>{"tR","tR"})
-//              || (op_classes == std::vector<std::string>{"hL","hL"})
-//              || (contains("tR") && contains("hL")) ) {
-//        if (ref_step == 0) {
-//            allowed_steps = {3};
-//        }
-//    } else if ( (contains("hR") && contains("hL"))
-//              || (contains("tR") && contains("tL"))
-//              || (contains("tR") && contains("hR"))
-//              || (contains("tL") && contains("hL"))
-//              || (op_classes == std::vector<std::string>{"R","R"})
-//              || (op_classes == std::vector<std::string>{"L","L"})
-//              || (contains("R") && contains("L")) ) {
-//        if (ref_step == 0 || ref_step == 3) {
-//            allowed_steps = {ref_step};
-//        } else if (ref_step == 1 || ref_step == 2) {
-//            allowed_steps = {1, 2};
-//        }
-//    } else if ( (contains("R") && contains("hR"))
-//              || (contains("L") && contains("tL"))
-//              || (contains("hR") && contains("L"))
-//              || (contains("R") && contains("tL")) ) {
-//        if (ref_step == 1 || ref_step == 2) {
-//            allowed_steps = {0};
-//        } else if (ref_step == 3) {
-//            allowed_steps = {1, 2};
-//        }
-//    } else if ( (contains("L") && contains("hL"))
-//              || (contains("R") && contains("tR"))
-//              || (contains("R") && contains("hL"))
-//              || (contains("tR") && contains("L")) ) {
-//        if (ref_step == 1 || ref_step == 2) {
-//            allowed_steps = {3};
-//        } else if (ref_step == 0) {
-//            allowed_steps = {1, 2};
-//        }
-//    } else {
-//        std::cerr << "Fell through Error: " << op_classes[0] << " " << op_classes[1] << std::endl;
-//    }
-//    return allowed_steps; 
-//} 
+double MatrixElementCalculator::resolve_two_body_matrix_element( const Configuration &bra, const Configuration &ket, const Epphh &Epqrs, const std::vector<Configuration> &basis) const { 
+    // Check same number of electrons, orbitals and S 
+    if ( (bra.m_nmo != ket.m_nmo) || (bra.m_nelec != ket.m_nelec) || (bra.m_totspin != ket.m_totspin)  ) { 
+        std::cout << "Different N, n or S values" << std::endl ; 
+        return 0.0 ; 
+    }
+    const size_t nmo = bra.m_nmo ;
+    const arma::imat bra_paldus = bra.generate_paldus() ; 
+    const arma::imat ket_paldus = ket.generate_paldus() ;
+
+    // Make sure both sets of indices are in range 
+    size_t i = Epqrs.particle1 ; 
+    size_t j = Epqrs.hole1 ; 
+    size_t k = Epqrs.particle2 ; 
+    size_t l = Epqrs.hole2 ;
+    size_t head = std::max({i,j,k,l}) ;  
+    size_t tail = std::min({i,j,k,l}) ;  
+    assert( head <= bra.m_nmo ) ;
+    assert( tail > 0 ) ; 
+    
+    // Check path outside loop
+    // dont need to check a=0 as that is always 0.  
+    for (size_t a = 1 ; a <= nmo ; a++ ) {
+        // iterate over the full loop  
+        if ( ( a >= head ) || ( a < tail )  ) {
+            // if a is outside the "true_loop" 
+            if (!arma::all( bra_paldus.row(a) == ket_paldus.row(a) ) ) { 
+                return 0.0 ; 
+            }
+        } 
+    }
+
+    double matrix_element = 0 ; 
+    MatrixElementCalculator mb ;  
+    for (auto config  : basis) {
+        matrix_element += mb.one_body_coupling(bra, config, {i,j})*mb.one_body_coupling(config, ket, {k,l}) ;   
+    }
+    if (j==k) { 
+        matrix_element -= mb.one_body_coupling(bra, ket,{i,l}) ;  
+    }
+    return matrix_element ; 
+}

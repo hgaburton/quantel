@@ -7,6 +7,7 @@
 #include <armadillo> 
 #include "excitation.h"
 #include "configuration.h"
+#include <variant>
 
 class DRT{ 
     public: 
@@ -28,11 +29,13 @@ class DRT{
         void construct_drt() ; 
         arma::uvec one_body_step(int &ref_step, int &level, Eph &Epq) ; 
         arma::uvec two_body_step(int &ref_step, int &level, Epphh &Epqrs) ; 
-        std::vector< Configuration > drt_loop( Configuration &ref_config, int &head, int &tail, std::function<arma::uvec(int&, int&)> stepfunc) ; 
+        //std::vector< Configuration > drt_loop( const Configuration &ref_config, int &head, int &tail, std::function<arma::uvec(int&, int&)> stepfunc) ; 
+        std::vector< Configuration > drt_loop( const Configuration &ref_config, const std::variant<Eph, Epphh> &Exc, std::function<arma::uvec(int&, int&)> stepfunc) ; 
+        std::vector<Configuration> build_fci_configs() ; 
 
         // One body and two body branching, because we want DRT to know about Configuration but probably necessary for it to know in the other direction 
-        std::vector<std::tuple<Configuration,double>> apply_excitation(Configuration &ket,  Eph &Epq) ;
-        std::vector<std::tuple<Configuration,double>> apply_excitation(Configuration &ket,  Epphh &Epqrs) ;
+        std::vector<std::tuple<Configuration,double>> apply_excitation(const Configuration &ket,  Eph &Epq) ;
+        std::vector<std::tuple<Configuration,double>> apply_excitation(const Configuration &ket,  Epphh &Epqrs) ;
     
         arma::imat m_drt ;   
     private: 

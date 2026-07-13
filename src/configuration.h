@@ -51,17 +51,16 @@ public:
     // and so we can order the vectors in some form
     bool operator< (const Configuration &rhs ) const 
     {
-        // "Smallest" drt is closed shell wrt specified ordering 
+        // "Smallest" configuration is closed shell wrt specified ordering 
         if (m_step_vec > rhs.m_step_vec ) return true;  
         if (m_step_vec < rhs.m_step_vec ) return false;
-        return true;  
+        return false;  
     }
 
     // number of molecular orbitals 
     uint8_t m_nmo; 
     uint8_t m_nelec; 
     double m_totspin;
-    arma::imat m_drt ; 
     std::vector<uint8_t> m_step_vec;
      
 
@@ -69,6 +68,15 @@ public:
     std::vector<uint8_t> get_vec() const {
         return m_step_vec;
     }
+
+    std::string config_str() const { 
+        std::string string ; 
+        for (auto a : m_step_vec) { 
+            string += std::to_string(a); 
+        }
+        return string ; 
+    }
+
     arma::imat generate_paldus() const;
     //std::vector<std::tuple<Configuration,double>> old_apply_excitation(arma::imat &drt, const Eph &Epq) ;
     //std::vector<std::tuple<Configuration,double>> non_drt_apply_excitation(arma::imat &drt, const Eph &Epq) ;
