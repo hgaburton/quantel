@@ -16,7 +16,7 @@
 #include "two_array.h"
 #include "configuration.h"
 #include "gUGA_ci_space.h"
-#include "matrix_element_calculator.h"
+#include "gUGA_evaluator.h"
 #include "drt.h"
 
 #include <pybind11/stl.h>
@@ -145,11 +145,11 @@ PYBIND11_MODULE(_quantel, m) {
                return vec_to_np_array(nrows, ncols, v_std.data());
           });
      
-     py::class_<MatrixElementCalculator>(m, "MatrixElementCalculator")
+     py::class_<GUGAEval>(m, "GUGAEval")
           .def(py::init<>(), "Default Constructor")
-          .def("one_body_coupling", &MatrixElementCalculator::one_body_coupling, " Compute one body matrix element" ) 
-          .def("two_body_coupling", &MatrixElementCalculator::two_body_coupling, " Compute two body matrix element" ) 
-          .def("resolve_two_body_matrix_element", &MatrixElementCalculator::resolve_two_body_matrix_element, " Compute two body matrix element" ); 
+          .def("one_body_coupling", &GUGAEval::one_body_coupling, " Compute one body matrix element" ) 
+          .def("two_body_coupling", &GUGAEval::two_body_coupling, " Compute two body matrix element" ) 
+          .def("resolve_two_body_matrix_element", &GUGAEval::resolve_two_body_matrix_element, " Compute two body matrix element" ); 
           
      py::class_<GUGA_CIspace>(m, "GUGA_CIspace")
           .def(py::init<MOintegrals &, size_t, size_t, double>(), "Constructor")

@@ -3,7 +3,7 @@
 #include "omp_device.h"
 #include <cstdint>
 #include <omp.h>
-#include "matrix_element_calculator.h"
+#include "gUGA_evaluator.h"
 
 void GUGA_CIspace::initialize(std::string citype, std::vector<std::string> configlist){ 
     // Check that we haven't already initialized CI space
@@ -154,7 +154,7 @@ void GUGA_CIspace::resolve_build_memory_map2(){
     // Populate m_map with connected determinants
     //#pragma omp parallel for collapse(4)
     std::vector<Configuration> basis = m_drtobj.build_fci_configs() ;
-    MatrixElementCalculator mb ;  
+    GUGAEval mb ;  
     for(size_t p=1; p<=m_nmo; p++)
     for(size_t q=1; q<=m_nmo; q++)
     for(size_t r=1; r<=m_nmo; r++)
@@ -427,7 +427,7 @@ double GUGA_CIspace::resolve_two_body_matrix_element( const Configuration &bra, 
     }
 
     double matrix_element = 0 ; 
-    MatrixElementCalculator mb ;  
+    GUGAEval mb ;  
     for (auto [ config, IndI ] : m_configs) {
         matrix_element += mb.one_body_coupling(bra, config, {i,j})*mb.one_body_coupling(config, ket, {k,l}) ;   
     }

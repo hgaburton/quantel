@@ -5,7 +5,7 @@
 #include "drt.h"
 #include "configuration.h"
 #include "excitation.h"
-#include "matrix_element_calculator.h"
+#include "gUGA_evaluator.h"
 #include <set>
 
 void DRT::construct_drt() { 
@@ -385,7 +385,7 @@ std::vector<std::tuple<Configuration,double>> DRT::apply_excitation( const Confi
     int tail = std::min(p,q) ;
 
     std::vector<Configuration> ex_configs ;  
-    MatrixElementCalculator mec;
+    GUGAEval mec;
    
     // Catch Diagonal case 
     if ( p == q ) { 
@@ -416,7 +416,7 @@ std::vector<std::tuple<Configuration,double>> DRT::apply_excitation(const Config
     int l = (int) Epqrs.hole2 ;
     
     std::vector<Configuration> ex_configs ;  
-    MatrixElementCalculator mec;
+    GUGAEval mec;
     int tot_head = std::max({i,j,k,l}) ; 
     int tot_tail = std::min({i,j,k,l}) ; 
     std::vector<int> tail_inds = {std::min(i,j),std::min(k,l)} ;
@@ -484,6 +484,3 @@ std::vector<std::tuple<Configuration,double>> DRT::apply_excitation(const Config
     }    
     return excitations ; 
 }
-
-
-
