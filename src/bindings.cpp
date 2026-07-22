@@ -149,7 +149,8 @@ PYBIND11_MODULE(_quantel, m) {
           .def(py::init<>(), "Default Constructor")
           .def("one_body_coupling", &GUGAEval::one_body_coupling, " Compute one body matrix element" ) 
           .def("two_body_coupling", &GUGAEval::two_body_coupling, " Compute two body matrix element" ) 
-          .def("resolve_diag_threeish_body_matrix_element", &GUGAEval::resolve_diag_threeish_body_matrix_element, " Compute threeish body matrix element" ) 
+          .def("resolve_diag_three_body", &GUGAEval::resolve_diag_three_body, " Compute threeish body matrix element" ) 
+          .def("resolve_diag_four_body", &GUGAEval::resolve_diag_four_body, " Compute fourish body matrix element" ) 
           .def("resolve_two_body_matrix_element", &GUGAEval::resolve_two_body_matrix_element, " Compute two body matrix element" ); 
           
      py::class_<GUGA_CIspace>(m, "GUGA_CIspace")

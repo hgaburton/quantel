@@ -444,7 +444,7 @@ double GUGAEval::resolve_two_body_matrix_element( const Configuration &bra, cons
     return matrix_element ; 
 }
 
-double GUGAEval::resolve_diag_threeish_body_matrix_element( const Configuration &config, const Eph Epq, const Eph Ers, const Eph Etv, const std::vector<Configuration> &basis) const { 
+double GUGAEval::resolve_diag_three_body( const Configuration &config, const Eph Epq, const Eph Ers, const Eph Etv, const std::vector<Configuration> &basis) const { 
     // Check same number of electrons, orbitals and S 
     double matrix_element = 0 ; 
     GUGAEval mb ; 
@@ -453,6 +453,20 @@ double GUGAEval::resolve_diag_threeish_body_matrix_element( const Configuration 
     for (auto K : basis) {
         for (auto J  : basis) {
             matrix_element += mb.one_body_coupling(config, J,  Epq)*mb.one_body_coupling(J, K, Ers)*mb.one_body_coupling( K, config, Etv);
+        }   
+    }
+    return matrix_element ; 
+}
+
+double GUGAEval::resolve_diag_four_body( const Configuration &config, const Eph Epq, const Eph Ers, const Eph Etv, const Eph Exy , const std::vector<Configuration> &basis) const { 
+    // Check same number of electrons, orbitals and S 
+    double matrix_element = 0 ; 
+    GUGAEval mb ; 
+    
+    // Can we pragma the shit out of this? I'm sure we can cause each of these calculations is pretty cheap right. 
+    for (auto K : basis) {
+        for (auto J  : basis) {
+            matrix_element += mb.one_body_coupling(config, J,  Epq)*mb.one_body_coupling(J, K, Ers)*mb.one_body_coupling( K, config, Etv)*mb.one_body_coupling( K, config, Exy);
         }   
     }
     return matrix_element ; 
