@@ -59,7 +59,9 @@ endif()
 find_package(BLAS)
 find_package(LAPACK)
 
-cmake_policy(SET CMP0167 NEW)
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW)
+endif()
 find_package(fmt CONFIG REQUIRED)
 find_package(Libint2 CONFIG REQUIRED)
 

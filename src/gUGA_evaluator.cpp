@@ -448,13 +448,59 @@ double GUGAEval::resolve_diag_three_body( const Configuration &config, const Eph
     // Check same number of electrons, orbitals and S 
     double matrix_element = 0 ; 
     GUGAEval mb ; 
-    
-    // Can we pragma the shit out of this? I'm sure we can cause each of these calculations is pretty cheap right. 
-    for (auto K : basis) {
-        for (auto J  : basis) {
-            matrix_element += mb.one_body_coupling(config, J,  Epq)*mb.one_body_coupling(J, K, Ers)*mb.one_body_coupling( K, config, Etv);
-        }   
+
+    // Initialise these vectors as zeros
+    std::vector<double> K_Etv_psi(basis.size(), 0.0);
+    std::vector<double> psi_Epq_K(basis.size(), 0.0);
+
+    std::vector<size_t> non_zero_rhs;
+    std::vector<size_t> non_zero_lhs;
+    non_zero_rhs.reserve(basis.size());
+    non_zero_lhs.reserve(basis.size());
+
+    #pragma omp parallel
+    {
+        std::vector<size_t> local_rhs, local_lhs;
+        #pragma omp for nowait
+        for(size_t iK = 0; iK < basis.size(); iK++) {
+            const auto& K = basis[iK];
+            double etv_val = mb.one_body_coupling(K, config, Etv);
+            double epq_val = mb.one_body_coupling(config, K, Epq);
+            K_Etv_psi[iK] = etv_val;
+            psi_Epq_K[iK] = epq_val;
+            if (std::abs(etv_val) >= 1e-16)
+                local_rhs.push_back(iK);
+            if (std::abs(epq_val) >= 1e-16)
+                local_lhs.push_back(iK);
+        }
+        #pragma omp critical
+        {
+            non_zero_rhs.insert(non_zero_rhs.end(), local_rhs.begin(), local_rhs.end());
+            non_zero_lhs.insert(non_zero_lhs.end(), local_lhs.begin(), local_lhs.end());
+        }
     }
+
+    // Loop over non-zero indices to compute the matrix element
+    #pragma omp parallel for reduction(+:matrix_element) collapse(2)
+    for(size_t a = 0; a < non_zero_rhs.size(); a++)
+    for(size_t b = 0; b < non_zero_lhs.size(); b++)
+    {
+        const size_t iK = non_zero_rhs[a];
+        const size_t iJ = non_zero_lhs[b];
+        const auto& K = basis[iK];
+        const auto& J = basis[iJ];
+        matrix_element += psi_Epq_K[iJ] * mb.one_body_coupling(J, K, Ers) * K_Etv_psi[iK];
+    }
+    
+    // Can we pragma the shit out of this? I'm sure we can cause each of these calculations is pretty cheap right.
+    //#pragma omp parallel for reduction(+:matrix_element) collapse(2)
+    //for (size_t iK = 0; iK < basis.size(); iK++) {
+    //    for (size_t iJ = 0; iJ < basis.size(); iJ++) {
+    //        const auto& K = basis[iK];
+    //        const auto& J = basis[iJ];
+    //        matrix_element += mb.one_body_coupling(config, J,  Epq)*mb.one_body_coupling(J, K, Ers)*mb.one_body_coupling( K, config, Etv);
+    //    }   
+    //}
     return matrix_element ; 
 }
 
