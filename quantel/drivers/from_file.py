@@ -44,6 +44,8 @@ def from_file(ints, config):
         from quantel.opt.mode_controlling import ModeControl as OPT
     elif config["optimiser"]["algorithm"] == "diis":
         from quantel.opt.diis import DIIS as OPT
+    elif config["optimiser"]["algorithm"] == "hybridef":
+        from quantel.opt.hybrid_ef import HybridEF as OPT
 
     # Initialise wavefunction list
     wfn_list  = []

@@ -5,6 +5,7 @@ import quantel
 from quantel.utils.scf_utils import mom_select
 from quantel.utils.linalg import orthogonalise, matrix_print
 from quantel.gnme.uhf_noci import uhf_coupling, uhf_rdm1, evaluate_s2 
+from quantel.utils.orbital_utils import localise_orbitals
 from .wavefunction import Wavefunction
 from pyscf.tools import cubegen 
 from copy import copy, deepcopy 
@@ -248,6 +249,7 @@ class UHF(Wavefunction):
         # Save numpy txt file with energy and Hessian indices
         hindices = self.get_hessian_index()
         with open(tag+".solution", "w") as F:
+            #F.write(f"{self.energy:18.12f} {hindices[0]:5d} {hindices[1]:5d} {self.s2:12.6f} {self.sz:5.1f}\n")
             F.write(f"{self.energy:18.12f} {hindices[0]:5d} {hindices[1]:5d} {self.s2:12.6f}\n")
     
     def read_from_disk(self, tag,**kwargs):
@@ -428,7 +430,7 @@ class UHF(Wavefunction):
         mask_beta[self.nocc[1]:,:self.nocc[1]] = True 
         return mask_alfa, mask_beta 
     
-    def get_orbital_guess(self, method="gwh",asymmetric=False):
+    def get_orbital_guess(self, method="gwh",**kwargs):
         """ Get a guess for the molecular orbital coefficients 
             Asymmetric initial guess can be generated via HOMO-LUMO mixing"""
         # Get one-electron integrals and overlap matrix 
@@ -464,23 +466,27 @@ class UHF(Wavefunction):
         self.initialise(Cinit)
         return
 
+
+    def asymmetrise_guess(self,k=0.1): 
         # Compute an asymmetric initial guess
         # HGAB: 22/12/2025
         #       Maybe we should write a new driver routine to perform this type of routine?
-        if asymmetric:
-            k = 0.1
-            # Extract the previous HOMO and LUMO MO coefficients
-            mo_coeff = self.beta.mo_coeff.copy()
-            homo = mo_coeff[:, self.beta.nocc-1] 
-            lumo = mo_coeff[:, self.beta.nocc] 
-            # Mix HOMO and LUMO 
-            pos_mix = (1/np.sqrt(1+k**2)) * (homo + k*lumo)
-            neg_mix = (1/np.sqrt(1+k**2)) * (-k*homo + lumo)
-            mo_coeff[:, self.beta.nocc-1] = pos_mix
-            mo_coeff[:, self.beta.nocc] = neg_mix
-            self.beta.mo_coeff = mo_coeff
-            self.update()
-   
+        ref_mo = self.mo_coeff[1,:,:].copy()
+        ## Extract the previous HOMO and LUMO MO coefficients
+        #homo = ref_mo[:, self.beta.nocc-1] 
+        #lumo = ref_mo[:, self.beta.nocc] 
+        ## Mix HOMO and LUMO 
+        #pos_mix = (1/np.sqrt(1+k**2)) * (homo + k*lumo)
+        #neg_mix = (1/np.sqrt(1+k**2)) * (-k*homo + lumo)
+        #mo_coeff[:, self.beta.nocc-1] = pos_mix
+        #mo_coeff[:, self.beta.nocc] = neg_mix
+        ## Apply some random rotation 
+        from quantel.utils.linalg import random_rot
+        mo_guess = ref_mo.dot(random_rot(self.nmo,  -k, k))
+        self.mo_coeff[1,:,:] = ref_mo
+        self.update()
+        return   
+
     def excite(self,occ_idx,vir_idx,mom_method=None): 
         """ Performs an Sz preserving HOMO LUMO excitation """
         # HGAB: 22/12/2025
@@ -622,4 +628,12 @@ class UHF(Wavefunction):
         for i in range(2):    
             for mo in idx: 
                 cubegen.orbital(self.integrals.mol, fname+f".{spins[i]}.mo.{mo}.cube", self.mo_coeff[i][:,mo])
+
+    def localise_orbitals(self, plev=1):
+        # Localise alpha and beta 
+        self.mo_coeff[0,:,:self.nalfa], isstable = localise_orbitals(self.integrals.mol, self.mo_coeff[0,:,:self.nalfa])
+        self.mo_coeff[1,:,:self.nbeta], isstable = localise_orbitals(self.integrals.mol, self.mo_coeff[1,:,:self.nbeta])
+        self.update() 
+        if plev>0: 
+            print("  Orbital localistion stable: ", isstable)
 
