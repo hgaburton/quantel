@@ -22,6 +22,8 @@ def analyse(ints, config):
         from quantel.wfn.csf import CSF as WFN
     elif config["wavefunction"]["method"] == "rhf":
         from quantel.wfn.rhf import RHF as WFN
+    elif config["wavefunction"]["method"] == "uhf":
+        from quantel.wfn.uhf import UHF as WFN
     elif config["wavefunction"]["method"] == "roks":
         from quantel.wfn.roks import ROKS as WFN
     else:
@@ -47,9 +49,9 @@ def analyse(ints, config):
         myfun.read_from_disk(fname)
         
         # Gives in the indices as as list and plots those orbitals... 
-        orbs_list = config["jobcontrol"]["analyse"]["orbital_plots"]
-        # Can localise orbitals 
-        #myfun.localise_orbitals()  
+        orbs_list = config["jobcontrol"]["analyse"]["orbital_plots"] 
+        # Localise orbitals
+        myfun.localise_orbitals() 
         myfun.mo_cubegen(orbs_list, f"{fname}")
 
         # Store dipole and quadrupole

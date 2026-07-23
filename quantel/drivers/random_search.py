@@ -27,6 +27,7 @@ def random_search(ints, config):
         mf = RHF(ints)
     else:
         print(f"\nRunning initial high-spin ROHF calculation with multiplicity {ms+1: 3d}...")
+        print("Nalfa, Nbeta ", ints.molecule().nalfa(), ints.molecule().nbeta())
         if config["wavefunction"]["method"]=="roks": 
             mf = ROKS(ints, '+'*ms)
         else: 
@@ -78,6 +79,8 @@ def random_search(ints, config):
         from quantel.opt.mode_controlling import ModeControl as OPT
     elif config["optimiser"]["algorithm"] == "diis":
         from quantel.opt.diis import DIIS as OPT
+    elif config["optimiser"]["algorithm"] == "hybridef":
+        from quantel.opt.hybrid_ef import HybridEF as OPT
     
     # Set numpy random seed
     numpy.random.seed(config["jobcontrol"]["search"]["seed"])
@@ -102,7 +105,9 @@ def random_search(ints, config):
         except: pass
         myfun = WFN(ints, **wfnconfig)
         myfun.initialise(mo_guess, ci_guess)
-
+        if config["wavefunction"]["method"]=="uhf":
+            print("  Asymmetrising guess...")  
+            myfun.asymmetrise_guess()
 
         # Run the optimisation
         myopt = OPT(**optconfig)

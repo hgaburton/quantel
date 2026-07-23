@@ -157,6 +157,19 @@ def follow(ints, config):
         # Print a new line
         print()
 
+    if config["wavefunction"]["method"]=="uhf": 
+        from quantel.utils.uhf_utils import include_spin_flips 
+        flip_wfnlist, fnlist, felist, filist = include_spin_flips(wfn_list, name_list)
+        wfn_list += flip_wfnlist
+        e_list += felist 
+        i_list += filist
+        name_list += fnlist  
+        if config["jobcontrol"]["save_solns"]: 
+            for ind, soln in enumerate(flip_wfnlist): 
+                soln.save_to_disk(fnlist[ind]) 
+                    
+
+
     numpy.savetxt('energy_list', numpy.array([e_list]),fmt="% 16.10f")
     numpy.savetxt('ind_list', numpy.array([i_list]),fmt="% 5d")
     numpy.savetxt('name_list', numpy.array([name_list]), fmt='%s')

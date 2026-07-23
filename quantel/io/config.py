@@ -33,7 +33,8 @@ class Config(dict):
     def parse_molecule(self):
         """Read keywords that define the molecular system"""
         self["molecule"] = dict(basis = getvalue(self.lines,"basis",str,True), 
-                                unit = getvalue(self.lines,"units",str,False,"angstrom")
+                                unit = getvalue(self.lines,"units",str,False,"angstrom"),
+                                spin_proj = getvalue(self.lines, "spin_projection", int, False, None) 
                                )
         if (self["molecule"]["unit"] == "ang") or (self["molecule"]["unit"] == "a"):
             self["molecule"]["unit"] = "angstrom"
@@ -238,6 +239,7 @@ class Config(dict):
                                                  orbital_plots = getlist(self.lines, "orbital_plots",int,True),
                                                  dyson_plots = getvalue(self.lines,"dyson_plots",str,False,default=10),
                                                 )
+            self["jobcontrol"]["read_dir"] = getlist(self.lines,"read_dir",str,True)
         
         # Job control for computing oscillator strengths
         if self["jobcontrol"]["oscillator_strength"]:

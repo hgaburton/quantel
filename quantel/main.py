@@ -67,6 +67,10 @@ def main():
             tmp = f.readline().split()
             charge = int(tmp[0])
             spin   = int(tmp[1])-1
+        
+        if config["molecule"]["spin_proj"] is not None:
+            spin = 2*config["molecule"]["spin_proj"] 
+        
         mol  = PySCFMolecule(config["molecule"]["atom"],
                             config["molecule"]["basis"],
                             config["molecule"]["unit"],
