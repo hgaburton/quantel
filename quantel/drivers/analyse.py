@@ -47,7 +47,9 @@ def analyse(ints, config):
         myfun.read_from_disk(fname)
         
         # Gives in the indices as as list and plots those orbitals... 
-        orbs_list = config["jobcontrol"]["analyse"]["orbital_plots"] 
+        orbs_list = config["jobcontrol"]["analyse"]["orbital_plots"]
+        # Can localise orbitals 
+        #myfun.localise_orbitals()  
         myfun.mo_cubegen(orbs_list, f"{fname}")
 
         # Store dipole and quadrupole

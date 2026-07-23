@@ -86,6 +86,7 @@ class HybridEF:
 
             # Save old eigenvectors for next iteration
             evec_old = evec.copy()
+     
             # Get current Hessian index
             cur_ind = np.sum(eigval<0)
             st_cur_ind = "{:s}{:d}".format('>=' if cur_ind > index else '', cur_ind)
@@ -130,13 +131,14 @@ class HybridEF:
 
                 # Optimise energy in directions orthogonal to uphill steps
                 lbfgs.run(obj,proj_vec=evec[:,:index],maxit=10,plev=plev-1)
+                #lbfgs.run(obj,proj_vec=evec[:,:index],maxit=10,plev=0)
 
             # Report our progress
             if not converged:
                 if(plev>1): print("\n  ----------------------------------------------------------------")
                 if(plev>1): print("   Hybrid Eigenvector-Following step:")
                 if(plev>1): print("  ----------------------------------------------------------------")
-                print(" {: 5d} {: 16.10f}    {:^8s}    {:8.2e}    {:8.2e}    {:10s}".format(
+                if(plev>0): print(" {: 5d} {: 16.10f}    {:^8s}    {:8.2e}    {:8.2e}    {:10s}".format(
                       istep, eref, st_cur_ind, step_length, conv, comment))
                 if(plev>1): print("  ----------------------------------------------------------------")
 
@@ -144,7 +146,7 @@ class HybridEF:
                 if(plev>1): print("\n  ----------------------------------------------------------------")
                 if(plev>1): print("   Hybrid Eigenvector-Following step:")
                 if(plev>1): print("  ----------------------------------------------------------------")
-                print(" {: 5d} {: 16.10f}    {:^8s}                {:8.2e}    {:10s}".format(
+                if(plev>0): print(" {: 5d} {: 16.10f}    {:^8s}                {:8.2e}    {:10s}".format(
                     istep, eref, st_cur_ind, conv, comment))
                 if(plev>1): print("  ----------------------------------------------------------------")                
                 break

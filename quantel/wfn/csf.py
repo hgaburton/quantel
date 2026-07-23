@@ -533,7 +533,11 @@ class CSF(Wavefunction):
  
             # Initialise wave function    
             self.initialise(mo_read, spin_coupling=spin_coupling)  
-               
+        with open(tag+".solution", "r") as file: 
+            line = file.readline().split() 
+            hess_indices = (line[1], line[2]) 
+        self.hess_index = hess_indices
+       
         # Check the input
         if mo_read.shape[0] != self.nbsf:
             raise ValueError("Inccorect number of AO basis functions in file")
