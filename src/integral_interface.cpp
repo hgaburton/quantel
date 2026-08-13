@@ -452,27 +452,28 @@ void IntegralInterface::dipole_ao_to_mo(
     assert(C1.size() % m_nbsf == 0);
     assert(C2.size() % m_nbsf == 0);
 
-    // Resize MO dipole matrix
-    dipole_mo.resize(3*m_nbsf*m_nbsf);
-    std::fill(dipole_mo.begin(), dipole_mo.end(), 0.0);
-
     // Get number of columns of transformation matrices
     size_t d1 = C1.size() / m_nbsf;
     size_t d2 = C2.size() / m_nbsf;
-    size_t n2 = m_nbsf * m_nbsf;
+    size_t n2_ao = m_nbsf * m_nbsf;
+    size_t n2_mo = d1 * d2;
+
+    // Resize MO dipole matrix
+    dipole_mo.resize(3*n2_mo);
+    std::fill(dipole_mo.begin(), dipole_mo.end(), 0.0);
 
     // Transform x,y,z components individually using oei_transform
     for(size_t xyz=0; xyz<3; xyz++)
     {
         // Get AO slice for x component of dipole
-        auto slice = m_dipole.begin()+xyz*n2;
-        std::vector<double> dip_ao(slice,slice+n2);
+        auto slice = m_dipole.begin()+xyz*n2_ao;
+        std::vector<double> dip_ao(slice,slice+n2_ao);
         // Initialise memory for MO slice
-        std::vector<double> dip_mo(n2,0.0);
+        std::vector<double> dip_mo(n2_ao,0.0);
         // Perform transformation
         oei_transform(C1,C2,dip_ao,dip_mo,d1,d2,m_nbsf);
         // Copy MO slice to output
-        std::copy(dip_mo.begin(),dip_mo.end(),dipole_mo.begin()+xyz*n2);
+        std::copy(dip_mo.begin(),dip_mo.end(),dipole_mo.begin()+xyz*n2_mo);
     }
 }
 
