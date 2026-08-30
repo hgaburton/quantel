@@ -51,6 +51,7 @@ class CSF(Wavefunction):
         self.verbose       = verbose
         # Initialise integrals object
         self.integrals  = integrals
+        # This is incorrect! If we have a triplet state we know that we only construct the ms = S equivalent
         self.nalfa      = integrals.molecule().nalfa()
         self.nbeta      = integrals.molecule().nbeta()
         # Get number of basis functions and linearly independent orbitals
@@ -252,14 +253,17 @@ class CSF(Wavefunction):
         # Return the combination
         return nucl_dip - np.einsum('xij,kji->x',ao_dip,self.vd)
 
-    def tdm(self, them):
+    def tdm(self, them, nuc=True):
         """ Compute the transition dipole moment with another CSF state"""
         # Get the dipole integrals
         nucl_dip, ao_dip = self.integrals.dipole_matrix()
         overlap = self.integrals.overlap_matrix() 
         tdm = np.zeros(3)
         for x in range(3):
-            _, tdm[x] = csf_coupling(self, them, overlap, hcore=ao_dip[x], enuc=nucl_dip[x])
+            if nuc:
+                _, tdm[x] = csf_coupling(self, them, overlap, hcore=ao_dip[x], enuc=nucl_dip[x])
+            else:
+                _, tdm[x] = csf_coupling(self, them, overlap, hcore=ao_dip[x])
         return tdm
         
     def print(self,verbose=1):
@@ -535,7 +539,7 @@ class CSF(Wavefunction):
             self.initialise(mo_read, spin_coupling=spin_coupling)  
         with open(tag+".solution", "r") as file: 
             line = file.readline().split() 
-            hess_indices = (line[1], line[2]) 
+            hess_indices = (int(line[1]), int(line[2])) 
         self.hess_index = hess_indices
        
         # Check the input

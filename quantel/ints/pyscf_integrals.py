@@ -41,7 +41,7 @@ class PySCFMolecule(gto.Mole):
     
     def natom(self):
         """Return the number of atoms"""
-        return len(self.atom)
+        return len(self._atom)
         
     def multiplicity(self):
         """Return the multiplicity of the molecule"""

@@ -106,6 +106,7 @@ def follow(ints, config):
                 target_index = config["optimiser"]["keywords"]["index"]
                 myopt = OPT(**optconfig)
                 if not myopt.run(myfun, **config["optimiser"]["keywords"]):
+                    print("  Optimisation failed to converge onto the desired solution!") 
                     continue
             
             # Check the Hessian index
@@ -118,17 +119,21 @@ def follow(ints, config):
                 hindices = myfun.hess_index
                 # Yes need to set target index = None to prevent skipping the rest of the loop
                 if (hindices[0] != target_index) and (target_index is not None):
+                    print(f" Target index: {target_index}, Hess Index: {hindices[0]}")
                     continue
 
             # Compare solution against previously found states
             new = True
+            print("  Comparing against found states", flush = True )
             for prev, otherwfn in enumerate(wfn_list):
+                ovlp = myfun.overlap(otherwfn) 
+                print("1-|Ovlp|= ", 1-abs(ovlp))  
                 if abs(myfun.energy - otherwfn.energy) < config["jobcontrol"]["dist_thresh"]:
-                  if 1.0 - abs(myfun.overlap(otherwfn)) < config["jobcontrol"]["dist_thresh"]:
-                    new = False
-                    break
-                print("Ovlp: ", abs(myfun.overlap(otherwfn))) 
+                    if 1.0 - abs(ovlp) < config["jobcontrol"]["dist_thresh"]:
+                        new = False
+                        break
             sys.stdout.flush() 
+            
             # Save the solution if it is a new one!
             if new: 
                 if config["wavefunction"]["method"] == "esmf":
@@ -148,10 +153,10 @@ def follow(ints, config):
                 # Deallocate integrals to reduce memory footprint
                 myfun.deallocate()
                 wfn_list.append(myfun.copy())
-                name_list.append(old_tag[2:]) 
-                print("  Unique solution saved ")
+                name_list.append(old_tag[-4:]) 
+                print("  Unique solution saved ", flush=True)
             else: 
-                print("  Solution matches previous solution...",prev+1)
+                print("  Solution matches previous solution...",prev+1, flush=True)
             sys.stdout.flush() 
 
         # Print a new line

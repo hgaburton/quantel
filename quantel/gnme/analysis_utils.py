@@ -6,21 +6,145 @@ from pyscf.tools import cubegen
 import scipy 
 
 eh2ev = 27.2114 
-# this has no state dependence - so thats fine .. 
 def wfnlist_osc_strength(wfnlist, ref_ind=0, plev=1, save=True):
     """Compute oscillator strengths from a given reference states [ref_ind]"""
-    print()
-    print("===============================================")
-    print(" Computing oscillator strengths from solution {:d}".format(ref_ind+1))
-    print("===============================================")
-
+    namelist = np.genfromtxt("name_list", dtype=str) 
     nstate = len(wfnlist)
-    # Ref_ind indicates energetic ordering 
     energies = [ wfn.energy for wfn in wfnlist ] 
-    inds = np.argsort(energies) 
-    ref_ind = inds[ref_ind] 
+    if ref_ind is None: 
+        ref_ind = np.argsort(energies)[0]
+    else: 
+        pass 
+    
+    # Ref_ind indicates energetic ordering 
     ref_state = wfnlist[ref_ind]
     ref_state.update()
+
+    # Loop over the remaining states
+    data=[]
+    fothers = [] 
+    tdms = [] 
+    tdm11 = ref_state.tdm(ref_state) 
+    for i, state_i in enumerate(wfnlist):
+        if(i==ref_ind): continue
+        state_i.update()
+        # Compute excitation energy in eV 
+        de = state_i.energy - ref_state.energy
+        s = state_i.overlap(ref_state) 
+        a = np.sqrt(1+s)/np.sqrt(1-s)
+        tdm22 = state_i.tdm(state_i)
+        tdm21 = state_i.tdm(ref_state)
+        tdm12 = ref_state.tdm(state_i)
+        tdm22 = state_i.tdm(state_i)
+        tdm = (1/(4*(1+s)))*( (1-a**2)*(tdm11 + tdm22) + tdm21*(1+a)**2+tdm12*(1-a)**2)
+        # Compute oscillator strength
+        f = 2./3. * de * np.dot(tdm,tdm)
+        fother = 2./3. * de * np.dot(tdm21, tdm21) 
+        fothers.append(fother)
+
+        # Convert excitation energy to eV 
+        de *= eh2ev
+        data.append((int(namelist[i]),de, f, s))
+        tdms.append(np.dot(tdm,tdm))
+
+    print()
+    print("===============================================")
+    print(" Computing oscillator strengths from solution {:04d}".format(int(namelist[ref_ind])))
+    print("===============================================")
+    # Print the outcome
+    print("{:4s}   {:10s}   {:10s}   {:10s}".format("","  dE / eV", "   f / au","   S / au"))
+    print("-----------------------------------------------")
+    #strengths.sort()
+    for ind, (n, de, f, s) in enumerate(data):
+        print("{:04d}:  {: 10.6f}   {: 10.6f}   {: 10.6f}".format(n,de,f,s),f"  (other f: {fothers[ind]})")
+    print("----------------------------------------------------------")
+    return namelist[ref_ind], data, np.array(tdms) 
+def over_wfnlist_osc_strength(wfnlist, ref_ind=0, plev=1, save=True):
+    """Compute oscillator strengths from a given reference states [ref_ind]"""
+    namelist = np.genfromtxt("name_list", dtype=str) 
+    nstate = len(wfnlist)
+    energies = [ wfn.energy for wfn in wfnlist ] 
+    if ref_ind is None: 
+        ref_ind = np.argsort(energies)[0]
+    else: 
+        pass 
+    
+    nmo = wfnlist[0].nmo
+    # make as D(ref,i), D(i,ref) and D(i,i)  
+    RDM1s = np.zeros( (len(wfnlist), 3, nmo, nmo), dtype=float)
+    Ss = np.zeros((len(wfnlist)), dtype=float) 
+    for indi in range(len(wfnlist)): 
+        # RDM1 in contravariant AO basis    
+        _, rdm1_iref =  wfnlist[indi].trans_rdm1(wfnlist[ref_ind])
+        _, rdm1_refi =  wfnlist[ref_ind].trans_rdm1(wfnlist[indi])
+        _, rdm1_ii =  wfnlist[indi].trans_rdm1(wfnlist[indi])
+        RDM1s[indi,0,:,:] = rdm1_refi
+        RDM1s[indi,1,:,:] = rdm1_iref
+        RDM1s[indi,2,:,:] = rdm1_ii
+        Ss[indi] = wfnlist[indi].overlap(wfnlist[ref_ind]) 
+    
+    # Ref_ind indicates energetic ordering 
+    ref_state = wfnlist[ref_ind]
+    ref_state.update()
+
+    # Loop over the remaining states
+    data=[]
+    tdms = [] 
+    D11 = RDM1s[ref_ind,2,:,:] 
+    _, ao_dip = wfnlist[0].integrals.dipole_matrix() 
+
+    for i, state_i in enumerate(wfnlist):
+        if(i==ref_ind): continue
+        state_i.update()
+        # Compute excitation energy in eV 
+        de = state_i.energy - ref_state.energy
+        
+        s = Ss[i]
+        a = np.sqrt(1+s)/np.sqrt(1-s)
+        D22 = RDM1s[i,2,:,:]
+        D21 = RDM1s[i,1,:,:]
+        D12 = RDM1s[i,0,:,:]
+        D = (1/(4*(1+s)))*( (1-a**2)*(D11 + D22) + D21*(1+a)**2+D12*(1-a)**2)
+        tdm = np.zeros((3), dtype=float)
+        for x in range(3): 
+            tdm[x] = np.einsum("ij,ji",ao_dip[x],D)  
+        
+        # Compute oscillator strength
+        f = 2./3. * de * np.dot(tdm,tdm)
+        # Convert excitation energy to eV 
+        de *= eh2ev
+        data.append((int(namelist[i]),de, f, s))
+        tdms.append(np.dot(tdm,tdm))
+
+    print()
+    print("===============================================")
+    print(" Computing oscillator strengths from solution {:04d}".format(int(namelist[ref_ind])))
+    print("===============================================")
+    # Print the outcome
+    print("{:4s}   {:10s}   {:10s}   {:10s}".format("","  dE / eV", "   f / au","   S / au"))
+    print("-----------------------------------------------")
+    #strengths.sort()
+    for (n, de, f, s) in data:
+        print("{:04d}:  {: 10.6f}   {: 10.6f}   {: 10.6f}".format(n,de,f,s))
+    print("----------------------------------------------------------")
+    return namelist[ref_ind], data, np.array(tdms) 
+
+
+
+# this has no state dependence - so thats fine .. 
+def old_wfnlist_osc_strength(wfnlist, ref_ind=0, plev=1, save=True):
+    """Compute oscillator strengths from a given reference states [ref_ind]"""
+    namelist = np.genfromtxt("name_list", dtype=str) 
+    nstate = len(wfnlist)
+    energies = [ wfn.energy for wfn in wfnlist ] 
+    if ref_ind is None: 
+        ref_ind = np.argsort(energies)[0]
+    else: 
+        pass 
+    
+    ref_state = wfnlist[ref_ind]
+    ref_state.update()
+    # Ref_ind indicates energetic ordering 
 
     # Loop over the remaining states
     data=[]
@@ -37,18 +161,21 @@ def wfnlist_osc_strength(wfnlist, ref_ind=0, plev=1, save=True):
         f = 2./3. * de * np.dot(tdm,tdm)
         # Convert excitation energy to eV 
         de *= eh2ev
-        data.append((de, f, s))
+        data.append((int(namelist[i]),de, f, s))
         tdms.append(np.dot(tdm,tdm))
 
+    print()
+    print("===============================================")
+    print(" Computing oscillator strengths from solution {:04d}".format(int(namelist[ref_ind])))
+    print("===============================================")
     # Print the outcome
     print("{:4s}   {:10s}   {:10s}   {:10s}".format("","  dE / eV", "   f / au","   S / au"))
     print("-----------------------------------------------")
     #strengths.sort()
-    namelist = np.genfromtxt("name_list", dtype=str) 
-    for i, (de, f, s) in enumerate(data):
-        print("{:2}:  {: 10.6f}   {: 10.6f}   {: 10.6f}".format(namelist[i],de,f,s))
+    for (n, de, f, s) in data:
+        print("{:04d}:  {: 10.6f}   {: 10.6f}   {: 10.6f}".format(n,de,f,s))
     print("----------------------------------------------------------")
-    return data, np.array(tdms) 
+    return namelist[ref_ind], data, np.array(tdms) 
 
 def natural_orbitals(noci_rdm1_array, state_index, metric, plev=1): 
     RDM1 = noci_rdm1_array[state_index, state_index,:,:]   
@@ -62,6 +189,7 @@ def natural_orbitals(noci_rdm1_array, state_index, metric, plev=1):
         print(f"State {state_index} Natural orbital occupation numbers") 
         print(noons[:20])
     return noons, norbs  
+
 
 def compute_noci_1rdms(wfnlist, noci_evecs): 
     nmo = wfnlist[0].nmo 

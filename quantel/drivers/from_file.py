@@ -101,8 +101,9 @@ def from_file(ints, config):
                 count += 1
                 tag = "{:04d}".format(count)
 
-                # Save the object to disck
-                myfun.save_to_disk(tag)
+                # Save the object to disk - only if want to 
+                if config["jobcontrol"]["save_solns"]: 
+                    myfun.save_to_disk(tag)
 
                 # Save energy and indices
                 e_list.append(myfun.energy)

@@ -32,14 +32,19 @@ def analyse(ints, config):
     # Get list of states to be analysed
     fnames = []
     if config["jobcontrol"]["analyse"]["states"][0] == "all":
-        for prefix in config["jobcontrol"]["read_dir"]:
-            #for i in range(len(glob.glob(prefix+"*.mo_coeff"))):
-                #fnames.append("{:s}{:04d}".format(prefix, i+1))
-            for i in glob.glob(prefix+"*.hdf5"):
-                fnames.append(i[:-5]) 
+        try:
+            print("  Get name_list") 
+            fnames = numpy.genfromtxt("name_list", dtype=str) 
+        except:
+            # watch out if we have save_solns = False 
+            for i in glob.glob("./*.hdf5"):
+                fnames.append(i[:-5])
     else:
         fnames = config["jobcontrol"]["analyse"]["states"]
-
+    print("fnames: ", fnames) 
+    energies = [] 
+    wfnlist = [] 
+    orbs_list = config["jobcontrol"]["analyse"]["orbital_plots"] 
     for fname in fnames:
         print(" + Analysing ", fname)
         # Initialise optimisation object
@@ -47,13 +52,24 @@ def analyse(ints, config):
         except: pass
         myfun = WFN(ints, **wfnconfig)
         myfun.read_from_disk(fname)
-        
         # Gives in the indices as as list and plots those orbitals... 
-        orbs_list = config["jobcontrol"]["analyse"]["orbital_plots"] 
         # Localise orbitals
-        myfun.localise_orbitals() 
-        myfun.mo_cubegen(orbs_list, f"{fname}")
+        if len(orbs_list)>0: 
+            myfun.localise_orbitals() 
+            myfun.mo_cubegen(orbs_list, f"{fname}")
+    
+        myfun.deallocate() 
+        energies.append(myfun.energy) 
+        wfnlist.append(myfun.copy()) 
+    
+    if config["jobcontrol"]["analyse"]["osc_strength"]: 
+        from quantel.gnme.analysis_utils import wfnlist_osc_strength 
+        ref, osc_strengths, tdms =  wfnlist_osc_strength(wfnlist, ref_ind=None, plev=1, save=True)
+        numpy.savetxt("oscillators.txt", osc_strengths, 
+                       fmt="%04d:  % 10.6f   % 10.6f   % 10.6f", 
+                        header=f"<x|mu|{ref}>   dE/ev   f    S")  
 
+        
         # Store dipole and quadrupole
         #dip  = myfun.dipole
         #quad = myfun.quadrupole

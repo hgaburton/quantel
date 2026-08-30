@@ -13,7 +13,8 @@ def csf_rdm1(csf1, csf2, metric, thresh=1e-10, enuc = 0.0):
     assert(csf1.nbsf == csf2.nbsf)
     nmo = csf1.nmo
     nbsf = csf1.nbsf
-
+    if (csf1.s2 != csf2.s2): return 0 , 0
+    
     # Initialize output
     Hxw, Sxw = 0, 0
 
@@ -62,6 +63,8 @@ def csf_coupling(csf1, csf2, metric, hcore=None, eri=None, enuc=0.0, thresh=1e-1
     # Number of orbitals and basis functions
     assert(csf1.nmo == csf2.nmo)
     assert(csf1.nbsf == csf2.nbsf)
+    if (csf1.s2 != csf2.s2): return 0 , 0
+    
     nmo = csf1.nmo
     nbsf = csf1.nbsf
 
@@ -109,7 +112,7 @@ def csf_coupling(csf1, csf2, metric, hcore=None, eri=None, enuc=0.0, thresh=1e-1
 
 def csf_coupling_slater_condon(csf1, csf2, ints, thresh=1e-10):
     # Compute coupling of two CSFs using Slater-Condon rules
-
+    if (csf1.s2 != csf2.s2): return 0 , 0
     # Get the overlap matrix
     metric = ints.overlap_matrix()
 

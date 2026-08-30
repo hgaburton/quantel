@@ -139,7 +139,7 @@ class HybridEF:
                 if(plev>1): print("   Hybrid Eigenvector-Following step:")
                 if(plev>1): print("  ----------------------------------------------------------------")
                 if(plev>0): print(" {: 5d} {: 16.10f}    {:^8s}    {:8.2e}    {:8.2e}    {:10s}".format(
-                      istep, eref, st_cur_ind, step_length, conv, comment))
+                      istep, eref, st_cur_ind, step_length, conv, comment), flush=True)
                 if(plev>1): print("  ----------------------------------------------------------------")
 
             else:

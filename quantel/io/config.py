@@ -199,16 +199,21 @@ class Config(dict):
         
         elif self["jobcontrol"]["guess"] == "fromfile":
             self["jobcontrol"]["read_dir"] = getlist(self.lines,"read_dir",str,True)
-            self["jobcontrol"]["override_spin_coupling"] = getbool(self.lines,"override_spin_coupling",False, default=False)
-        
+            self["jobcontrol"]["save_solns"] = getbool(self.lines,"save_solns",False,default=True)
+            #self["jobcontrol"]["override_spin_coupling"] = getbool(self.lines,"override_spin_coupling",False, default=False)
+            self["jobcontrol"]["override_spin_coupling"] = not getbool(self.lines,"read_spin_coupling",False, default= True )
+  
         elif self["jobcontrol"]["guess"] == "ladder_fromfile":
             self["jobcontrol"]["read_dir"] = getlist(self.lines,"read_dir",str,True)
             self["jobcontrol"]["override_spin_coupling"] = getbool(self.lines,"override_spin_coupling",False, default=False)
+            #self["jobcontrol"]["override_spin_coupling"] = getbool(self.lines,"override_spin_coupling",False, default=False)
+            self["jobcontrol"]["override_spin_coupling"] = not getbool(self.lines,"read_spin_coupling",False, default= True )
         
         elif self["jobcontrol"]["guess"] == "follow_fromfile":
             self["jobcontrol"]["read_dir"] = getlist(self.lines,"read_dir",str,True)
-            self["jobcontrol"]["override_spin_coupling"] = getbool(self.lines,"override_spin_coupling",False, default=False)
             self["jobcontrol"]["save_solns"] = getbool(self.lines,"save_solns",False,default=True)
+            #self["jobcontrol"]["override_spin_coupling"] = getbool(self.lines,"override_spin_coupling",False, default=False)
+            self["jobcontrol"]["override_spin_coupling"] = not getbool(self.lines,"read_spin_coupling",False, default= True )
         
         elif self["jobcontrol"]["guess"] == "fromorca":
             self["jobcontrol"]["orca_file"] = getvalue(self.lines,"orca_file",str,True)
@@ -236,9 +241,9 @@ class Config(dict):
                                                  )
         if self["jobcontrol"]["analyse"]:
             self["jobcontrol"]["analyse"] = dict(states = getlist(self.lines,"states",str,False,default=["all"]),
-                                                 orbital_plots = getlist(self.lines, "orbital_plots",int,True),
+                                                 orbital_plots = getlist(self.lines, "orbital_plots",int,False, default=[]),
                                                  dyson_plots = getvalue(self.lines,"dyson_plots",str,False,default=10),
-                                                )
+                                                osc_strength = getbool(self.lines,"osc_strength",False, default=False) )
             self["jobcontrol"]["read_dir"] = getlist(self.lines,"read_dir",str,True)
         
         # Job control for computing oscillator strengths

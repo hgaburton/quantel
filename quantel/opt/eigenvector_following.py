@@ -49,7 +49,17 @@ class EigenFollow:
 
             # Get Hessian eigen-decomposition
             hess_eig, hess_vec = np.linalg.eigh(obj.hessian) 
-            cur_hind = np.sum(hess_eig<0)
+            
+            # Logic from opt/function.py:get_davidson_hessian_index
+            # Count the Hessian index
+            ndown = 0
+            nzero = 0
+            for i in hess_eig:
+                if i < -1e-16:  ndown += 1
+                elif not i>1e-16:  nzero +=1 
+            # Save the result
+            obj.hess_index = (ndown, nzero)
+            cur_hind = ndown 
 
             if istep > 0 and plev > 0:
                 print(" {: 5d} {: 16.10f}    {:8.0f}    {:8.2e}    {:8.2e}    {:10s}".format(
@@ -59,7 +69,7 @@ class EigenFollow:
             sys.stdout.flush()
             
             if(index == None):
-                index = np.sum(hess_eig < 0)
+                index = cur_hind 
 
             # Check if we have convergence
             if(conv < thresh): 
@@ -94,8 +104,16 @@ class EigenFollow:
         if plev>0: print("  ================================================================")
         kernel_end_time = datetime.datetime.now() # Save end time
         computation_time = kernel_end_time - kernel_start_time
-        if plev>0: print("  Eigenvector-following walltime: ", computation_time.total_seconds(), " seconds")
-
+        if plev>0: 
+            print("  Eigenvector-following walltime: ", computation_time.total_seconds(), " seconds")
+            if not converged: 
+                print(f"  Failed to converge") 
+                    
+            elif (index!=cur_hind): 
+                print(f"  Converged onto solution with incorrect Hessian index: {cur_hind}") 
+            else: 
+                print("  Converged onto solution with correct Hessian index")
+        print(flush=True)  
         return converged
 
 

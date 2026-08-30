@@ -7,8 +7,11 @@ def include_spin_flips(wfnlist, nlist):
     ilist = [] 
     elist = [] 
     flip_wfnlist = [] 
-    # Assumes solutions are numbered
-    count = max([ int(x) for x in nlist])
+    
+    # Creating names - 
+    # Assumes solutions are numbered as --0018
+    count = max([ int(x[-4:]) for x in nlist])
+    
     for i, wfn in enumerate(wfnlist):
         wfn.update()
         flip = wfn.get_spin_flip()
@@ -22,8 +25,19 @@ def include_spin_flips(wfnlist, nlist):
             print(f"Unique spin flip located for Solution {i} in list")
             flip.get_davidson_hessian_index() 
             count += 1 
-            flip_wfnlist.append(flip) 
-            fnlist.append(f"{count:04d}")
-            elist.append(flip.energy) 
-            ilist.append(flip.hess_index[0]) 
+            flip_wfnlist.append(flip)
+            found = False 
+            for i in range(10000): 
+                temp = f"{i:04d}"
+                if not (temp in nlist): 
+                    found = True 
+                    break
+ 
+            if found: 
+                fnlist.append(temp)
+                elist.append(flip.energy) 
+                ilist.append(flip.hess_index[0])
+                print(f"  Spin flip saved as {temp}", flush=True) 
+            else: 
+                print("  Couldn't find unused name - spin flip was not saved", flush=True) 
     return flip_wfnlist, fnlist, elist, ilist  

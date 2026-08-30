@@ -118,11 +118,11 @@ def main():
         if(config["jobcontrol"]["xc_functional"] is not None):
             raise ValueError("NOCI is not currently compatible with DFT wavefunctions")
         
-        if(config["wavefunction"]["method"]=="uhf"): 
-            from quantel.utils.uhf_utils import include_spin_flips 
-            print(" Length WFNLIST before: ", len(wfnlist)) 
-            include_spin_flips(wfnlist, config["jobcontrol"]) 
-            print(" Length WFNLIST after: ", len(wfnlist)) 
+        #if(config["wavefunction"]["method"]=="uhf"): 
+        #    from quantel.utils.uhf_utils import include_spin_flips 
+        #    print(" Length WFNLIST before: ", len(wfnlist)) 
+        #    include_spin_flips(wfnlist, config["jobcontrol"]) 
+        #    print(" Length WFNLIST after: ", len(wfnlist)) 
         #noci(wfnlist, **config["jobcontrol"]["noci_job"])
         noci(wfnlist, config)
     

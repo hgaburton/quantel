@@ -108,11 +108,7 @@ def noci(wfnlist, config, lindep_tol=1e-8, plev=1):
         print("\nNOCI Eigenvectors")
         print(v)
         print("\n") 
-    ## Calc NOCI WFN oscillator strengths
-    #if len(wfnlist) > 1: 
-    #    noci_osc_strengths = nociwfn_osc_strength(v, w, wfnlist, noci_ref_ind=0, plev=1)
-    #    numpy.savetxt("noci_oscillators", noci_osc_strengths, fmt="% 16.10f")
-   
+ 
     # Natural Orbitals
     noon_thresh = 0.1 
     state_indices = numpy.arange(v.shape[1])
@@ -123,9 +119,11 @@ def noci(wfnlist, config, lindep_tol=1e-8, plev=1):
             if noon > noon_thresh: 
                 cubegen.orbital(wfnlist[0].integrals.mol, f"state_{state_index}.norb.{ind}.cube", norbs[:,ind])
  
-    nucl_dip, ao_dip = wfnlist[0].integrals.dipole_matrix() 
-    noci_osc_strengths = noci_osc_strength(noci_rdm1_array, w, ao_dip)
-    numpy.savetxt("noci_oscillators", noci_osc_strengths, fmt="% 16.10f")
+    ## Calc NOCI WFN oscillator strengths
+    if len(wfnlist) > 1: 
+        nucl_dip, ao_dip = wfnlist[0].integrals.dipole_matrix() 
+        noci_osc_strengths = noci_osc_strength(noci_rdm1_array, w, ao_dip)
+        numpy.savetxt("noci_oscillators", noci_osc_strengths, fmt="% 16.10f")
 
     print("\n-----------------------------------------------")
     return Hwx, Swx, eigval, v
