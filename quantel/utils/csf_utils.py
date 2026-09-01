@@ -476,31 +476,21 @@ def csf_to_cimat(spin_coupling):
     #       
     #        ci_mat[i,j] = get_total_coupling_coefficient(Pn, csf_Tn)  
     
-    if len(csf_Tn)==0:
-        return np.array([[0]]), 0 , 0
-    else:
-        nalfa = int(csf_Tn[-1]+nactive/2)
-        nbeta = nactive - nalfa
+    if len(csf_Tn)==0: 
+        return np.array([[0]]), 0 , 0   
+    else: 
+        nalfa = int(csf_Tn[-1]+nactive/2) 
+        nbeta = nactive - nalfa 
         alfa_basis = strings_with_n_ones(nactive, nalfa)
         beta_basis = strings_with_n_ones(nactive, nbeta)
-        ci_mat = np.zeros((len(alfa_basis), len(beta_basis)), dtype=float)
-        for i in range(len(alfa_basis)):
+        ci_mat = np.zeros((len(alfa_basis), len(beta_basis)), dtype=float) 
+        for i in range(len(alfa_basis)): 
             for j in range(len(beta_basis)):
-                Pn = []
-                prev = 0
+                Pn = [] 
+                prev = 0 
                 for k in range(nactive-1,-1,-1):
                     coeff =  prev + 0.5*(alfa_basis[i][k]-beta_basis[j][k])
                     Pn.append(coeff )
                     prev = coeff
-    
-                ci_mat[i,j] = get_total_coupling_coefficient(Pn, csf_Tn)
-    return ci_mat, alfa_basis, beta_basis 
-
-
-
-
-
-
-
-
- 
+                ci_mat[i,j] = get_total_coupling_coefficient(Pn, csf_Tn)  
+    return ci_mat, alfa_basis, beta_basis  

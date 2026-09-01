@@ -18,6 +18,12 @@ def pesDriver(config, seeds):
     signal.signal(signal.SIGINT,  _terminate)
     #--------------------------------
     
+    def make_geom_name(value):
+        if config["geoms"]["includeSign"]:  
+            return f"geom_{value:+0{ config['geoms']['geomDecimals'] + config['geoms']['leading_zeros'] + 2 }.{config['geoms']['geomDecimals']}f}"
+        else: 
+            return f"geom_{value:0{ config['geoms']['geomDecimals'] + config['geoms']['leading_zeros'] + 1 }.{config['geoms']['geomDecimals']}f}"
+    
     #---- Setup -----
     manager = SyncManager()
     manager.start(initializer=_worker_init)
@@ -32,11 +38,11 @@ def pesDriver(config, seeds):
                     solInfo = np.genfromtxt("extracted_solutions.txt", dtype=str) 
                     
                     for i in range(solInfo.shape[0]):
-                        if solInfo[i,3] == solInfo[i,5]: 
-                            seeds.append( (solInfo[i,0],f"geom_{float(solInfo[i,3]):04.1f}" ))
-                        else: 
-                            seeds.append( (solInfo[i,0],f"geom_{float(solInfo[i,3]):04.1f}" ))
-                            seeds.append( (solInfo[i,0],f"geom_{float(solInfo[i,5]):04.1f}" )) 
+                        if solInfo[i,3] == solInfo[i,5]:
+                            seeds.append((solInfo[i,0],make_geom_name(float(solInfo[i,3]))))
+                        else:                                                               
+                            seeds.append((solInfo[i,0],make_geom_name(float(solInfo[i,3])))) 
+                            seeds.append((solInfo[i,0],make_geom_name(float(solInfo[i,5])))) 
                                         
                 for nsol, ngeom in seeds: 
                     taskPool.dispatch_walker(nsol,ngeom)

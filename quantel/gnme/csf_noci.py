@@ -11,6 +11,7 @@ def csf_rdm1(csf1, csf2, metric, thresh=1e-10, enuc = 0.0):
     # Number of orbitals and basis functions
     assert(csf1.nmo == csf2.nmo)
     assert(csf1.nbsf == csf2.nbsf)
+    if (csf1.s2 != csf2.s2): return 0 , 0  
     nmo = csf1.nmo
     nbsf = csf1.nbsf
     if (csf1.s2 != csf2.s2): return 0 , 0

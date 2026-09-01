@@ -195,7 +195,8 @@ class Config(dict):
                                                 mo_rot_range= getvalue(self.lines,"mo_rot_range",float,False,default=numpy.pi)
                                                )
             self["jobcontrol"]["read_dir"] = getlist(self.lines,"read_dir",str,True)
-            self["jobcontrol"]["override_spin_coupling"] = getbool(self.lines,"override_spin_coupling",False, default=False)
+            #self["jobcontrol"]["override_spin_coupling"] = getbool(self.lines,"override_spin_coupling",False, default=False)
+            self["jobcontrol"]["override_spin_coupling"] = not getbool(self.lines,"read_spin_coupling",False, default= True )
         
         elif self["jobcontrol"]["guess"] == "fromfile":
             self["jobcontrol"]["read_dir"] = getlist(self.lines,"read_dir",str,True)

@@ -11,6 +11,7 @@ from .pesUtils import *
 import os, sys, uuid 
 
 class PESWalker():
+    
     def __init__(self, sol, geometries, proQueue, config, parent=None, tid=None):
         self.proQueue = proQueue 
         self.parent = parent
@@ -139,7 +140,7 @@ class PESWalker():
         # 
         if self.includeSign: 
             return f"geom_{value:+0{self.geomDecimals + self.leading_zeros + 1}.{self.geomDecimals}f}"
-        else: 
+        else:
             return f"geom_{value:0{self.geomDecimals + self.leading_zeros + 1}.{self.geomDecimals}f}"
 
     def _grid_between(self, from_geom, to_geom, step):

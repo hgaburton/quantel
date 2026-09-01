@@ -13,9 +13,9 @@ import os, sys, uuid, signal,  threading, time
 class SolutionRegistry:
  
     def __init__(self, value_of, merges_only=False):
-        # Limited to 9999 solutions 
+        # Limited to 99999 solutions < really this should be 9999 instead only changed for current job >  
         # glob from all solutions in current directories.  
-        self.freeVals = set(range(1,10000))
+        self.freeVals = set(range(1,100000))
         summary = self.extract_info() 
         solnames = [] 
         if len(summary.shape)==1: 
@@ -47,7 +47,6 @@ class SolutionRegistry:
 
     def extract_info(self):
         extract_solutions(out="extracted_solutions.txt")  
-        #os.system("bash extract_v1.sh extracted_solutions.txt > /dev/null") 
         summary = np.genfromtxt("extracted_solutions.txt", dtype=str) 
         return summary 
      
@@ -303,7 +302,7 @@ class TaskPool:
 
     def consolidate_and_sweep_solutions(self):
         canonical = self.consolidate_solutions() 
-        survivors = self.extract_info()
+        survivors = self.solution_registry.extract_info()
         if len(survivors.shape)==1: 
             survivors = [ survivors[0] ]
         else: 

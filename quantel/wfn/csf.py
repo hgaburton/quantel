@@ -54,6 +54,8 @@ class CSF(Wavefunction):
         # This is incorrect! If we have a triplet state we know that we only construct the ms = S equivalent
         self.nalfa      = integrals.molecule().nalfa()
         self.nbeta      = integrals.molecule().nbeta()
+        
+
         # Get number of basis functions and linearly independent orbitals
         self.nbsf       = integrals.nbsf()
         self.nmo        = integrals.nmo()
@@ -106,7 +108,7 @@ class CSF(Wavefunction):
         # Get numer of 'occupied' orbitals
         self.nocc = self.ncore + self.nopen
         self.sanity_check()
-
+    
         # Get determinant list and CSF occupation/coupling vectors
         self.spin_coupling = spin_coupling
         self.core_indices, self.shell_indices = get_shells(self.ncore,self.spin_coupling)
@@ -118,6 +120,7 @@ class CSF(Wavefunction):
         self.nshell = len(self.shell_indices)
         # Get anion exchange for canonicalisation
         self.anion_dbeta = self.get_anion_exchange()
+
 
     def initialise(self, mo_guess, spin_coupling=None, mat_ci=None, integrals=True):
         """ Initialise the CSF object with a set of MO coefficients"""
