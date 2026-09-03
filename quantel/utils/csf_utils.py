@@ -447,23 +447,82 @@ def bitstring_basis(length, n_ones):
         results.append(s)
     return sorted(results)
 
-def csf_to_cimat(spin_coupling):
-    if (spin_coupling!="" or spin_coupling!="cs"): 
+#def csf_to_cimat(spin_coupling):
+#    if (spin_coupling!="" or spin_coupling!="cs"): 
+#        if(spin_coupling[0]!='+') :
+#            raise RuntimeError("Invalid spin coupling pattern")
+#    else: 
+#        return np.array([[0]]), 0 , 0   
+#        
+#    nactive = len(spin_coupling) 
+#    tn, Tn = get_Tn(spin_coupling)
+#    
+#    nalfa = int(Tn[-1]+nactive/2) 
+#    nbeta = nactive - nalfa 
+#    alfa_basis = bitstring_basis(nactive, nalfa)
+#    beta_basis = bitstring_basis(nactive, nbeta)
+#    ci_mat = np.zeros((len(alfa_basis), len(beta_basis)), dtype=float) 
+#    for i in range(len(alfa_basis)): 
+#        for j in range(len(beta_basis)):
+#            if any(alfa_basis[i][k]+beta_basis[j][k] != 1 for k in range(nactive)):
+#                #csf are eigenfunctions of spatial orbital occupation number operators 
+#                # as such don't need to sample basis where some orbitals are empty or doubly occupied 
+#                continue 
+#            det = [] 
+#            for k in range(nactive):
+#                det.append( "+" if alfa_basis[i][nactive - 1 - k] == 1 else "-" ) 
+#            ci_mat[i,j] = get_determinant_coefficient(det, tn, Tn)
+#    return ci_mat, alfa_basis, beta_basis  
+
+def csf_to_cimat(spin_coupling, ncas, nact_alfa, nact_beta):
+    if not (spin_coupling=="" or spin_coupling=="cs"): 
         if(spin_coupling[0]!='+') :
             raise RuntimeError("Invalid spin coupling pattern")
-    else: 
-        return np.array([[0]]), 0 , 0   
-        
+    
+    finalalfa_basis = bitstring_basis(ncas, nact_alfa)
+    finalbeta_basis = bitstring_basis(ncas, nact_beta)
+    finalCI = np.zeros((len(finalalfa_basis), len(finalbeta_basis)), dtype=float) 
+    if (spin_coupling=="" or spin_coupling=="cs"): 
+        finalCI[0,0] = 1.0   
+        return finalCI , finalalfa_basis , finalbeta_basis   
+
+    # Work the subset     
     nactive = len(spin_coupling) 
     tn, Tn = get_Tn(spin_coupling)
-    
     nalfa = int(Tn[-1]+nactive/2) 
-    nbeta = nactive - nalfa 
-    alfa_basis = bitstring_basis(nactive, nalfa)
-    beta_basis = bitstring_basis(nactive, nbeta)
-    ci_mat = np.zeros((len(alfa_basis), len(beta_basis)), dtype=float) 
+    nbeta = nactive - nalfa
+    nadd_cs = int( 0.5*(nact_alfa + nact_beta - (nalfa + nbeta)))  
+    nadd_open = ncas - nactive - nadd_cs     
+
+    same = False 
+    if nadd_cs==0 and nadd_open==0: 
+        alfa_basis = finalalfa_basis  
+        beta_basis = finalbeta_basis 
+        same = True  
+    else: 
+        alfa_basis = bitstring_basis(nactive, nalfa)
+        beta_basis = bitstring_basis(nactive, nbeta)
+
+ 
+    def find_in_larger_basis(full_basis, sub_basis, sub_ind):
+        if same: 
+            return sub_ind 
+        vec = sub_basis[sub_ind].copy() 
+        for _ in range(nadd_open): 
+            vec.insert(0,0)  
+        for _ in range(nadd_cs):
+            vec.append(1)
+        for full_ind in range(len(full_basis)): 
+            if full_basis[full_ind] == vec:
+                break 
+        return full_ind
+
     for i in range(len(alfa_basis)): 
+        ia = find_in_larger_basis(finalalfa_basis, alfa_basis, i )           
+        print(f" salfa: {alfa_basis[i]} -> falfa: {finalalfa_basis[ia]}") 
         for j in range(len(beta_basis)):
+            ib = find_in_larger_basis(finalbeta_basis, beta_basis, j)           
+            print(f" sbeta: {beta_basis[j]} -> fbeta: {finalbeta_basis[ib]}") 
             if any(alfa_basis[i][k]+beta_basis[j][k] != 1 for k in range(nactive)):
                 #csf are eigenfunctions of spatial orbital occupation number operators 
                 # as such don't need to sample basis where some orbitals are empty or doubly occupied 
@@ -471,5 +530,9 @@ def csf_to_cimat(spin_coupling):
             det = [] 
             for k in range(nactive):
                 det.append( "+" if alfa_basis[i][nactive - 1 - k] == 1 else "-" ) 
-            ci_mat[i,j] = get_determinant_coefficient(det, tn, Tn)
-    return ci_mat, alfa_basis, beta_basis  
+           
+            # Now this part is where I translate "01" and "10" into "0011" and "0101" 
+            finalCI[ia,ib] = get_determinant_coefficient(det, tn, Tn) 
+
+    return finalCI, finalalfa_basis, finalbeta_basis  
+

@@ -10,7 +10,6 @@ def pesDriver(config, seeds):
     # Create directory to hold the .lock files 
     os.makedirs("temp", exist_ok=True)
     os.makedirs("logs", exist_ok=True)
-    os.system("rm geom_*/tmp*") 
     stop = threading.Event()
     def _terminate(signum, _frame):
         stop.set()
@@ -33,19 +32,14 @@ def pesDriver(config, seeds):
         try: 
             if config["jobcontrol"]["propagate_solutions"]:  
                 taskPool = TaskPool(proQueue, pool, config, stop)
-                if len(seeds)==0: 
-                    extract_solutions(out = "extracted_solutions.txt")
-                    solInfo = np.genfromtxt("extracted_solutions.txt", dtype=str) 
-                    
-                    for i in range(solInfo.shape[0]):
-                        if solInfo[i,3] == solInfo[i,5]:
-                            seeds.append((solInfo[i,0],make_geom_name(float(solInfo[i,3]))))
-                        else:                                                               
-                            seeds.append((solInfo[i,0],make_geom_name(float(solInfo[i,3])))) 
-                            seeds.append((solInfo[i,0],make_geom_name(float(solInfo[i,5])))) 
-                                        
-                for nsol, ngeom in seeds: 
-                    taskPool.dispatch_walker(nsol,ngeom)
+                if len(seeds)==0:
+                    seeds = taskPool.solution_registry.seeds 
+                
+                for nsol, init_geom, final_geom in seeds: 
+                    print(f"{nsol}  {init_geom} - > {final_geom}", flush = True) 
+                    taskPool.dispatch_walker(nsol, f"geom_{init_geom}",  fwd_only=False)
+                    taskPool.dispatch_walker(nsol, f"geom_{final_geom}", fwd_only=True)
+                
                 taskPool.pump() 
                 if stop.is_set():
                         print("shutdown requested - skipping solution sweep", flush=True)

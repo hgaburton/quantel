@@ -59,6 +59,7 @@ class PESWalker():
         # Child process selection  
         self.setOffDiscont = config["jobcontrol"]["setOffDiscount"] 
         self.setOffFalseCoal = config["jobcontrol"]["setOffFalseCoal"]
+        self.restrict_within_interval_FalseCoal = config["jobcontrol"]["restrict_within_interval_FalseCoal"] 
 
         # Geometry information
         self.geomMax = config["geoms"]["geomMax"] 
@@ -228,6 +229,7 @@ class PESWalker():
     def grid_iteration(self, grid, prevGeom, eigs):
         self.merged = None 
         FoundSolns = False
+        prevFoundAny = False
         searchedGeoms = [ prevGeom ] 
         if len(grid)==0:
             return False, None, None  
@@ -284,9 +286,13 @@ class PESWalker():
             self.hess_eigvecs.append(eigsystem[1])
             self.hess_eigvals = self.hess_eigvals[-self.nstore_hess:].copy()
             self.hess_eigvecs = self.hess_eigvecs[-self.nstore_hess:].copy()
-            FoundSolns, _, eigval = self.coalescence_search(wfn, currGeom) 
+            FoundSolns, FoundAny, CoalSig, eigval = self.coalescence_search(wfn, currGeom, prev_FalseCoal = prevFoundAny)
             if FoundSolns: 
                 break 
+            if CoalSig:  
+                prevFoundAny = (FoundAny or prevFoundAny)  
+            else: 
+                prevFoundAny = False 
             eigs.append(eigval[np.argsort(np.abs(eigval))[0]]) 
                 
         return FoundSolns, searchedGeoms, eigs  
@@ -527,7 +533,7 @@ class PESWalker():
         return wfn, converged, continuous, (eigval, eigvec) 
 
 
-    def search_coalescing_partners(self, wfn, geom, search_ind, zero_vec):
+    def search_coalescing_partners(self, wfn, geom, search_ind, zero_vec, prev_FalseCoal=False):
         scaler=0.01
         found = []
         FoundCoal = False 
@@ -558,7 +564,8 @@ class PESWalker():
             # Anything that converged is a solution in its own right and is worth
             # setting off as a branch; only the ones close enough in overlap are
             # the coalescing partner this search was looking for.
-            if self.setOffFalseCoal: 
+            skipFalseCoal = True if self.restrict_within_interval_FalseCoal else prev_FalseCoal 
+            if (not skipFalseCoal) and self.setOffFalseCoal: 
                 found.append((testwfn, testHessInd))
                 if 1 - np.abs(ovlp) >= self.CoalOverlapThresh:
                     # Distant unrelated solution, not the coalescing partner
@@ -580,12 +587,13 @@ class PESWalker():
                 found.append((testwfn, testHessInd))
         return found, FoundCoal
 
-    def coalescence_search(self, wfn, geom, prevFS = False, prevCS = False):
+    def coalescence_search(self, wfn, geom, prevFS = False, prevCS = False, prev_FalseCoal = False):
         """Analyse wfn's Hessian, if a coalescence signature is present, run
            the partner search.
            Returns (newwfns, signature):
                 signature = True : when n a zero mode was identified"""
-        FoundSolns = False 
+        FoundAny = False 
+        FoundCoal = False 
         CoalSig = False 
         eigval = self.hess_eigvals[-1]
         eigvec = self.hess_eigvecs[-1]
@@ -594,22 +602,23 @@ class PESWalker():
         if len(searchInfo) > 0 :
             CoalSig = True
             if prevFS and prevCS:
-                return FoundSolns, CoalSig, eigval 
+                return FoundCoal, CoalSig, eigval 
  
             print("Coalesence signature present ", flush=True)
             newwfns = [] 
             for searchInd, zi in searchInfo:
-                wfns, FoundCoal = self.search_coalescing_partners(wfn, geom, searchInd,
-                                                 eigvec[:, zi])
+                wfns, foundcoal = self.search_coalescing_partners(wfn, geom, searchInd,
+                                                 eigvec[:, zi], prev_FalseCoal)
                 # Every converged candidate gets registered; FoundSolns tracks
                 # only whether the coalescing partner itself was located, since
                 # that is what the cusp logic upstream keys off.
                 newwfns += wfns
-                FoundSolns = (FoundSolns or FoundCoal)
+                FoundCoal = (FoundCoal or foundcoal)
 
             if len(newwfns)!=0:
                 self.register_branches(newwfns, geom)
-        return FoundSolns, CoalSig, eigval  
+                FoundAny = True
+        return FoundCoal, FoundAny , CoalSig, eigval  
 
     def adjacent_geoms(self, geom): 
         allgeoms = sorted(glob.glob("geom_*"), key=self.geom_value)
@@ -703,6 +712,7 @@ class PESWalker():
 
         self.Energies = [startE]
         prevFoundSolns = False
+        prevFoundAny = False
         prevCoalSig = False
         for igeom, geom in enumerate(self.prop_geoms[1:]):
             print(f"====== Geom: {geom} ========")  
@@ -778,9 +788,10 @@ class PESWalker():
             self.hess_eigvals = self.hess_eigvals[-self.nstore_hess:].copy()
             self.hess_eigvecs = self.hess_eigvecs[-self.nstore_hess:].copy()
             self.Energies.append(wfn.energy) 
-            FoundSolns, CoalSig, eigval = self.coalescence_search(wfn, geom,
+            FoundSolns, FoundAny, CoalSig, eigval = self.coalescence_search(wfn, geom,
                                                              prevFS = prevFoundSolns,
-                                                              prevCS = prevCoalSig)
+                                                              prevCS = prevCoalSig, 
+                                                              prev_FalseCoal = prevFoundAny)
             #  
             if (CoalSig and not FoundSolns) and (prevCoalSig and not prevFoundSolns): 
                 print("A3 search: No coalescing partners were located")
@@ -795,13 +806,15 @@ class PESWalker():
             prevCoalSig = CoalSig 
             if not CoalSig: 
                 prevFoundSolns = False 
+                prevFoundAny = False 
             else: 
                 prevFoundSolns = (prevFoundSolns or FoundSolns) 
+                prevFoundAny = (prevFoundAny or FoundAny) 
                 pass  
         return
 
 
-    def initialise_run(self, geom, search=True):
+    def initialise_run(self, geom):
         """Initial search for coalescing solutions"""
         wfn = self.get_wfn(geom)
         wfn.read_from_disk(geom+"/"+self.sol)
@@ -827,7 +840,7 @@ class PESWalker():
         return
 
 
-    def construct_PES(self, start_geom, forward=True):
+    def construct_PES(self, start_geom, forward=True, initSearch=True):
         self._check_in(f"{'fwd' if forward else 'bwd'}")
         # Find the propagation geometries
         ind = self.geoms.index(start_geom)
@@ -836,10 +849,10 @@ class PESWalker():
         else:
             self.prop_geoms = self.geoms[:ind + 1][::-1]
 
-        # We only run the initial coalescence search on the forward run, avoid duplicates 
-        self.initialise_run(self.prop_geoms[0],forward)
+        self.initialise_run(self.prop_geoms[0])
         if len(self.prop_geoms)>1:
-            self.propagate_solution(initSearch=forward)
+            # We only run the initial coalescence search if we survive the first step 
+            self.propagate_solution(initSearch=initSearch)
         print(f"{self.sol} finished, geometries created this walk: ", self.new_geoms)
         return self.new_geoms.copy()
 

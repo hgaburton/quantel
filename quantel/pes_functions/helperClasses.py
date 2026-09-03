@@ -14,18 +14,10 @@ class SolutionRegistry:
  
     def __init__(self, value_of, merges_only=False):
         # Limited to 99999 solutions < really this should be 9999 instead only changed for current job >  
-        # glob from all solutions in current directories.  
+        # glob from all solutions in current directories
+        # replaces append to used names and is general 
         self.freeVals = set(range(1,100000))
-        summary = self.extract_info() 
-        solnames = [] 
-        if len(summary.shape)==1: 
-            solnames.append(summary[0]) 
-        else: 
-            for sol in summary[:,0]:
-                solnames.append(str(sol)) 
-        
-        for solname in solnames: 
-            self.freeVals.remove(int(solname))   
+        self.seeds = self.read_all_solutions()  
 
         self.MERGES_FILE = "merges.txt"
         self.merge_claims = [] 
@@ -44,6 +36,28 @@ class SolutionRegistry:
         geoms = np.genfromtxt("geoms.txt", dtype=str)
         ordering =np.argsort([value_of(x) for x in geoms ]) 
         self.geoms = list(geoms[ordering])
+
+    def read_all_solutions(self):  
+        summary = self.extract_info() 
+        tmp_sols = [] 
+        
+        seeds = [] 
+        if len(summary.shape)==1: 
+            self.freeVals.remove(int(summary[0]))
+            seeds.append((summary[0], summary[3], summary[5]))  
+        else: 
+            for isol, sol in enumerate(summary[:,0]):
+                if str(sol)[0]=="t": 
+                    tmp_sols.append((sol,summary[isol, 3])) 
+                else:
+                    self.freeVals.remove(int(sol))
+                    seeds.append((summary[isol,0], summary[isol,3], summary[isol,5]))  
+        
+        for prov, geom in tmp_sols: 
+            name = self.clean_up(prov, geom)
+            seeds.append((name, geom, geom)) 
+        # This returns a list of (sol, start_geom, end_geom) - so that we can set off the correct direction!
+        return seeds 
 
     def extract_info(self):
         extract_solutions(out="extracted_solutions.txt")  
@@ -68,7 +82,6 @@ class SolutionRegistry:
         else: 
             n = f"{self.freeVals.pop():04d}"
             ## this chooses the name 
-         
         return n
 
 
@@ -199,8 +212,16 @@ class TaskPool:
         self.stop = stop
         self.QUEUE_POLL = 20.0 
 
-    def dispatch_walker(self, sol, geom, parent=None): 
-        for fwd in (True, False):
+    def dispatch_walker(self, sol, geom, parent=None, fwd_only=None):
+        dirs = None
+        if fwd_only is None: 
+            dirs = [ True, False]
+            initSearches = dirs  
+        else: 
+            dirs = [ fwd_only ]
+            initSearches = [ True ]  
+ 
+        for ifwd, fwd in enumerate(dirs):
             tid = uuid.uuid4().hex[:8]
             self.outstanding[tid] = {
                 "pid": None,
@@ -211,7 +232,7 @@ class TaskPool:
             }
             self.pool.apply_async(
                 PESWalker(sol, self.solution_registry.geoms, self.proQueue, self.pes_config, parent, tid).construct_PES,
-                (geom, fwd),
+                (geom, fwd, initSearches[ifwd]),
                 callback=lambda ret, tid=tid: self.proQueue.put(
                     ("done", {"tid": tid, "geoms": ret})),
                 error_callback=lambda exc, tid=tid: self.proQueue.put(

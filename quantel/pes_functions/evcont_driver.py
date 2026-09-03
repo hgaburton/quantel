@@ -16,36 +16,48 @@ class fcisolver():
 
 class DummyState(): 
     
-    def __init__(self, wfn):
+    def __init__(self, wfn, ncas, nact_alfa, nact_beta):
         # this works for the mixing of cs and +- - test that first? 
         self.mol = wfn.integrals.mol()
         self.fcisolver = fcisolver() 
         self.nelec=(wfn.nalfa+wfn.nbeta) 
-        self.ncore = 7 
-        self.ncas = 2  
+        self.ncore = int((self.nelec - nact_alfa - nact_beta)/2) 
+        self.ncas = ncas 
         self.mo_coeff=(wfn.mo_coeff.copy())
-        if wfn.spin_coupling == "" or wfn.spin_coupling == "cs": 
-            #self.ci = np.array([[0,0],[0,1]], dtype=float)  
-            self.ci = np.array([[1,0],[0,0]], dtype=float)  
-        else: 
-            self.ci, _ , _ = csf_to_cimat(wfn.spin_coupling) 
+        self.ci, _ , _ = csf_to_cimat(wfn.spin_coupling,ncas, nact_alfa, nact_beta) 
         print(f" spin coupling: ({wfn.spin_coupling}), self.ci: ", self.ci)  
         self.energy=(wfn.energy)  
        
     def kernel(self): 
         return [self.energy]
 
-def evcont_interpolation(basis, units, nroots, sampleGeoms, finalGeoms, solNames):    
+def evcont_interpolation(config, sampleGeoms, finalGeoms, solNames):    
     dummy_states = [ ] 
     sampleMols = []
     finalMols = []
-    for geom in finalGeoms:  
-        mol = PySCFMolecule(f"{geom}/geom.xyz", basis, units) 
+    learningSpace = [] 
+    nroots=config["nroots"]
+    ncas =  config["ncas"]
+    nact_alfa = config["nact_alfa"] 
+    nact_beta = config["nact_beta"]  
+    neleca = nact_alfa + nact_beta
+    os.makedirs("temp_geoms/", exist_ok = True)  
+    for geom in finalGeoms:
+        path = f"{geom}/geom.xyz"  
+        if not os.path.exists(path):
+            # Surely a benefit is that we dont need to find solutions at all geometries 
+            geomVal = float(geom[5:]) 
+            os.system(f"python {config['makeGeomScript']} {geomVal} > temp_geoms/{geom}.xyz") 
+            path = f"temp_geoms/{geom}.xyz" 
+             
+        mol = PySCFMolecule(path, config["basis"], config["units"]) 
         ints = PySCFIntegrals(mol) 
         finalMols.append(mol)  
     for geom in sampleGeoms:  
-        print(f"  Construct mol for {geom}/geom.xyz", flush=True) 
-        mol = PySCFMolecule(f"{geom}/geom.xyz", basis, units)
+        print(f"  Construct mol for {geom}/geom.xyz", flush=True)
+        if not os.path.exists(f"{geom}/geom.xyz"): 
+            continue 
+        mol = PySCFMolecule(f"{geom}/geom.xyz", config["basis"], config["units"])
         print("Natom :", mol.natom())  
         ints = PySCFIntegrals(mol) 
         wfn = CSF(ints,"+-")
@@ -53,17 +65,13 @@ def evcont_interpolation(basis, units, nroots, sampleGeoms, finalGeoms, solNames
         for sol in solNames: 
             if os.path.exists(f"{geom}/{sol}.solution"): 
                 print(f"  Sampled {geom}/{sol}", flush=True)
+                learningSpace.append(f"{geom}/{sol}")
                 wfn.read_from_disk(f"{geom}/{sol}")
-                states.append(DummyState(wfn)) 
+                states.append(DummyState(wfn, ncas, nact_alfa, nact_beta)) 
         dummy_states.append(states) 
         sampleMols.append(mol)
    
-    ncas = 2 
-    neleca = 2
-    nelec = sampleMols[0].nalfa() + sampleMols[0].nbeta() 
     natom = sampleMols[0].natom()     
-    
-    print("natom", natom) 
  
     lowrank_kwargs = {
         "truncation_style": "eigval",
@@ -73,7 +81,7 @@ def evcont_interpolation(basis, units, nroots, sampleGeoms, finalGeoms, solNames
     cont_lr = CAS_EVCont_obj(
         ncas,
         neleca,
-        nroots=nroots,
+        nroots ,
         solver="CASCI",
         lowrank=True,
         **lowrank_kwargs,
@@ -90,8 +98,12 @@ def evcont_interpolation(basis, units, nroots, sampleGeoms, finalGeoms, solNames
     
     energies = np.zeros((len(finalMols),nroots+1), dtype=float)
     energies[:,0] = [ float(geom[5:]) for geom in finalGeoms ]    
+   
+    vectors = np.zeros((len(finalMols), nroots, len(learningSpace)), dtype = float)  
     for ifmol, fmol in enumerate(finalMols):
-        energies[ifmol,1:], _ = approximate_multistate_lowrank_OAO(
+        print("================================") 
+        print(f" Approximating for {finalGeoms[ifmol]}")  
+        energies[ifmol,1:], vecs = approximate_multistate_lowrank_OAO(
             fmol,
             cont_lr.one_rdm,
             cont_lr.lowrank_vectorized,
@@ -102,5 +114,14 @@ def evcont_interpolation(basis, units, nroots, sampleGeoms, finalGeoms, solNames
             Jdiag_only=True,
             sao_diag=False,
         )
+        print(" Vectors: ")
+        print(vecs)
+        vectors[ifmol, :, : ] = vecs  
+    print("================================") 
+    print("Learning space labels") 
+    print(learningSpace) 
+ 
+    np.save("evcont_vecs.npy", vectors) 
+    np.savetxt("evcont_learningSpace.txt", learningSpace, fmt="%s")
     np.savetxt("evcont_energies.txt", energies) 
     return 
