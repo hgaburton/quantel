@@ -37,20 +37,22 @@ class SolutionRegistry:
         ordering =np.argsort([value_of(x) for x in geoms ]) 
         self.geoms = list(geoms[ordering])
 
-    def read_all_solutions(self):  
+    def read_all_solutions(self, init=True):  
         summary = self.extract_info() 
         tmp_sols = [] 
         
         seeds = [] 
-        if len(summary.shape)==1: 
-            self.freeVals.remove(int(summary[0]))
+        if len(summary.shape)==1:
+            if init: 
+                self.freeVals.remove(int(summary[0]))
             seeds.append((summary[0], summary[3], summary[5]))  
         else: 
             for isol, sol in enumerate(summary[:,0]):
                 if str(sol)[0]=="t": 
                     tmp_sols.append((sol,summary[isol, 3])) 
                 else:
-                    self.freeVals.remove(int(sol))
+                    if init: 
+                        self.freeVals.remove(int(sol))
                     seeds.append((summary[isol,0], summary[isol,3], summary[isol,5]))  
         
         for prov, geom in tmp_sols: 
@@ -322,21 +324,22 @@ class TaskPool:
 
 
     def consolidate_and_sweep_solutions(self):
-        canonical = self.consolidate_solutions() 
-        survivors = self.solution_registry.extract_info()
-        if len(survivors.shape)==1: 
-            survivors = [ survivors[0] ]
-        else: 
-            survivors = survivors[:,0]
-  
-        self.solution_registry.write_solution_summary(survivors, canonical)
-        for solName in survivors:
-            print("submitting ", solName)
-            self.dispatch_sweep(solName)
+        canonical = self.consolidate_solutions()
+        sols = [] 
+        
+        survivors =  self.solution_registry.read_all_solutions(init=False)  
+        for i in range(len(survivors)): 
+            sols.append(survivors[i][0]) 
+ 
+        #self.solution_registry.write_solution_summary(survivors, canonical)
+        for sol in sols:
+            print("submitting ", sol)
+            self.dispatch_sweep(sol)
         self.pump()
         if self.outstanding:
             print("unfinished tasks after consolidate and sweep: ",
                   [i["what"] for i in self.outstanding.values()], flush=True)
+        canonical = self.consolidate_solutions() 
         return 
 
 

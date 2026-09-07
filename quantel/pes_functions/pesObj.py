@@ -530,7 +530,7 @@ class PESWalker():
             # This sets off as another branch any new solutions  
             print("Not continuous, setting off new branch", flush=True ) 
             self.register_branches([(wfn, currHessInd)], geom_to)
-        return wfn, converged, continuous, (eigval, eigvec) 
+        return wfn, converged, continuous, [eigval, eigvec]
 
 
     def search_coalescing_partners(self, wfn, geom, search_ind, zero_vec, prev_FalseCoal=False):
@@ -602,7 +602,7 @@ class PESWalker():
         if len(searchInfo) > 0 :
             CoalSig = True
             if prevFS and prevCS:
-                return FoundCoal, CoalSig, eigval 
+                return FoundCoal, FoundAny, CoalSig, eigval 
  
             print("Coalesence signature present ", flush=True)
             newwfns = [] 
@@ -888,8 +888,13 @@ class PESWalker():
                     continue
                 with geom_lock(hole):
                     # don't overwrite / collide with a distinct solution already there
-                    if match_known_solution(hole, wfn, self.dedupEnergyThresh,
-                                            self.dedupOverlapThresh, exclude=self.sol):
+                    merged = match_known_solution(hole, wfn, self.dedupEnergyThresh,
+                                            self.dedupOverlapThresh, exclude=self.sol)
+                    if merged:     
+                        # then register a merge claim then ... ?  
+                        self.merged = merged
+                        self.proQueue.put(("merged", {"tid": self.tid, "sol": self.sol,
+                                         "onto": merged, "geom": hole}))
                         continue
                     wfn.save_to_disk(f"{hole}/{self.sol}")
                 anchor = hole   # chain: next hole relaxes from the one we just filled
