@@ -24,12 +24,14 @@ class PESWalker():
         self.merged = None
 
         # Wavefuntion
+        self.method = config["wfn"]
         if config["wfn"]=="uhf":
             from quantel.wfn.uhf import UHF
             self.WFN = UHF
         elif config["wfn"]=="csf": 
             from quantel.wfn.csf import CSF
-            self.WFN = CSF  
+            self.WFN = CSF 
+            self.spin_coupling = ""  
         else: 
             raise RuntimeError(" Wavefunction method not recognised") 
 
@@ -65,9 +67,9 @@ class PESWalker():
         self.geomMax = config["geoms"]["geomMax"] 
         self.geomMin = config["geoms"]["geomMin"]
         self.includeSign = config["geoms"]["includeSign"]
-        self.leading_zeros  = config["geoms"]["leading_zeros"]
+        self.leading_zeros = config["geoms"]["leading_zeros"]
         self.geomDecimals = config["geoms"]["geomDecimals"]
-        self.fineGrain = 10**(- self.geomDecimals) 
+        self.fineGrain = 10**(-self.geomDecimals) 
         self.coarseGrain = config["geoms"]["coarseGrain"]
         self.makeGeomscript = config["geoms"]["makeGeomscript"] 
         self.new_geoms = []
@@ -126,8 +128,15 @@ class PESWalker():
         else:
             mol = PySCFMolecule(geom+"/geom.xyz", self.basis, self.unit, spin=self.spin, charge=self.charge)
         ints = PySCFIntegrals(mol)
-        return self.WFN(ints, "+-")
+      
+        # We want to be able to get the wave function with the correct arguments, 
+        # for instance the correct spin coupling pattern
 
+      
+        if self.method=="csf":
+            return self.WFN(ints, self.spin_coupling)
+        else: 
+            return self.WFN(ints) 
     #-------------------------------------------------------------
     # Change the geom name formatting here!
     @staticmethod
@@ -507,7 +516,7 @@ class PESWalker():
 
         # Back propagation to check continuity
         testwfn = self.get_wfn(geom_from)
-        testwfn.initialise(mo_guess = wfn.mo_coeff.copy())
+        testwfn.initialise(mo_guess=wfn.mo_coeff.copy()) 
         if self.PropOPT().run(testwfn, index=self.HessInd, plev=0):
             refwfn = self.get_wfn(geom_from)
             refwfn.read_from_disk(geom_from + "/" + self.sol)
@@ -540,7 +549,7 @@ class PESWalker():
         print("Searching for coalescing partners",flush=True)
         for sign in (-1.00, +1.00):
             testwfn = self.get_wfn(geom) 
-            testwfn.initialise(mo_guess=wfn.mo_coeff) 
+            testwfn.initialise(mo_guess = wfn.mo_coeff.copy()) 
             testwfn.take_step(sign * scaler * zero_vec)
             print(" Hybrid EF max steps = 30 ") 
             if not HybridEF().run(testwfn, index=search_ind, plev=1, maxit=30): 
@@ -636,38 +645,51 @@ class PESWalker():
         return below, above
 
     def check_adjacent_geoms(self, geom, wfn, exclude=None): 
-        _ , _, refInd = analyse_hessian(wfn, self.hessThresh)
         below, above = self.adjacent_geoms(geom)
         match = None   
         for geom_to in [ below , above]:
             if geom_to is None: 
                 continue 
+            # This introduces a continuity check that might increase cost too much 
+            #new_wfn, converged, continuous, _ = self.relax_solution(geom, geom_to, setOffDiscont=False)        
+            #if converged and continuous: 
+            #    match = match_known_solution(geom_to, new_wfn, self.dedupEnergyThresh, self.dedupOverlapThresh, exclude = exclude)
+            #    if match is not None: 
+            #        break 
+            #else: 
+            #    continue 
+
             continuous = False 
-            # The problem with this is if the spin coupling patterns are different! 
-            t1wfn = self.get_wfn(geom_to)
-            t1wfn.initialise(mo_guess = wfn.mo_coeff.copy())  
-            if not self.PropOPT().run(t1wfn, index=refInd, plev=1):
+            newwfn = self.get_wfn(geom_to)
+            newwfn.initialise(mo_guess = wfn.mo_coeff.copy())
+            if not self.PropOPT().run(newwfn, index=self.HessInd, plev=1):
                 continue  
-            #match known solutions at geom_to - if it doesnt then we dont need the discont check, if it does we need discont check!   
-            _ , _, t1Ind = analyse_hessian(t1wfn, self.hessThresh)
-            match = match_known_solution(geom_to, t1wfn, self.dedupEnergyThresh, self.dedupOverlapThresh, exclude = exclude)
+            # Check known solutions at geom_to
+            _ , _, newInd = analyse_hessian(newwfn, self.hessThresh)
+            match = match_known_solution(geom_to, newwfn, self.dedupEnergyThresh, self.dedupOverlapThresh, exclude = exclude)
+            # if no matches then skip to next check    
             if match is None: 
                 continue  
-            # Back propagation to check continuity
-            t2wfn = self.get_wfn(geom)
-            t2wfn.initialise(mo_guess = t1wfn.mo_coeff.copy())
-            if self.PropOPT().run(t2wfn, index=refInd, plev=0):
-                if abs(wfn.energy - t2wfn.energy) < self.contEnergyThresh:
-                    if 1-abs(wfn.overlap(t2wfn)) < self.contOverlapThresh:
-                        continuous = True
             else: 
-                match = None 
-                continue 
-            if (refInd != t1Ind) or not continuous: 
-                match = None
-            
-            if match is not None: 
-                break 
+                # Now need back propagation to check continuity
+                backwfn = self.get_wfn(geom)
+                backwfn.initialise(mo_guess=newwfn.mo_coeff.copy()) 
+                if self.PropOPT().run(backwfn, index=self.HessInd, plev=0):
+                    if abs(wfn.energy - backwfn.energy) < self.contEnergyThresh:
+                        if 1-abs(wfn.overlap(backwfn)) < self.contOverlapThresh:
+                            continuous = True
+                else: 
+                    # then not a true continuous match 
+                    match = None 
+                    continue
+                
+                _ , _, backInd = analyse_hessian(backwfn, self.hessThresh)
+                continuous = ( continuous and (newInd == self.HessInd) )  
+                continuous = ( continuous and (backInd == self.HessInd) )  
+ 
+                if continuous: 
+                    # Then match and continuous -> therefore break 
+                    break
  
         return match, geom_to              
 
@@ -675,6 +697,10 @@ class PESWalker():
         """Check, name, save and queue every (wfn, hess_index) partner found at geom."""
         foundSolns = False
         match = []
+        #if self.method == "uhf": 
+        #    flips = [] 
+        #    for nwfn, ind in newwfns: 
+
         for nwfn, ind in newwfns:
             adj_match, adj_geom = self.check_adjacent_geoms(geom, nwfn, self.sol) 
             if adj_match is not None:
@@ -818,6 +844,12 @@ class PESWalker():
         """Initial search for coalescing solutions"""
         wfn = self.get_wfn(geom)
         wfn.read_from_disk(geom+"/"+self.sol)
+        # so here we can set the class wide settings for kwargs
+        if self.method=="csf": 
+            self.spin_coupling = wfn.spin_coupling 
+        else: 
+            pass 
+         
         wfn.update()
         eigval, eigvec, currHessInd = analyse_hessian(wfn, self.hessThresh)
         self.hess_eigvals.append(eigval)
