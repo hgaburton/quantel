@@ -88,6 +88,7 @@ def match_known_solution(geom, wfn, dedupEnergyThresh, dedupOverlapThresh,
         if ind != wfn.hess_index[0] or abs(e - wfn.energy) >= dedupEnergyThresh:
             continue
         other = wfn.copy()
+        # This read from disk should catch any changes in e.g. spin coupling of the solutions
         other.read_from_disk(geom + "/" + name)
         ovlp = np.abs(wfn.overlap(other))
         # 1-|ovlp| in full precision: at :.6f on |ovlp| every one of these
