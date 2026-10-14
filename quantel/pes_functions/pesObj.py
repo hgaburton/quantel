@@ -75,6 +75,7 @@ class PESWalker():
         self.new_geoms = []
 
         # To assign the hessian index
+        self.exactHess = config["exactHess"] if config["exactHess"] else True 
         self.hessThresh = 1e-16
         # Deduplication thresholds 
         self.dedupEnergyThresh = 1e-8          
@@ -531,7 +532,7 @@ class PESWalker():
 
         # So this is where some eigenfollow logic would hold us back 
         if converged:
-            eigval, eigvec, currHessInd = analyse_hessian(wfn, self.hessThresh)
+            eigval, eigvec, currHessInd = analyse_hessian(wfn, self.hessThresh, exact=self.exactHess)
             report_hessian(geom_to, self.HessInd, eigval, currHessInd)
             continuous = ( continuous and (currHessInd == self.HessInd) )  
             
@@ -557,9 +558,8 @@ class PESWalker():
             print(" Testing second portion to push to further tolerances on search") 
             if not self.PropOPT().run(testwfn, index=search_ind): 
                 continue 
-            teval, _ = np.linalg.eigh(testwfn.hessian)
-            testHessInd = np.sum(teval < -self.hessThresh)
-            testwfn.hess_index = (testHessInd, 0)
+            _ , _ , testHessInd = analyse_hessian(testwfn, self.hessThresh, exact=self.exactHess)
+
             ovlp = wfn.overlap(testwfn)
             print(f"  search candidate at {geom} searchInd={search_ind},sign={sign} scale={scaler} "
                   f"E={testwfn.energy:.10f} index={testHessInd} "
@@ -665,7 +665,7 @@ class PESWalker():
             if not self.PropOPT().run(newwfn, index=self.HessInd, plev=1):
                 continue  
             # Check known solutions at geom_to
-            _ , _, newInd = analyse_hessian(newwfn, self.hessThresh)
+            _ , _, newInd = analyse_hessian(newwfn, self.hessThresh, exact=self.exactHess)
             match = match_known_solution(geom_to, newwfn, self.dedupEnergyThresh, self.dedupOverlapThresh, exclude = exclude)
             # if no matches then skip to next check    
             if match is None: 
@@ -683,7 +683,7 @@ class PESWalker():
                     match = None 
                     continue
                 
-                _ , _, backInd = analyse_hessian(backwfn, self.hessThresh)
+                _ , _, backInd = analyse_hessian(backwfn, self.hessThresh, exact=self.exactHess)
                 continuous = ( continuous and (newInd == self.HessInd) )  
                 continuous = ( continuous and (backInd == self.HessInd) )  
  
@@ -764,7 +764,7 @@ class PESWalker():
                     # geom, so the step was only too coarse.  Adopt that point
                     # what if it was a previously converged onto solution? Well then... 
                     wfn.read_from_disk(geom + "/" + self.sol)
-                    eigval, eigvec, currHessInd = analyse_hessian(wfn, self.hessThresh)
+                    eigval, eigvec, currHessInd = analyse_hessian(wfn, self.hessThresh, exact=self.exactHess)
                     eigsystem = [ eigval, eigvec] 
                     prevFoundSolns = False
                     prevCoalSig = False
@@ -851,7 +851,7 @@ class PESWalker():
             pass 
          
         wfn.update()
-        eigval, eigvec, currHessInd = analyse_hessian(wfn, self.hessThresh)
+        eigval, eigvec, currHessInd = analyse_hessian(wfn, self.hessThresh, exact=self.exactHess)
         self.hess_eigvals.append(eigval)
         self.hess_eigvecs.append(eigvec)
         self.HessInd = currHessInd
