@@ -552,18 +552,19 @@ class PESWalker():
             testwfn = self.get_wfn(geom) 
             testwfn.initialise(mo_guess = wfn.mo_coeff.copy()) 
             testwfn.take_step(sign * scaler * zero_vec)
-            print(" Hybrid EF max steps = 30 ") 
-            if not HybridEF().run(testwfn, index=search_ind, plev=1, maxit=30): 
+            if not HybridEF().run(testwfn, index=search_ind, plev=1, maxit=30,thresh=1e-6): 
                 continue 
             print(" Testing second portion to push to further tolerances on search") 
-            if not self.PropOPT().run(testwfn, index=search_ind): 
+            if not self.PropOPT().run(testwfn, index=search_ind, thresh=1e-8): 
                 continue 
+            
             _ , _ , testHessInd = analyse_hessian(testwfn, self.hessThresh, exact=self.exactHess)
-
             ovlp = wfn.overlap(testwfn)
+            ovlpCond = 1-np.abs(wfn.overlap(testwfn))
+
             print(f"  search candidate at {geom} searchInd={search_ind},sign={sign} scale={scaler} "
                   f"E={testwfn.energy:.10f} index={testHessInd} "
-                  f"|ovlp|={np.abs(ovlp):.6f}")
+                  f"1-|ovlp|={ovlpCond:.6f}")
             
             if any(1-abs(testwfn.overlap(f)) < self.dedupOverlapThresh
                    for f, _ in found):
@@ -576,19 +577,19 @@ class PESWalker():
             skipFalseCoal = True if self.restrict_within_interval_FalseCoal else prev_FalseCoal 
             if (not skipFalseCoal) and self.setOffFalseCoal: 
                 found.append((testwfn, testHessInd))
-                if 1 - np.abs(ovlp) >= self.CoalOverlapThresh:
+                if ovlpCond >= self.CoalOverlapThresh:
                     # Distant unrelated solution, not the coalescing partner
                     print(f"Distant solution at {geom} (1-abs(ovlp)): ",
-                          1 - np.abs(ovlp), flush=True)
+                          ovlpCond, flush=True)
                     continue
 
                 print(f"Found a coalescing partner at {geom} (not checked if new)")
                 FoundCoal = True
             else: 
-                if 1 - np.abs(ovlp) >= self.CoalOverlapThresh:
+                if ovlpCond >= self.CoalOverlapThresh:
                     # Distant unrelated solution, not the coalescing partner
                     print(f"Distant solution at {geom} (1-abs(ovlp)): ",
-                          1 - np.abs(ovlp), flush=True)
+                          ovlpCond, flush=True)
                     continue
 
                 print(f"Found a coalescing partner at {geom} (not checked if new)")
