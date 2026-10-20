@@ -165,7 +165,7 @@ class Function(metaclass=ABCMeta):
 
         # Save the result
         self.hess_index = (ndown, nzero)
-        return
+        return eigs, x
 
 
     def pushoff(self, n, angle=np.pi/2):

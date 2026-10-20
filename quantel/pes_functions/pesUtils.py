@@ -105,10 +105,15 @@ def match_known_solution(geom, wfn, dedupEnergyThresh, dedupOverlapThresh,
 #------------------------------------------------
 # Hessian analysis
 #------------------------------------------------
-def analyse_hessian(wfn, hessThresh):
+def analyse_hessian(wfn, hessThresh, exact=True):
     """Return (eigval, eigvec, currHessInd, zeroInds) for wfn's Hessian
        and set the currHessIndex as wfn.hess_index"""
-    eigval, eigvec = np.linalg.eigh(wfn.hessian)
+    if exact: 
+        eigval, eigvec = np.linalg.eigh(wfn.hessian)
+    else: 
+        #Obtain via davidson
+        eigval, eigvec = wfn.get_davidson_hessian_index(approx_hess=False)
+   
     currHessInd = int(np.sum(eigval < -hessThresh))
     wfn.hess_index = (currHessInd, 0)
     return eigval, eigvec, currHessInd
