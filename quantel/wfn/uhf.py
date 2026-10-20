@@ -637,3 +637,17 @@ class UHF(Wavefunction):
         if plev>0: 
             print("  Orbital localistion stable: ", isstable)
 
+    def get_natorbs(self, idxs, fname=""):
+        # get the spin densities in the AO basis: 
+        self.update() 
+        spin_density = self.dens[0].copy() + self.dens[1].copy()         
+        metric = self.integrals.overlap_matrix() 
+        RDM1 = np.einsum("mk, kl, ln -> mn", metric,spin_density, metric, optimize="optimal") 
+        noons, norbs  = scipy.linalg.eigh(a=RDM1,b=metric) 
+        order = np.argsort(noons)[::-1]
+        noons = noons[order]
+        norbs = norbs[:, order] 
+        print(" NOONS: ", noons[:20]) 
+        for mo in idxs: 
+            cubegen.orbital(self.integrals.mol, fname+f".mo.{mo}.cube", norbs[:,mo])
+        return  

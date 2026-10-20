@@ -5,8 +5,9 @@ import copy
 
 # Extract Utils
 def extract_solutions(out = "extracted_solutions.txt"): 
+    #find . -mindepth 2 -maxdepth 2 -name '*.solution' -printf '%f\t%h\n' |
     command = """ 
-    find . -mindepth 2 -maxdepth 2 -name '*.solution' -printf '%f\t%h\n' |
+    find ./geom_*/ -mindepth 1 -maxdepth 1 -name '*.solution' -printf '%f\t%h\n' |
     sed 's|\.solution\t\./geom_|\t|' |
     sort -t"$(printf '\t')" -k1,1 -k2,2n |
     awk -F'\t' '
