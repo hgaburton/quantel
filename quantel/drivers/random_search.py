@@ -5,6 +5,7 @@ from quantel.utils.linalg import random_rot
 from quantel.wfn.rhf import RHF
 from quantel.opt.diis import DIIS
 from quantel.opt.lbfgs import LBFGS
+from quantel.opt.hybrid_ef import HybridEF
 from quantel.wfn.roks import ROKS
 from quantel.gnme.utils import gen_eig_sym
 
@@ -68,6 +69,8 @@ def random_search(ints, config):
         from quantel.opt.gmf import GMF as OPT
     elif config["optimiser"]["algorithm"] == "lbfgs":
         from quantel.opt.lbfgs import LBFGS as OPT
+    elif config["optimiser"]["algorithm"] == "hybridef":
+        from quantel.opt.hybrid_ef import HybridEF as OPT
     elif config["optimiser"]["algorithm"] == "mode_control":
         from quantel.opt.mode_controlling import ModeControl as OPT
     elif config["optimiser"]["algorithm"] == "diis":

@@ -1,5 +1,6 @@
 from pyscf import scf, lo
 import numpy as np 
+from scipy.linalg import expm
 
 def localise_orbitals(pymol,coeff,pop_method='becke'):
     """ 
@@ -9,11 +10,19 @@ def localise_orbitals(pymol,coeff,pop_method='becke'):
             coeff      : Molecular orbital coefficients
             pop_method : Method for defining local regions
     """
+    # Apply small random rotation to avoid local minima in the localisation 
+    # procedure due to symmetries
+    np.random.seed(0)
+    k = np.random.rand(coeff.shape[1],coeff.shape[1])
+    Q = expm(1e-2*(k-k.T))
+    coeff = coeff @ Q
+    # Initialise the Pipek-Mezey localisation object
     pm = lo.PM(pymol, coeff, scf.ROHF(pymol))
     pm.pop_method = pop_method
     coeff = pm.kernel()
     # Check stability of the localisation
     isstable, mo1 = pm.stability_jacobi()
+    print("Istable=",isstable)
     if not isstable:
         _ = pm.kernel(mo1)
         isstable, coeff  = pm.stability_jacobi()

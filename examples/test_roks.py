@@ -11,7 +11,7 @@ if __name__ == "__main__":
     ints = PySCFIntegrals(mol,xc='pbe0')
 
     # Initialise CSF object for an open-shell singlet state
-    wfn = ROKS(ints, '+-+-')
+    wfn = ROKS(ints, '+-+-+-')
     wfn.get_orbital_guess(method="gwh")
 
     # Setup optimiser
@@ -21,7 +21,10 @@ if __name__ == "__main__":
         print("************************************************")
         from quantel.opt.lbfgs import LBFGS
         wfn.get_orbital_guess(method=guess)
+        wfn.read_from_disk('test')
         LBFGS().run(wfn)
+        wfn.save_to_disk('test')
+        quit()
         
         # Test canonicalisation 
         wfn.canonicalize()

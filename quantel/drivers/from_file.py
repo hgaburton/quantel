@@ -38,6 +38,8 @@ def from_file(ints, config):
         from quantel.opt.gmf import GMF as OPT
     elif config["optimiser"]["algorithm"] == "lbfgs":
         from quantel.opt.lbfgs import LBFGS as OPT
+    elif config["optimiser"]["algorithm"] == "lsr1":
+        from quantel.opt.lsr1 import SR1 as OPT
     elif config["optimiser"]["algorithm"] == "mode_control":
         from quantel.opt.mode_controlling import ModeControl as OPT
     elif config["optimiser"]["algorithm"] == "diis":
@@ -54,7 +56,7 @@ def from_file(ints, config):
     for prefix in config["jobcontrol"]["read_dir"]:
         print(" Reading solutions from directory {:s}".format(prefix))
         
-        for old_tag in glob.glob(prefix+"*.solution"):
+        for old_tag in sorted(glob.glob(prefix+"*.solution")):
             old_tag = old_tag[:-9]
 
             # Initialise optimisation object

@@ -2,6 +2,7 @@
 
 import datetime, sys
 import numpy as np
+from quantel.opt.trust_radius import TrustRadius
 
 class NewtonRaphson:
 
@@ -9,6 +10,18 @@ class NewtonRaphson:
         '''Initialise the Newton-Raphson procedure'''
         self.control = dict()
         self.control["hesstol"] = 1e-16
+        self.control["minstep"] = 0.0
+        self.control["maxstep"] = 0.2
+        self.control["rtrust"]  = 0.01
+
+        for key in kwargs:
+            if not key in self.control.keys():
+                print("ERROR: Keyword [{:s}] not recognised".format(key))
+            else: 
+                self.control[key] = kwargs[key]
+
+        # Initialise the trust radius controller
+        self.__trust = TrustRadius(self.control["rtrust"], self.control["minstep"], self.control["maxstep"])
 
     def run(self, obj, thresh=1e-8, maxit=100, index=None, plev=1):
         ''' This function runs the optimisation'''
@@ -16,7 +29,7 @@ class NewtonRaphson:
         kernel_start_time = datetime.datetime.now() # Save initial time
 
         if plev>0: print()
-        if plev>0: print("  Initializing Newton-Raphson solver...")
+        if plev>0: print("  Initializing trust radius Newton-Raphson solver...")
 
         # Initialise reference energy
         eref = obj.energy

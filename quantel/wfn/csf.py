@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 # Modified from ss_casscf code of Antoine Marie and Hugh G. A. Burton
 # This is code for a CSF, which can be formed in a variety of ways.
-from pdb import pm
 import numpy as np
 import scipy, quantel, h5py
 from quantel.utils.csf_utils import verify_spin_coupling, get_shells, get_shell_exchange, get_csf_vector
@@ -278,7 +277,7 @@ class CSF(Wavefunction):
             print(f"           <Sz> = {self.sz:5.2f}")
             print(f"           <S2> = {self.s2:5.2f}")
             print(f"  Spin Coupling = {self.spin_coupling}")
-        if(verbose > 1):
+        if(verbose > 1 and len(self.spin_coupling) > 0):
             Ipqpq, Ipqqp = self.get_open_JK()
             matrix_print(self.exchange_matrix, title="Open-Shell Exchange Matrix <Ψ|Êpq Êqp|Ψ> - Np")
             matrix_print(Ipqqp[:self.nocc,self.ncore:self.nocc], title="Open-Shell Exchange Integrals <pq|qp>")
@@ -528,7 +527,9 @@ class CSF(Wavefunction):
             Cguess = orbital_guess(self.integrals,method,avas_ao_labels=avas_ao_labels,rohf_ms=0.5*self.nopen)
         if localise:
             # Localise the open-shell and closed-shell orbitals separately, then combine and orthogonalise
+            print("Localise core orbitals")
             Cguess[:,:self.ncore], isstable = localise_orbitals(self.integrals.molecule(), Cguess[:,:self.ncore])
+            print("Localise open-shell orbitals")
             Cguess[:,self.ncore:self.nocc], isstable = localise_orbitals(self.integrals.molecule(), Cguess[:,self.ncore:self.nocc])
         # Optimise the order of the CSF orbitals and return
         if(reorder and (self.spin_coupling != '')):

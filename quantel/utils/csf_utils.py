@@ -314,6 +314,7 @@ def get_ensemble_expansion(spin_coupling):
             :param spin_coupling:
             :return: list of (determinant string, coefficient) tuples
     """
+    print(spin_coupling)
     if(len(spin_coupling)==0 or spin_coupling=='cs'):
         return []
     # Get length of spin coupling pattern
@@ -328,16 +329,66 @@ def get_ensemble_expansion(spin_coupling):
                       np.insert(np.tril_indices(nshell,k=-1)[1],0,0))
     vec = lambda M : M[vector_inds]
     # Get Beta vector
+    print(get_shell_exchange(ncore,shells,spin_coupling))
     v_beta = vec(get_shell_exchange(ncore,shells,spin_coupling))
 
-    # Now we construct the determinants with at most 2 shell flips
-    # Here, we denote only the spin per shell
-    dets = []
-    if(nshell==4 or nshell<=2):
-        for it in itertools.combinations(range(0,nshell),r=1):
+    if 0:
+        print("NEW")
+        # Initialise det list
+        dets = []
+        # Add the all high-spin
+        spin_str = 'a'*nshell
+        dets.append((spin_str, vec(get_uhf_coupling(spin_str))))
+        # Add all single flips
+        for it in itertools.combinations(range(0,nshell-1),r=1):
             spins = np.zeros(nshell)
             # Flip the spin of a shell
+            spins[it[0]+1]=1
+            # Get string format
+            spin_str = ''.join(['a' if s==0 else 'b' for s in spins])
+            # Add to dets if not present
+            if(not spin_str in [d[0] for d in dets]): 
+                dets.append((spin_str, vec(get_uhf_coupling(spin_str))))
+        # Add all double flips
+        for it in itertools.combinations(range(0,nshell-1),r=2):
+            spins = np.zeros(nshell)
+            # Flip the spin of a shell
+            spins[it[0]+1]=1
+            spins[it[1]+1]=1
+            # Get string format
+            spin_str = ''.join(['a' if s==0 else 'b' for s in spins])
+            # Add to dets if not present
+            if(not spin_str in [d[0] for d in dets]): 
+                dets.append((spin_str, vec(get_uhf_coupling(spin_str))))
+        dets.sort()
+        print(len(dets))
+
+    else:
+        print("OLD")
+        # Now we construct the determinants with at most 2 shell flips
+        # Here, we denote only the spin per shell
+        dets = []
+        if(nshell==4 or nshell<=2):
+            for it in itertools.combinations(range(0,nshell),r=1):
+                spins = np.zeros(nshell)
+                # Flip the spin of a shell
+                spins[it[0]]=1
+                # Make sure first shell is always alpha
+                if(spins[0] == 1): spins = 1 - spins
+                # Get string format
+                spin_str = ''.join(['a' if s==0 else 'b' for s in spins])
+                # Add to dets if not present
+                if(not spin_str in [d[0] for d in dets]): 
+                    dets.append((spin_str, vec(get_uhf_coupling(spin_str))))
+        else:
+            spin_str = 'a'*nshell
+            dets.append((spin_str, vec(get_uhf_coupling(spin_str))))
+
+        for it in itertools.combinations(range(0,nshell),r=2):
+            spins = np.zeros(nshell)
+            # Flip the spins of two shells
             spins[it[0]]=1
+            spins[it[1]]=1
             # Make sure first shell is always alpha
             if(spins[0] == 1): spins = 1 - spins
             # Get string format
@@ -345,24 +396,8 @@ def get_ensemble_expansion(spin_coupling):
             # Add to dets if not present
             if(not spin_str in [d[0] for d in dets]): 
                 dets.append((spin_str, vec(get_uhf_coupling(spin_str))))
-    else:
-        spin_str = 'a'*nshell
-        dets.append((spin_str, vec(get_uhf_coupling(spin_str))))
-
-    for it in itertools.combinations(range(0,nshell),r=2):
-        spins = np.zeros(nshell)
-        # Flip the spins of two shells
-        spins[it[0]]=1
-        spins[it[1]]=1
-        # Make sure first shell is always alpha
-        if(spins[0] == 1): spins = 1 - spins
-        # Get string format
-        spin_str = ''.join(['a' if s==0 else 'b' for s in spins])
-        # Add to dets if not present
-        if(not spin_str in [d[0] for d in dets]): 
-            dets.append((spin_str, vec(get_uhf_coupling(spin_str))))
-    # Sort lexicographically for clarity
-    dets.sort()
+        # Sort lexicographically for clarity
+        dets.sort()
 
     # We now have a basis to expand our exchange matrix in. 
     # We need to buld the metric tensor and solve for the expansion coefficients
@@ -377,6 +412,10 @@ def get_ensemble_expansion(spin_coupling):
     # Form the projection of target exchange matrix
     bvec = np.array([np.dot(dets[i][1],v_beta) for i in range(nbasis)])
     coeffs = X @ bvec
+    vtest = np.zeros_like(v_beta)
+    for i in range(nbasis):
+        vtest += coeffs[i] * dets[i][1]
+    print(np.linalg.norm(vtest-v_beta))
 
     # Form the expansion and return
     expansion = [(idet[0],coeff) for idet, coeff in zip(dets, coeffs)]
