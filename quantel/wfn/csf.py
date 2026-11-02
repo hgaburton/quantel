@@ -277,7 +277,7 @@ class CSF(Wavefunction):
             print(f"           <Sz> = {self.sz:5.2f}")
             print(f"           <S2> = {self.s2:5.2f}")
             print(f"  Spin Coupling = {self.spin_coupling}")
-        if(verbose > 1 and len(self.spin_coupling) > 0):
+        if(verbose > 1 and len(self.spin_coupling)>0):
             Ipqpq, Ipqqp = self.get_open_JK()
             matrix_print(self.exchange_matrix, title="Open-Shell Exchange Matrix <Ψ|Êpq Êqp|Ψ> - Np")
             matrix_print(Ipqqp[:self.nocc,self.ncore:self.nocc], title="Open-Shell Exchange Integrals <pq|qp>")
