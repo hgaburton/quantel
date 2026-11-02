@@ -527,9 +527,7 @@ class CSF(Wavefunction):
             Cguess = orbital_guess(self.integrals,method,avas_ao_labels=avas_ao_labels,rohf_ms=0.5*self.nopen)
         if localise:
             # Localise the open-shell and closed-shell orbitals separately, then combine and orthogonalise
-            print("Localise core orbitals")
             Cguess[:,:self.ncore], isstable = localise_orbitals(self.integrals.molecule(), Cguess[:,:self.ncore])
-            print("Localise open-shell orbitals")
             Cguess[:,self.ncore:self.nocc], isstable = localise_orbitals(self.integrals.molecule(), Cguess[:,self.ncore:self.nocc])
         # Optimise the order of the CSF orbitals and return
         if(reorder and (self.spin_coupling != '')):

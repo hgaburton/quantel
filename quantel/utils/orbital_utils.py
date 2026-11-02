@@ -22,7 +22,6 @@ def localise_orbitals(pymol,coeff,pop_method='becke'):
     coeff = pm.kernel()
     # Check stability of the localisation
     isstable, mo1 = pm.stability_jacobi()
-    print("Istable=",isstable)
     if not isstable:
         _ = pm.kernel(mo1)
         isstable, coeff  = pm.stability_jacobi()
