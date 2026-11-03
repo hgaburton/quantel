@@ -670,7 +670,7 @@ class SS_CASSCF(Wavefunction):
         # TODO: Implement canonicalisation of SS-CASSCF state
         return
     
-    def get_preconditioner(self):
+    def get_preconditioner(self,abs=True):
         # TODO: Implement a preconditioner for approximate inverse Hessian
         return np.ones(self.dim)
 

@@ -260,8 +260,8 @@ class ESMF(Wavefunction):
         self.F_cas    = None
         self.ham      = None
 
-    def get_preconditioner(self):
-        return np.abs(np.diag(self.hessian))
+    def get_preconditioner(self,abs=True):
+        return np.abs(np.diag(self.hessian)) if abs else np.diag(self.hessian)
     
     def get_ham(self):
         '''Build the full Hamiltonian in the CIS space'''

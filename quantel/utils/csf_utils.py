@@ -329,7 +329,6 @@ def get_ensemble_expansion(spin_coupling):
                       np.insert(np.tril_indices(nshell,k=-1)[1],0,0))
     vec = lambda M : M[vector_inds]
     # Get Beta vector
-    print(get_shell_exchange(ncore,shells,spin_coupling))
     v_beta = vec(get_shell_exchange(ncore,shells,spin_coupling))
 
     # Initialise det list

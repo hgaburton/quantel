@@ -93,7 +93,8 @@ class Config(dict):
                                             rtrust  = getvalue(self.lines,"rtrust",float,False,default=0.15),
                                             maxstep = getvalue(self.lines,"maxstep",float,False,default=0.2),
                                             max_subspace = getvalue(self.lines,"max_subspace",int,False,default=10),
-                                            precmin = getvalue(self.lines,"precmin",float,False,default=1)
+                                            precmin = getvalue(self.lines,"precmin",float,False,default=1),
+                                            dense_update = getbool(self.lines,"dense_update",False,default=False)
                                             )
         elif self["optimiser"]["algorithm"] == "lbfgs":
             self["optimiser"]["lbfgs"] = dict(minstep = getvalue(self.lines,"minstep",float,False,default=0),

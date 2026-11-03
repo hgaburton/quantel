@@ -197,7 +197,7 @@ class Function(metaclass=ABCMeta):
             print(f"Max difference at index {idx}: {diff[idx]:.3e}")
         return np.max(np.abs(diff)) < tol
 
-    def get_preconditioner(self):
+    def get_preconditioner(self,abs=True):
         """Get diagonal preconditioner for Hessian"""
         return np.ones(self.dim)
     

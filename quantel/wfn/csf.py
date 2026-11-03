@@ -518,7 +518,7 @@ class CSF(Wavefunction):
         return csf_coupling_slater_condon(self, them, self.integrals)
     
 
-    def get_orbital_guess(self, method="gwh",avas_ao_labels=None,reorder=True,localise=True):
+    def get_orbital_guess(self, method="gwh",avas_ao_labels=None,reorder=True,localise=False):
         """Get a guess for the molecular orbital coefficients"""
         # Get the guess for the molecular orbital coefficients
         if type(method)==np.ndarray:

@@ -10,8 +10,8 @@ class SR1:
     """Class to implement limited-memory Symmetric-Rank-1 (l-SR1) optimisation for targeting 
        saddle points. 
 
-       This implementation follows the algorithm described in
-          Numerical Optimization, J. Nocedal and S. J. Wright
+       This implementation follows Algorithm 1 in
+          G. Levi, A. V. Ivanov, and H. Jonsson, J. Chem. Theory Comput. 16, 6968 (2020)
        with a trust radius approach to truncate the step length.
     """
 
@@ -31,7 +31,8 @@ class SR1:
                 self.control[key] = kwargs[key]
 
         # Initialise the trust radius controller
-        self.__trust = TrustRadius(self.control["rtrust"], self.control["minstep"], self.control["maxstep"])
+        self.__trust = TrustRadius(self.control["rtrust"], self.control["minstep"], 
+                                   self.control["maxstep"])
 
     def run(self, obj, thresh=1e-8, maxit=100, index=0, plev=1):
         """ Run the optimisation for a particular objective function obj.
@@ -44,7 +45,7 @@ class SR1:
               + save_last_step()
               + restore_last_step()
               + transform_vector()
-              + get_preconditioner()
+              + get_preconditioner(abs=False)
               + canonicalize()
         """
         kernel_start_time = datetime.datetime.now() # Save initial time
@@ -71,12 +72,13 @@ class SR1:
             print(f"    > precmin      = {precmin: 6.2e}")
             print()
 
-        # Initialise lists for subspace vectors
-        v_step = []
-        v_grad = [grad.copy()]
+        # Initialise lists for the SR1 update vectors j^(k) and scalars rho^(k).
+        v_j   = []
+        v_rho = []
 
         if plev>0: print("  ================================================================")
-        if plev>0: print("       {:^16s}    {:^8s}    {:^8s}".format("   Energy / Eh","Step Len","Error"))
+        if plev>0: print("       {:^16s}    {:^8s}    {:^8s}".format(
+                         "   Energy / Eh","Step Len","Error"))
         if plev>0: print("  ================================================================")
 
         converged = False
@@ -98,14 +100,15 @@ class SR1:
                 converged = True
                 break
 
-            # Get preconditioner
-            prec = obj.get_preconditioner()
+            # Get preconditioner, retaining its sign so that B_0 can describe negative curvature.
+            # Small elements keep their sign, while undefined (zero) elements are taken as positive
+            prec = obj.get_preconditioner(abs=False)
             for i in range(dim):
                 if(abs(prec[i]) < precmin):
-                    prec[i] = np.sign(prec[i]) * precmin
+                    prec[i] = - precmin if prec[i] < 0 else precmin
 
             # Get L-SR1 quasi-Newton step
-            qn_step = self.get_lsr1_step(v_grad,v_step,prec,grad)
+            qn_step = - self.apply_inverse_hessian(v_j,v_rho,prec,grad)
 
             # Apply step truncation
             step, comment = self.__trust.truncated_step_norm(qn_step)
@@ -123,7 +126,7 @@ class SR1:
             obj.take_step(step)
 
             # Save step
-            v_step.append(step.copy())
+            s = step.copy()
             # Get new gradient
             gnew = obj.gradient
 
@@ -138,8 +141,9 @@ class SR1:
                     # Save the new origin 
                     obj.save_last_step()
                     # Parallel transport vectors
-                    v_grad = [obj.transform_vector(v, 0.5 * step) for v in v_grad] 
-                    v_step = [obj.transform_vector(v, 0.5 * step) for v in v_step] 
+                    grad = obj.transform_vector(grad, 0.5 * step)
+                    s    = obj.transform_vector(s, 0.5 * step)
+                    v_j  = [obj.transform_vector(v, 0.5 * step) for v in v_j]
                 else:
                     # Otherwise undo the step
                     comment = "No step"
@@ -148,13 +152,18 @@ class SR1:
                     # Restore step
                     obj.restore_last_step()
 
-            # Save new gradient
-            v_grad.append(gnew)
+            # Remove oldest update if subspace is saturated
+            if(len(v_j) > 0 and len(v_j) >= max_subspace):
+                v_j.pop(0)
+                v_rho.pop(0)
 
-            # Remove oldest vectors if subspace is saturated
-            if(len(v_step)>max_subspace):
-                v_grad.pop(0)
-                v_step.pop(0)
+            # Compute and store the SR1 update for the new step and gradient change
+            y = gnew - grad 
+            jk = s - self.apply_inverse_hessian(v_j,v_rho,prec,y)
+            jy = np.dot(jk, y)
+            rhok = eps if abs(jy) < 1e-12 else 1.0 / jy
+            v_j.append(jk)
+            v_rho.append(rhok)
 
             # Increment the iteration counter
             istep += 1
@@ -164,26 +173,20 @@ class SR1:
         # Save end time and report 
         kernel_end_time = datetime.datetime.now()
         computation_time = kernel_end_time - kernel_start_time
-        if plev>0: print("  Limited-memory SR1 walltime: ", computation_time.total_seconds(), " seconds")
+        if plev>0: print("  Limited-memory SR1 walltime: ", 
+                         computation_time.total_seconds(), " seconds")
 
         return converged
 
-    def get_lsr1_step(self,v_grad,v_step,prec,grad,tol=1e-8):
-        """Compute the SR1 Hessian approximation in the subspace"""
-        # Number of subspace vectors
-        nvec = len(v_step)
+    def apply_inverse_hessian(self,v_j,v_rho,prec,vec):
+        """ Apply the SR1 inverse Hessian to a vector using eq 19 in Levi et al.
 
-        # Initialise approx inverse Hessian from preconditioner
-        B = np.diag(np.power(prec,-1))
-
-        # Compute the inverse Hessian
-        s = v_step
-        y = [v_grad[i+1] - v_grad[i] for i in range(nvec)]
-        for k in range(nvec):
-            rk = s[k] - B @ y[k]
-            rho = np.dot(y[k],rk)
-            if(abs(rho) >= tol * np.linalg.norm(y[k]) * np.linalg.norm(rk)):
-                B = B + np.outer(rk, rk) / rho
-                
-        # Compute QN step and return
-        return - B @ grad
+            The inverse Hessian is represented as
+                B^(k) = B_0^(k) + sum_i rho^(i) j^(i) j^(i)T
+            where B_0^(k) is the inverse of the latest diagonal preconditioner, and j^(i) and
+            rho^(i) are stored from previous iterations so only vector-vector products are required.
+        """
+        out = vec / prec
+        for i in range(len(v_j)):
+            out = out + v_rho[i] * np.dot(v_j[i], vec) * v_j[i]
+        return out

@@ -249,16 +249,14 @@ class LBFGS:
 
         # Clip the preconditioner to avoid numerical issues
         thresh=0.1
-        prec = np.sqrt(np.clip(prec,thresh,None)) # prec is just the same as diag
+        prec = np.sqrt(np.clip(prec,thresh,None))
 
         # Get sk, yk, and rho in energy weighted coordinates
-        # These are already parallel transported (if choosing to transport)
         sk = [v_step[i] * prec for i in range(nvec)]
         yk = [(v_grad[i+1] - v_grad[i]) / prec for i in range(nvec)]
         rho = [1.0 / np.dot(yk[i], sk[i]) for i in range(nvec)]
 
         # Get gamma_k
-        # Nocedal's formula to compute the H0k if one of the Hessian eigenvalues is negative: H0k = gamma_k * unit_matrix 
         gamma_k = np.dot(sk[-1], yk[-1]) / np.dot(yk[-1], yk[-1]) if (nvec > 0) else 1 
         
         # Initialise step from last gradient
