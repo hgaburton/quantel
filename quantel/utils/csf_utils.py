@@ -314,7 +314,6 @@ def get_ensemble_expansion(spin_coupling):
             :param spin_coupling:
             :return: list of (determinant string, coefficient) tuples
     """
-    print(spin_coupling)
     if(len(spin_coupling)==0 or spin_coupling=='cs'):
         return []
     # Get length of spin coupling pattern

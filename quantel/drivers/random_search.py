@@ -51,6 +51,8 @@ def random_search(ints, config):
         from quantel.wfn.csf import CSF as WFN
     elif config["wavefunction"]["method"] == "rhf":
         from quantel.wfn.rhf import RHF as WFN
+    elif config["wavefunction"]["method"] == "uhf":
+        from quantel.wfn.uhf import UHF as WFN
     elif config["wavefunction"]["method"] == "roks":
         from quantel.wfn.roks import ROKS as WFN
     else:
@@ -88,7 +90,11 @@ def random_search(ints, config):
     for itest in range(config["jobcontrol"]["search"]["nsample"]):
         # Randomly perturb CI and MO coefficients
         mo_range = config["jobcontrol"]["search"]["mo_rot_range"]
-        mo_guess = ref_mo.dot(random_rot(nmo,  -mo_range, mo_range))
+        if(config["wavefunction"]["method"] == "uhf"):
+            mo_guess = numpy.array([ref_mo.dot(random_rot(nmo, -mo_range, mo_range)),
+                                    ref_mo.dot(random_rot(nmo, -mo_range, mo_range))])
+        else:
+            mo_guess = ref_mo.dot(random_rot(nmo,  -mo_range, mo_range))
         if(ref_ci) is None:
             ci_guess = None
         else:
