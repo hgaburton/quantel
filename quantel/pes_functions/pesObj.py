@@ -75,15 +75,26 @@ class PESWalker():
         self.new_geoms = []
 
         # To assign the hessian index
-        self.exactHess = config["exactHess"] if config["exactHess"] else True 
+        try: 
+            self.exactHess = config["exactHess"]
+        except: 
+            self.exactHess = True 
+
         self.hessThresh = 1e-16
         # Deduplication thresholds 
         self.dedupEnergyThresh = 1e-8          
         self.dedupOverlapThresh = 1e-5    
         # Threshold for continuity backtracking to current solution 
         self.contEnergyThresh  = 1e-4     
-        self.contOverlapThresh = 1e-4     
+        self.contOverlapThresh = 1e-4  
 
+
+        # Energy threshold
+        try:  
+            self.energy_thresh = config["branches"]["energy_thresh"]    
+        except: 
+            self.energy_thresh = None
+ 
     def _redirect_to_logfile(self, tag):
         """Point this worker's stdout and stderr at logs/<tag>.log.
 
@@ -703,6 +714,11 @@ class PESWalker():
         #    for nwfn, ind in newwfns: 
 
         for nwfn, ind in newwfns:
+            # check the energy target.
+            if self.energy_thresh: 
+                if self.energy_thresh < nwfn.energy : 
+                    continue 
+        
             adj_match, adj_geom = self.check_adjacent_geoms(geom, nwfn, self.sol) 
             if adj_match is not None:
                 print(f"  Solution matches with adjacent solution {adj_match} at {adj_geom}") 

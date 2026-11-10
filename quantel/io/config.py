@@ -196,25 +196,25 @@ class Config(dict):
                                                )
             self["jobcontrol"]["read_dir"] = getlist(self.lines,"read_dir",str,True)
             #self["jobcontrol"]["override_spin_coupling"] = getbool(self.lines,"override_spin_coupling",False, default=False)
-            self["jobcontrol"]["override_spin_coupling"] = not getbool(self.lines,"read_spin_coupling",False, default= True )
+            self["jobcontrol"]["override_spin_coupling"] = not getbool(self.lines,"read_spin_coupling",False, default=True )
         
         elif self["jobcontrol"]["guess"] == "fromfile":
             self["jobcontrol"]["read_dir"] = getlist(self.lines,"read_dir",str,True)
             self["jobcontrol"]["save_solns"] = getbool(self.lines,"save_solns",False,default=True)
             #self["jobcontrol"]["override_spin_coupling"] = getbool(self.lines,"override_spin_coupling",False, default=False)
-            self["jobcontrol"]["override_spin_coupling"] = not getbool(self.lines,"read_spin_coupling",False, default= True )
+            self["jobcontrol"]["override_spin_coupling"] = not getbool(self.lines,"read_spin_coupling",False, default=True )
   
         elif self["jobcontrol"]["guess"] == "ladder_fromfile":
             self["jobcontrol"]["read_dir"] = getlist(self.lines,"read_dir",str,True)
             self["jobcontrol"]["override_spin_coupling"] = getbool(self.lines,"override_spin_coupling",False, default=False)
             #self["jobcontrol"]["override_spin_coupling"] = getbool(self.lines,"override_spin_coupling",False, default=False)
-            self["jobcontrol"]["override_spin_coupling"] = not getbool(self.lines,"read_spin_coupling",False, default= True )
+            self["jobcontrol"]["override_spin_coupling"] = not getbool(self.lines,"read_spin_coupling",False, default=True )
         
         elif self["jobcontrol"]["guess"] == "follow_fromfile":
             self["jobcontrol"]["read_dir"] = getlist(self.lines,"read_dir",str,True)
             self["jobcontrol"]["save_solns"] = getbool(self.lines,"save_solns",False,default=True)
             #self["jobcontrol"]["override_spin_coupling"] = getbool(self.lines,"override_spin_coupling",False, default=False)
-            self["jobcontrol"]["override_spin_coupling"] = not getbool(self.lines,"read_spin_coupling",False, default= True )
+            self["jobcontrol"]["override_spin_coupling"] = not getbool(self.lines,"read_spin_coupling",False, default=True )
         
         elif self["jobcontrol"]["guess"] == "fromorca":
             self["jobcontrol"]["orca_file"] = getvalue(self.lines,"orca_file",str,True)
