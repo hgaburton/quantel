@@ -247,7 +247,6 @@ class PESWalker():
 
         self.merged = None
         FoundSolns = False
-        prevFoundAny = False
         searchedGeoms = [ startGeom ]
         wfn = self.get_wfn(startGeom)
         wfn.read_from_disk(startGeom+"/"+self.sol)
@@ -466,16 +465,17 @@ class PESWalker():
             # no interpolation done
             print("grid resolution max already - no refinement carried out")
             return False, False, False, [], []
-        else:
+        elif len(fineGrid)!=0: 
             searchAnything = True
             fineGrid.append(self.geom_value(currGeom))
             # StartEigenpair
-            startEigenpair = [ last2pointsInfo[1][1], last2pointsInfo[1][2]]
+            if len(last2pointsInfo)!=0: 
+                startEigenpair = [ last2pointsInfo[-1][1], last2pointsInfo[-1][2]]
             FoundSols, _, fGeigs, last2pointsInfo = self.grid_iteration(fineGrid, prevGeom, fGeigs, startEigenpair, coalSearch=True)
             reachedEnd = (fGeigs is not None
                    and len(fGeigs) == len(fineGrid) + 1)
             if FoundSols or (self.merged is not None):
-                "Located coalescing partner, propagated to end of grid or merged with another solutoin"
+                "Located coalescing partner, propagated to end of grid or merged with another solution"
                 return FoundSols, reachedEnd, searchAnything, last2pointsInfo[0][3], last2pointsInfo[0][4]
             elif (reachedEnd and not FoundSols):
                 " Reached end of the fine grid, but didn't find anything. Needs to go onto the next grid point "
@@ -483,11 +483,10 @@ class PESWalker():
                     fineGrid = list(self._grid_between(currGeom, targetGeom, self.fineGrain))
                     fineGrid.append(self.geom_value(targetGeom))
                     fGeigs = [ fGeigs[-1] ]
-                    startEigenpair = [ last2pointsInfo[1][1], last2pointsInfo[1][2]]
+                    if len(last2pointsInfo)!=0: 
+                        startEigenpair = [ last2pointsInfo[-1][1], last2pointsInfo[-1][2]]
                     FoundSols, searchedGeoms, fGeigs, last2pointsInfo = self.grid_iteration(fineGrid, currGeom, fGeigs, startEigenpair, coalSearch = True)
-
-                    reachedEnd = (fGeigs is not None
-                           and len(fGeigs) == len(fineGrid) + 1)
+                    reachedEnd = (fGeigs is not None and len(fGeigs) == len(fineGrid) + 1)
 
         # what are these last two points returning? prevKs and currKs.              
         return FoundSols, reachedEnd, searchAnything, last2pointsInfo[0][3], last2pointsInfo[0][4]
@@ -670,10 +669,9 @@ class PESWalker():
         found = []
         FoundCoal = False 
         print("Searching for coalescing partners",flush=True)
-        testwfn = self.get_wfn(geom) 
-        testwfn.initialise(mo_guess = wfn.mo_coeff.copy()) 
         for sign in (-1.00, +1.00):
-            testwfn.mo_coeff = wfn.mo_coeff.copy()
+            testwfn = self.get_wfn(geom) 
+            testwfn.initialise(mo_guess = wfn.mo_coeff.copy()) 
             testwfn.take_step(sign * scaler * zero_vec)
             if not HybridEF().run(testwfn, index=search_ind, plev=1, maxit=30,thresh=1e-6): 
                 continue 
