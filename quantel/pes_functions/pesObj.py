@@ -810,7 +810,8 @@ class PESWalker():
         prevKs = []
         prevKNorms = []
         prevNumSoftModes = 0
-        
+        wfn = None 
+    
         for igeom, geom in enumerate(self.prop_geoms[1:]):
             print(f"====== Geom: {geom} ========")  
             prev_geom = self.prop_geoms[igeom]
