@@ -1,8 +1,6 @@
 #!/usr/bin/python3
 from quantel.ints.pyscf_integrals import PySCFIntegrals, PySCFMolecule
-from quantel.opt.eigenvector_following import EigenFollow
 from quantel.opt.hybrid_ef import HybridEF
-from quantel.opt.lsr1 import SR1
 import numpy as np
 import subprocess
 import glob
@@ -62,6 +60,8 @@ class PESWalker():
         # Child process selection  
         self.setOffDiscont = config["jobcontrol"]["setOffDiscount"] 
         self.setOffFalseCoal = config["jobcontrol"]["setOffFalseCoal"]
+        self.FalseCoalEWind = 1.0 
+
         self.restrict_within_interval_FalseCoal = config["jobcontrol"]["restrict_within_interval_FalseCoal"] 
 
         # Geometry information
@@ -151,12 +151,14 @@ class PESWalker():
             return self.WFN(ints, self.spin_coupling)
         else: 
             return self.WFN(ints) 
-    #-------------------------------------------------------------
+        
+    #----Geometry scripts (read, name, create, store) ----------------------------------------------
     # Change the geom name formatting here!
     @staticmethod
     def geom_value(geom):
         # geom name is "geom_xxxx"
         return float(geom[5:])
+
 
     def make_geom_name(self, value):
         """Inverse of geom_value, matching the zero-padded on-disk naming
@@ -167,16 +169,12 @@ class PESWalker():
         else:
             return f"geom_{value:0{self.geomDecimals + self.leading_zeros + 1}.{self.geomDecimals}f}"
 
-    def _grid_between(self, from_geom, to_geom, step):
-        """Interior grid values strictly between the two geometries, in walk
-           order, clipped to [geomMin, geomMax].
 
-           The number of steps is counted first rather than handing the bounds
-           to np.arange: (2.6-2.5)/0.1 is 1.0000000000000009 in binary, so
-           arange sizes the array one element too big and [1:] hands back the
-           endpoint as though it were an interior point.  On a grid already at
-           the naming resolution that made 40% of intervals report a point to
-           refine, and the refinement then re-ran the step it had just failed."""
+    def _grid_between(self, from_geom, to_geom, step):
+        """
+            Interior grid values strictly between the two geometries, in walk
+            order, clipped to [geomMin, geomMax].
+        """
         if step < 10 **(-self.geomDecimals):
             raise ValueError(
                 f"grid step {step} is finer than the {self.geomDecimals}-decimal "
@@ -184,24 +182,10 @@ class PESWalker():
         a, b = self.geom_value(from_geom), self.geom_value(to_geom)
         nstep = int(round(abs(b - a) / step))
         sign = 1.0 if a < b else -1.0
-        # Rounded onto the naming grid so make_geom_name and geom_value
-        # round-trip exactly instead of drifting by an accumulated ulp.  The
-        # +0.0 normalises the negative zero a descending walk lands on, which
-        # would otherwise be named geom_-0.0 - a second directory for a
-        # geometry already held as geom_00.0.
         grid = np.round(a + sign * step * np.arange(1, nstep), self.geomDecimals) + 0.0
         grid = [ x for x in grid if  self.geomMax >= x >= self.geomMin ]
         return grid
-    #-------------------------------------------------------------
 
-    def storeHessian(self, eigsystem):
-        self.hess_eigvals.append(eigsystem[0][:self.nhess_elements])
-        self.hess_eigvecs.append(eigsystem[1][:,:self.nhess_elements])
-        self.hess_eigvals = self.hess_eigvals[-self.nstore_hess:].copy()
-        self.hess_eigvecs = self.hess_eigvecs[-self.nstore_hess:].copy()
-        return 
-
-    #-------------------------------------------------------------
 
     def _generate_geometry(self, geomval, path):
         """Run make_geometry.py for geomval and leave the result at `path`.
@@ -235,37 +219,29 @@ class PESWalker():
         return True
 
 
-    def write_geometry(self, geomval, currGeom):
+    def write_geometry(self, geomval, currGeom, temp = True):
         """Stage temp/<geom>.xyz, the copy every optimisation reads from.
 
            Write-once, and make_geometry.py is deterministic, so two workers
            racing here produce identical bytes and the atomic publish means a
            reader sees either nothing or the finished file: no lock needed."""
-        path = f"temp/{currGeom}.xyz"
+        if temp: 
+            path = f"temp/{currGeom}.xyz"
+        else: 
+            path = f"{currGeom}/geom.xyz"
         if os.path.exists(path):
             return True
         return self._generate_geometry(geomval, path)
 
 
-    def commit_geometry(self, geomval, currGeom):
-        """Publish <geom>/geom.xyz, once something worth keeping has converged
-           at this geometry.
-
-           Regenerated rather than copied from the staged file - same script,
-           same value, so the same coordinates this wavefunction was built
-           from.  Until this runs the directory does not exist, so a point the
-           walk gave up on leaves nothing behind to clean away."""
-        path = f"{currGeom}/geom.xyz"
-        if os.path.exists(path):
-            return True
-        return self._generate_geometry(geomval, path)
-    
-    
+    #-----Grid refinement scripts--------------------------------------------------------
     def grid_iteration(self, grid, startGeom, eigs, startEigenpair, coalSearch = True):
         """ Wave function and grid interpolation along <grid> 
                 <coalSearch> determines if we set off coalescence searches at each geometry (for A2) 
-            For A3 search <startK>, <startKNorm> are provided so that we store the correct hessian eigenvalue   
+            For A3 search <startK>, <startKNorm> are provided so that we store the correct hessian eigenvalue, i.e. not that we are finding maxProj 
+            to the eigenvalue that set off the search!  
 
+            last point info : stores the [ currGeom, eig, eigvecs, Ks, KNorms] from the last two steps
             return FoundSolns, searchedGeoms, eigs, lastpointInfo 
         """
 
@@ -306,7 +282,7 @@ class PESWalker():
                 """ Write all the geometries if the wfn converges, leads to smooth PESs """
                 with geom_lock(currGeom):
                     os.makedirs(currGeom, exist_ok=True)
-                    if not self.commit_geometry(geomval, currGeom):
+                    if not self.write_geometry(geomval, currGeom, temp = False):
                         print("Error failed to write geometry file")
                         try:
                             os.rmdir(currGeom)
@@ -316,16 +292,8 @@ class PESWalker():
                     self.new_geoms.append(currGeom)
 
                     if continuous:
-                        merged = match_known_solution(currGeom, wfn, self.dedupEnergyThresh,
-                                                      self.dedupOverlapThresh, exclude=self.sol)
-                        if (merged is None):
-                            wfn.save_to_disk(currGeom + "/" + self.sol)
-                        else:
-                            self.merged = merged
-                            print(f"{self.sol} converged onto known solution {merged} at {currGeom}")
-                            self.merged = merged
-                            self.proQueue.put(("merged", {"tid": self.tid, "sol": self.sol,
-                                                 "onto": merged, "geom": currGeom}))
+                        merged = self.save_or_merge(currGeom, wfn)
+                        if merged is not None: 
                             break
 
                 if (not continuous and self.setOffDiscont):
@@ -415,7 +383,7 @@ class PESWalker():
                     continue 
                 wfn = self.get_wfn(searchGeom)
                 wfn.read_from_disk(searchGeom + "/" + self.sol)
-                nEigs, nEvecs, currHessInd = analyse_hessian(wfn, self.hessThresh, exact=self.exactHess)
+                nEigs, nEvecs, currHessInd = self.analyse_hessian(wfn)
                 zi = np.argsort(np.abs(nEigs-searchEigval)).reshape(-1)[0]
 
                 # Search along the correct mode!
@@ -432,7 +400,7 @@ class PESWalker():
 
 
     def A3_post_refine_grid(self, startGeom, endGeom, startEigenpair, endEigenpair):
-        """ Refine grid for an A2 search """
+        """ Refine grid for an A3 search """
         searchGeom = None 
         searchEigval = None 
 
@@ -461,7 +429,7 @@ class PESWalker():
         return searchGeom, searchEigval
 
 
-    def refine_grid_search(self,igeom, startEigsystem, search="A2"):
+    def A2_refine_grid_search(self,igeom, startEigsystem):
         """ Refine grid for an A2 search """
         searchAnything = False
         reachedEnd = False
@@ -497,10 +465,6 @@ class PESWalker():
             fGeigs = cGeigs
 
         fineGrid = list(self._grid_between(prevGeom, currGeom, self.fineGrain))
-        if len(fineGrid) == 0 or not last2pointsInfo or len(last2pointsInfo[1][0]) == 0:
-            print("grid resolution max already - no refinement carried out")
-            return FoundSols, False, searchAnything, [], [] 
-        
         if len(fineGrid)==0 and len(coarseGrid)==0:
             # no interpolation done
             print("grid resolution max already - no refinement carried out")
@@ -532,142 +496,64 @@ class PESWalker():
         return FoundSols, reachedEnd, searchAnything, last2pointsInfo[0][3], last2pointsInfo[0][4]
 
 
-    #-------------------------------------------------------------
-
-    def relax_solution(self, geom_from, geom_to, temp=False, setOffDiscont = True):
-        """Read `sol` at geom_from and re-relax it at geom_to"""
-        continuous = False
-        
-        wfn = self.get_wfn(geom_to, temp)
-        wfn.read_from_disk(geom_from + "/" + self.sol)
-        converged = self.PropOPT().run(wfn, index=self.HessInd, plev=1)
-        if not converged:
-            # Didnt even converge - no Hessian was built, so there is no
-            # eigensystem to hand back.  Still a 4-tuple: every caller unpacks
-            # four, and this is the most travelled exit in the function.
-            return wfn, converged, continuous, (None, None)
-
-        # Back propagation to check continuity
-        testwfn = self.get_wfn(geom_from)
-        testwfn.initialise(mo_guess=wfn.mo_coeff.copy()) 
-        if self.PropOPT().run(testwfn, index=self.HessInd, plev=0):
-            refwfn = self.get_wfn(geom_from)
-            refwfn.read_from_disk(geom_from + "/" + self.sol)
-            if abs(refwfn.energy - testwfn.energy) < self.contEnergyThresh:
-                if 1-abs(refwfn.overlap(testwfn)) < self.contOverlapThresh:
-                    continuous = True
-                else:
-                    print("Discontinuity: failed 1-abs(ovlp) : ", 1-abs(refwfn.overlap(testwfn)))
-            else:
-                print("Discontinuity: energy too far: ", refwfn.energy, testwfn.energy,
-                      " dE=", abs(refwfn.energy - testwfn.energy))
-
-        # So this is where some eigenfollow logic would hold us back 
-        if converged:
-            eigval, eigvec, currHessInd = analyse_hessian(wfn, self.hessThresh, exact=self.exactHess)
-            #report_hessian(geom_to, self.HessInd, eigval, currHessInd)
-            continuous = ( continuous and (currHessInd == self.HessInd) )  
-            
-        if self.setOffDiscont and ( (not temp and setOffDiscont) and (converged and not continuous)):
-            # This sets off as another branch any new solutions  
-            print("Not continuous, setting off new branch", flush=True ) 
-            self.register_branches([(wfn, currHessInd)], geom_to)
-        return wfn, converged, continuous, [eigval[:self.nhess_elements], eigvec[:,:self.nhess_elements]]
+    #----Hessian scripts (store and project)--------------------------------------------------------
+    def storeHessian(self, eigsystem):
+        self.hess_eigvals.append(eigsystem[0][:self.nhess_elements])
+        self.hess_eigvecs.append(eigsystem[1][:,:self.nhess_elements])
+        self.hess_eigvals = self.hess_eigvals[-self.nstore_hess:].copy()
+        self.hess_eigvecs = self.hess_eigvecs[-self.nstore_hess:].copy()
+        return 
 
 
-    def search_coalescing_partners(self, wfn, geom, search_ind, zero_vec, prev_FalseCoal=False):
-        scaler=0.01
-        found = []
-        FoundCoal = False 
-        print("Searching for coalescing partners",flush=True)
-        for sign in (-1.00, +1.00):
-            testwfn = self.get_wfn(geom) 
-            testwfn.initialise(mo_guess = wfn.mo_coeff.copy()) 
-            testwfn.take_step(sign * scaler * zero_vec)
-            if not HybridEF().run(testwfn, index=search_ind, plev=1, maxit=30,thresh=1e-6): 
-                continue 
-            print(" Testing second portion to push to further tolerances on search") 
-            if not self.PropOPT().run(testwfn, index=search_ind, thresh=1e-8): 
-                continue 
-            
-            _ , _ , testHessInd = analyse_hessian(testwfn, self.hessThresh, exact=self.exactHess)
-            ovlp = wfn.overlap(testwfn)
-            ovlpCond = 1-np.abs(wfn.overlap(testwfn))
+    def analyse_hessian(self,wfn): 
+        eigval, eigvec, currHessInd = analyse_hessian(wfn, self.hessThresh, exact=self.exactHess)
+        return eigval, eigvec, currHessInd 
 
-            print(f"  search candidate at {geom} searchInd={search_ind},sign={sign} scale={scaler} "
-                  f"E={testwfn.energy:.10f} index={testHessInd} "
-                  f"1-|ovlp|={ovlpCond:.6f}")
-            
-            if any(1-abs(testwfn.overlap(f)) < self.dedupOverlapThresh
-                   for f, _ in found):
-                print("Failed matches previous solution")
-                continue
 
-            # Anything that converged is a solution in its own right and is worth
-            # setting off as a branch; only the ones close enough in overlap are
-            # the coalescing partner this search was looking for.
-            skipFalseCoal = True if self.restrict_within_interval_FalseCoal else prev_FalseCoal 
-            if (not skipFalseCoal) and self.setOffFalseCoal: 
-                found.append((testwfn, testHessInd))
-                if ovlpCond >= self.CoalOverlapThresh:
-                    # Distant unrelated solution, not the coalescing partner
-                    print(f"Distant solution at {geom} (1-abs(ovlp)): ",
-                          ovlpCond, flush=True)
-                    continue
+    def hessian_projection(self, wfn, currGeom, searchInfo, prevNumSoftModes, prevKs, prevKNorms):  
+        # This should be able to deal with subspaces of Hessian for larger basis sets. 
 
-                print(f"Found a coalescing partner at {geom} (not checked if new)")
-                FoundCoal = True
+        # Then here I should build the modes lists
+        if len(searchInfo)> 0: 
+            # Then we should construct as save the prev Ks. 
+            currKs, currKNorms = compute_hessian_projectors(wfn, self.hess_eigvecs[-1])
+            geomVal = self.geom_value(currGeom) 
+            if prevNumSoftModes == 0 :
+                # This means that prevKs = None, therefore we can just skip this section and start a new mode branch 
+                for _, searchModeIndex in searchInfo:
+                    self.modes.append([(geomVal, self.hess_eigvals[-1][searchModeIndex], self.hess_eigvecs[-1][:,searchModeIndex])])
             else: 
-                if ovlpCond >= self.CoalOverlapThresh:
-                    # Distant unrelated solution, not the coalescing partner
-                    print(f"Distant solution at {geom} (1-abs(ovlp)): ",
-                          ovlpCond, flush=True)
-                    continue
-
-                print(f"Found a coalescing partner at {geom} (not checked if new)")
-                FoundCoal = True
-                found.append((testwfn, testHessInd))
-        return found, FoundCoal
-
-
-    def coalescence_search(self, wfn, geom, prevFS = False, prevCS = False, prev_FalseCoal = False, prevNumSoftModes = 0 ):
-        """Analyse wfn's Hessian, if a coalescence signature is present, run
-           the partner search.
-           Returns (newwfns, signature):
-                signature = True : when n a zero mode was identified"""
-        # Current descriptors 
-        FoundCoal = False
-        CoalSig = False 
-        eigval = self.hess_eigvals[-1]
-        eigvec = self.hess_eigvecs[-1]
-
-        # It is at this point that we would need to have a check that we are not having just a soft mode! 
-        searchInfo = pick_search_index(eigval, self.HessInd, self.CoalSigThresh)
-        if len(searchInfo) > 0 :
-            CoalSig = True
-            if (len(searchInfo) - prevNumSoftModes <= 0): 
-                # then we need to analyse the hessian and the eigenvalues for previous steps 
-                pass 
-            elif not prevFS: 
-                print("Coalesence signature present, no previous coalescing solution located ", flush=True)
-                newwfns = [] 
-                
-                for searchInd, zi in searchInfo:
-                    wfns, foundcoal = self.search_coalescing_partners(wfn, geom, searchInd,
-                                                     eigvec[:, zi], prev_FalseCoal)
-                    # Every converged candidate gets registered; FoundSolns tracks
-                    # only whether the coalescing partner itself was located, since
-                    # that is what the cusp logic upstream keys off.
-                    newwfns += wfns
-                    FoundCoal = (FoundCoal or foundcoal)
-
-                if len(newwfns)!=0:
-                    self.register_branches(newwfns, geom)
-                    FoundAny = True
+                metric = wfn.integrals.overlap_matrix() 
+                for _, searchModeIndex in searchInfo:
+                    approx_proj, maxProjIndex = singleMode_hessian_projection(currKs[searchModeIndex], currKNorms[searchModeIndex], prevKs, prevKNorms, metric) 
+                    match = False
+                    if 1-np.abs(approx_proj[maxProjIndex])> 2e-1:
+                        #print("1-abs(proj): ", 1-np.abs(approx_proj[maxProjIndex]))
+                        self.modes.append([(geomVal, self.hess_eigvals[-1][searchModeIndex], self.hess_eigvecs[-1][:,searchModeIndex])]) 
+                    else:
+                        for mInd, mode in enumerate(self.modes):
+                            #mode_geoms = np.array([ x[0] for x in mode ])  
+                            #geomIndex = np.argwhere(mode_geoms == self.geom_value(prevGeom))                    
+                            if mode[-1][1] == self.hess_eigvals[-2][maxProjIndex]:
+                                match = True
+                                self.modes[mInd].append((geomVal, self.hess_eigvals[-1][searchModeIndex], self.hess_eigvecs[-1][:,searchModeIndex])) 
+                        if not match:
+                            self.modes.append([(geomVal, self.hess_eigvals[-1][searchModeIndex], self.hess_eigvecs[-1][:,searchModeIndex])]) 
         
-        return FoundCoal, searchInfo 
- 
+            # Reset for the next iteration 
+            prevKs = currKs 
+            prevKNorms = currKNorms
+            prevNumSoftModes = len(searchInfo)  
+        else: 
+            # No coalescence signature whatsoever 
+            # Reset for next iteration 
+            prevNumSoftModes = 0 
+            prevKs = [] 
+            prevKNorms = [] 
+        return prevNumSoftModes, prevKs, prevKNorms 
 
+   
+    #---- Register and check solutions----------------------------------------------------------
     def adjacent_geoms(self, geom): 
         allgeoms = sorted(glob.glob("geom_*"), key=self.geom_value)
         vals = [ self.geom_value(g) for g in allgeoms ]
@@ -705,8 +591,10 @@ class PESWalker():
             if not self.PropOPT().run(newwfn, index=self.HessInd, plev=1):
                 continue  
             # Check known solutions at geom_to
-            _ , _, newInd = analyse_hessian(newwfn, self.hessThresh, exact=self.exactHess)
+            _ , _, newInd = self.analyse_hessian(newwfn)
             match = match_known_solution(geom_to, newwfn, self.dedupEnergyThresh, self.dedupOverlapThresh, exclude = exclude)
+
+
             # if no matches then skip to next check    
             if match is None: 
                 continue  
@@ -723,7 +611,7 @@ class PESWalker():
                     match = None 
                     continue
                 
-                _ , _, backInd = analyse_hessian(backwfn, self.hessThresh, exact=self.exactHess)
+                _ , _, backInd = self.analyse_hessian(backwfn)
                 continuous = ( continuous and (newInd == self.HessInd) )  
                 continuous = ( continuous and (backInd == self.HessInd) )  
  
@@ -778,6 +666,129 @@ class PESWalker():
         return foundSolns, match
 
 
+    #---- Coalescence searches ----------------------------------------------------------------------
+    def search_coalescing_partners(self, wfn, geom, search_ind, zero_vec):
+        scaler=0.01
+        found = []
+        FoundCoal = False 
+        print("Searching for coalescing partners",flush=True)
+        testwfn = self.get_wfn(geom) 
+        testwfn.initialise(mo_guess = wfn.mo_coeff.copy()) 
+        for sign in (-1.00, +1.00):
+            testwfn.mo_coeff = wfn.mo_coeff.copy()
+            testwfn.take_step(sign * scaler * zero_vec)
+            if not HybridEF().run(testwfn, index=search_ind, plev=1, maxit=30,thresh=1e-6): 
+                continue 
+            if not self.PropOPT().run(testwfn, index=search_ind, thresh=1e-7): 
+                continue 
+
+            if any(1-abs(testwfn.overlap(f)) < self.dedupOverlapThresh for f, _ in found):
+                print("Matches previous solution")
+                continue
+            _ , _ , testHessInd = self.analyse_hessian(testwfn)
+
+            # Anything that converged is a solution in its own right and is worth
+            # setting off as a branch; only the ones close enough in overlap are
+            # the coalescing partner this search was looking for.
+            # but some may be close in enough in energy to warrant propagation  
+            energy_diff = 27.2114*np.abs(wfn.energy - testwfn.energy)
+            if energy_diff < self.FalseCoalEWind and self.setOffFalseCoal:  
+                print(f"Energy difference {energy_diff}, new sol. set off ", flush=True)
+                found.append((testwfn, testHessInd))
+                continue 
+             
+            ovlpCond = 1-np.abs(wfn.overlap(testwfn))
+            print(f"  search candidate at {geom} searchInd={search_ind},sign={sign} scale={scaler} "
+                  f"E={testwfn.energy:.10f} index={testHessInd} "
+                  f"1-|ovlp|={ovlpCond:.6f}")
+                
+            if ovlpCond >= self.CoalOverlapThresh:
+                # Distant unrelated solution, not the coalescing partner
+                print(f"Distant solution at {geom}, not set off (1-abs(ovlp)): ",
+                      ovlpCond, flush=True)
+                continue
+            else: 
+                print(f"Found a coalescing partner at {geom} (not checked if new)")
+                FoundCoal = True
+                found.append((testwfn, testHessInd))
+        return found, FoundCoal
+
+
+    def coalescence_search(self, wfn, geom, prevFoundSol = False, prevNumSoftModes = 0 ):
+        """Analyse wfn's Hessian, if a coalescence signature is present, run
+           the partner search.
+           Returns (newwfns, signature):
+                signature = True : when n a zero mode was identified"""
+        # Current descriptors 
+        FoundCoal = False
+        eigval = self.hess_eigvals[-1]
+        eigvec = self.hess_eigvecs[-1]
+
+        # It is at this point that we would need to have a check that we are not having just a soft mode! 
+        searchInfo = pick_search_index(eigval, self.HessInd, self.CoalSigThresh)
+        if len(searchInfo) > 0 :
+            if (len(searchInfo) - prevNumSoftModes <= 0): 
+                # then we need to analyse the hessian and the eigenvalues for previous steps 
+                # i.e that the number of soft modes has changed? 
+                pass 
+            elif not prevFoundSol: 
+                print("Coalesence signature present, no previous coalescing solution located ", flush=True)
+                newwfns = [] 
+                
+                for searchInd, zi in searchInfo:
+                    wfns, foundcoal = self.search_coalescing_partners(wfn, geom, searchInd, eigvec[:, zi])
+                    # Every converged candidate gets registered; FoundSolns tracks
+                    # only whether the coalescing partner itself was located, since
+                    # that is what the cusp logic upstream keys off.
+                    newwfns += wfns
+                    FoundCoal = (FoundCoal or foundcoal)
+
+                if len(newwfns)!=0:
+                    self.register_branches(newwfns, geom)
+        return FoundCoal, searchInfo 
+
+    #---- Propagation wrappers ----------------------------------------------------------------------
+    def relax_solution(self, geom_from, geom_to, temp=False, setOffDiscont = True):
+        """Read `sol` at geom_from and re-relax it at geom_to"""
+        continuous = False
+        
+        wfn = self.get_wfn(geom_to, temp)
+        wfn.read_from_disk(geom_from + "/" + self.sol)
+        converged = self.PropOPT().run(wfn, index=self.HessInd, plev=1)
+        if not converged:
+            # Didnt even converge - no Hessian was built, so there is no
+            # eigensystem to hand back.  Still a 4-tuple: every caller unpacks
+            # four, and this is the most travelled exit in the function.
+            return wfn, converged, continuous, (None, None)
+
+        # Back propagation to check continuity
+        testwfn = self.get_wfn(geom_from)
+        testwfn.initialise(mo_guess=wfn.mo_coeff.copy()) 
+        if self.PropOPT().run(testwfn, index=self.HessInd, plev=0):
+            refwfn = self.get_wfn(geom_from)
+            refwfn.read_from_disk(geom_from + "/" + self.sol)
+            if abs(refwfn.energy - testwfn.energy) < self.contEnergyThresh:
+                if 1-abs(refwfn.overlap(testwfn)) < self.contOverlapThresh:
+                    continuous = True
+                else:
+                    print("Discontinuity: failed 1-abs(ovlp) : ", 1-abs(refwfn.overlap(testwfn)))
+            else:
+                print("Discontinuity: energy too far: ", refwfn.energy, testwfn.energy,
+                      " dE=", abs(refwfn.energy - testwfn.energy))
+
+        # So this is where some eigenfollow logic would hold us back 
+        if converged:
+            eigval, eigvec, currHessInd = self.analyse_hessian(wfn)
+            #report_hessian(geom_to, self.HessInd, eigval, currHessInd)
+            continuous = ( continuous and (currHessInd == self.HessInd) )  
+            
+        if self.setOffDiscont and ( (not temp and setOffDiscont) and (converged and not continuous)):
+            # This sets off as another branch any new solutions  
+            print("Not continuous, setting off new branch", flush=True ) 
+            self.register_branches([(wfn, currHessInd)], geom_to)
+        return wfn, converged, continuous, [eigval[:self.nhess_elements], eigvec[:,:self.nhess_elements]]
+
+
     def propagate_solution(self, initSearch=False):
         print("Starting propagations: sol, prop_geoms ", self.sol, self.prop_geoms)
         startE, _ = read_solution_header(
@@ -785,8 +796,6 @@ class PESWalker():
 
         self.Energies = [startE]
         prevFoundSolns = False
-        prevFoundAny = False
-        prevCoalSig = False
     
         prevKs = []
         prevKNorms = []
@@ -806,8 +815,8 @@ class PESWalker():
                     print("PES died but we have located previous coalescing solution")
                     break
 
-                currFoundSolns, reachedEnd, searchedAnything, prevKs, prevKNorms = self.refine_grid_search(
-                    igeom, (self.hess_eigvals[-1], self.hess_eigvecs[-1]), search="A2")
+                currFoundSolns, reachedEnd, searchedAnything, prevKs, prevKNorms = self.A2_refine_grid_search(
+                    igeom, (self.hess_eigvals[-1], self.hess_eigvecs[-1]))
 
                 print(f" A2 Fold search: reachedEnd: {reachedEnd}, FoundSolns: {currFoundSolns} and searchedAnything: {searchedAnything}")  
                 if not reachedEnd or (self.merged is not None): 
@@ -817,10 +826,9 @@ class PESWalker():
                     # geom, so the step was only too coarse.  Adopt that point
                     # what if it was a previously converged onto solution? 
                     wfn.read_from_disk(geom + "/" + self.sol)
-                    eigval, eigvec, currHessInd = analyse_hessian(wfn, self.hessThresh, exact=self.exactHess)
+                    eigval, eigvec, currHessInd = self.analyse_hessian(wfn)
                     eigsystem = [ eigval, eigvec] 
                     prevFoundSolns = False
-                    prevCoalSig = False
                     self.storeHessian(eigsystem)
                     self.Energies.append(wfn.energy)
                     # But we need to remake the prevKs, prevKNorms 
@@ -828,23 +836,10 @@ class PESWalker():
                     continue  
 
             with geom_lock(geom):
-                merged = match_known_solution(geom, wfn, self.dedupEnergyThresh,
-                                              self.dedupOverlapThresh, exclude=self.sol)
-                if (merged is None):
-                    wfn.save_to_disk(geom + "/" + self.sol)
-            
-
-            if merged is not None:
-                print(f"{self.sol} converged onto known solution {merged} at {geom}")
-                # Report the identity and stop walking; renaming here would pull
-                # files out from under the twin walk (which is still seeded from
-                # prop_geoms[0]) and out from under any other task part-way
-                # through saved_solutions_at() at these geometries.
-                self.merged = merged
-                self.proQueue.put(("merged", {"tid": self.tid, "sol": self.sol,
-                                         "onto": merged, "geom": geom}))
-                break
-            elif igeom == 0: 
+                merged = self.save_or_merge(geom, wfn)
+                if merged is not None: 
+                        break 
+            if igeom == 0: 
                 # Then we should check the start for coalesence signature  
                 refwfn = self.get_wfn(self.prop_geoms[0])
                 refwfn.read_from_disk(self.prop_geoms[0]+"/"+self.sol)
@@ -865,57 +860,13 @@ class PESWalker():
             self.Energies.append(wfn.energy) 
 
             # So this is going to be where we decide to set off a search etc
-            FoundSolns, searchInfo  = self.coalescence_search(wfn, geom,
-                                                              prevFS = prevFoundSolns,
-                                                              prevCS = prevCoalSig, 
-                                                              prev_FalseCoal = prevFoundAny, 
+            prevFoundSolns, searchInfo  = self.coalescence_search(wfn, geom,
+                                                              prevFoundSolns = prevFoundSolns,
                                                               prevNumSoftModes = prevNumSoftModes)
 
             prevNumSoftModes, prevKs, prevKNorms = self.hessian_projection(wfn, geom, searchInfo, prevNumSoftModes, prevKs, prevKNorms)  
-        
         return
 
-
-    def hessian_projection(self, wfn, currGeom, searchInfo, prevNumSoftModes, prevKs, prevKNorms):  
-        # Then here I should build the modes lists
-        if len(searchInfo)> 0: 
-            # Then we should construct as save the prev Ks. 
-            currKs, currKNorms = compute_hessian_projectors(wfn, self.hess_eigvecs[-1])
-            geomVal = self.geom_value(currGeom) 
-            if prevNumSoftModes == 0 :
-                # This means that prevKs = None, therefore we can just skip this section and start a new mode branch 
-                for _, searchModeIndex in searchInfo:
-                    self.modes.append([(geomVal, self.hess_eigvals[-1][searchModeIndex], self.hess_eigvecs[-1][:,searchModeIndex])])
-            else: 
-                metric = wfn.integrals.overlap_matrix() 
-                for _, searchModeIndex in searchInfo:
-                    approx_proj, maxProjIndex = singleMode_hessian_projection(currKs[searchModeIndex], currKNorms[searchModeIndex], prevKs, prevKNorms, metric) 
-                    match = False
-                    if 1-np.abs(approx_proj[maxProjIndex])> 2e-1:
-                        #print("1-abs(proj): ", 1-np.abs(approx_proj[maxProjIndex]))
-                        self.modes.append([(geomVal, self.hess_eigvals[-1][searchModeIndex], self.hess_eigvecs[-1][:,searchModeIndex])]) 
-                    else:
-                        for mInd, mode in enumerate(self.modes):
-                            #mode_geoms = np.array([ x[0] for x in mode ])  
-                            #geomIndex = np.argwhere(mode_geoms == self.geom_value(prevGeom))                    
-                            if mode[-1][1] == self.hess_eigvals[-2][maxProjIndex]:
-                                match = True
-                                self.modes[mInd].append((geomVal, self.hess_eigvals[-1][searchModeIndex], self.hess_eigvecs[-1][:,searchModeIndex])) 
-                        if not match:
-                            self.modes.append([(geomVal, self.hess_eigvals[-1][searchModeIndex], self.hess_eigvecs[-1][:,searchModeIndex])]) 
-        
-            # Reset for the next iteration 
-            prevKs = currKs 
-            prevKNorms = currKNorms
-            prevNumSoftModes = len(searchInfo)  
-        else: 
-            # No coalescence signature whatsoever 
-            # Reset for next iteration 
-            prevNumSoftModes = 0 
-            prevKs = [] 
-            prevKNorms = [] 
-        return prevNumSoftModes, prevKs, prevKNorms 
-   
  
     def initialise_run(self, geom):
         """Initial search for coalescing solutions"""
@@ -928,7 +879,7 @@ class PESWalker():
             pass 
          
         wfn.update()
-        eigval, eigvec, currHessInd = analyse_hessian(wfn, self.hessThresh, exact=self.exactHess)
+        eigval, eigvec, currHessInd = self.analyse_hessian(wfn)
         self.HessInd = currHessInd
         self.nhess_elements = currHessInd + 4  
         self.storeHessian([eigval, eigvec])
@@ -998,14 +949,21 @@ class PESWalker():
                     print(f"  {self.sol}: gap at {hole} is a REAL discontinuity, not filling")
                     continue
                 with geom_lock(hole):
-                    # don't overwrite / collide with a distinct solution already there
-                    merged = match_known_solution(hole, wfn, self.dedupEnergyThresh,
-                                            self.dedupOverlapThresh, exclude=self.sol)
-                    if merged:     
-                        # then register a merge claim then ... ?  
-                        self.merged = merged
-                        self.proQueue.put(("merged", {"tid": self.tid, "sol": self.sol,
-                                         "onto": merged, "geom": hole}))
-                        continue
-                    wfn.save_to_disk(f"{hole}/{self.sol}")
+                    _ = self.save_or_merge(hole, wfn)
+
                 anchor = hole   # chain: next hole relaxes from the one we just filled
+
+
+def save_or_merge(self, geomName, wfn, claim = True):
+    # Claim just says if we register a claim or not 
+    merged = None 
+    merged = match_known_solution(geomName, wfn, self.dedupEnergyThresh,
+                                                      self.dedupOverlapThresh, exclude = self.sol)
+    if (merged is None):
+        wfn.save_to_disk(geomName + "/" + self.sol)
+    elif claim: 
+        self.merged = merged
+        self.proQueue.put(("merged", {"tid": self.tid, "sol": self.sol,
+                                 "onto": merged, "geom": geomName}))
+        print(f"{self.sol} converged onto known solution {merged} at {geomName}")
+    return merged
