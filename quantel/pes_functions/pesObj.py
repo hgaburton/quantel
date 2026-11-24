@@ -264,7 +264,9 @@ class PESWalker():
     def grid_iteration(self, grid, startGeom, eigs, startEigenpair, coalSearch = True):
         """ Wave function and grid interpolation along <grid> 
                 <coalSearch> determines if we set off coalescence searches at each geometry (for A2) 
-            For A3 search <startK>, <startKNorm> are provided so that we store the correct hessian eigenvalue      
+            For A3 search <startK>, <startKNorm> are provided so that we store the correct hessian eigenvalue   
+
+            return FoundSolns, searchedGeoms, eigs, lastpointInfo 
         """
 
         self.merged = None
@@ -276,7 +278,10 @@ class PESWalker():
         prevK, prevKNorm = compute_singleHessian_projector(wfn, startEigenpair[1])
         prevMetric = wfn.integrals.overlap_matrix().copy()
 
-        lastpointInfo = [ [[],[],[],[],[]], [[],[],[],[],[]] ]
+        # so two lists of lists... 
+        # so contains currGeom (geom string), maxproj Hess eigval, maxproj Hess eigvec, currKs, currKNorms (for all eigvecs)
+        # only keep the last two points
+        lastpointInfo = [ ]
 
         if len(grid)==0:
             """ Empty interpolation grid """
@@ -336,7 +341,10 @@ class PESWalker():
             currKs, currKNorms = compute_hessian_projectors(wfn, self.hess_eigvecs[-1])
             _, MaxProjIndex =  singleMode_hessian_projection(prevK, prevKNorm, currKs, currKNorms, prevMetric)
             eigs.append(self.hess_eigvals[-1][MaxProjIndex])
+
+            # so contains currGeom (geom string), maxproj Hess eigval, maxproj Hess eigvec, currKs, currKNorms (for all eigvecs)
             lastpointInfo.append([currGeom, self.hess_eigvals[-1][MaxProjIndex], self.hess_eigvecs[-1][:,MaxProjIndex], currKs, currKNorms])
+            # only keep the last two points... 
             lastpointInfo = lastpointInfo[-2:]
 
             prevMetric = wfn.integrals.overlap_matrix().copy()
@@ -472,12 +480,14 @@ class PESWalker():
             coarseGrid.append(self.geom_value(currGeom))
             EigminInd = np.argsort(np.abs(startEigsystem[0])).reshape(-1)[0]
             startEigenpair = [ startEigsystem[0][EigminInd], startEigsystem[1][:,EigminInd] ]
+            # what is last two points info? 
             FoundSols, searchedGeoms, cGeigs, last2pointsInfo = self.grid_iteration(coarseGrid, prevGeom, cGeigs, startEigenpair, coalSearch = True)
             reachedEnd = (cGeigs is not None
                    and len(cGeigs) == len(coarseGrid) + 1)
             
             if (reachedEnd or FoundSols) or (self.merged is not None):
-                "Located coalescing partner, propagated to end of grid or merged with another solutoin"
+                "Located coalescing partner, propagated to end of grid or merged with another solution"
+                # so return the prevKs and prevKNorms for the next computation, but that if that grid iteration has died ?  
                 return FoundSols, reachedEnd, searchAnything, last2pointsInfo[0][3], last2pointsInfo[0][4]
             prevGeom = searchedGeoms[-2]
             currGeom = searchedGeoms[-1]
@@ -487,7 +497,9 @@ class PESWalker():
             fGeigs = cGeigs
 
         fineGrid = list(self._grid_between(prevGeom, currGeom, self.fineGrain))
-        
+        if len(fineGrid) == 0 or not last2pointsInfo or len(last2pointsInfo[1][0]) == 0:
+            print("grid resolution max already - no refinement carried out")
+            return FoundSols, False, searchAnything, [], [] 
         
         if len(fineGrid)==0 and len(coarseGrid)==0:
             # no interpolation done
@@ -496,7 +508,7 @@ class PESWalker():
         else:
             searchAnything = True
             fineGrid.append(self.geom_value(currGeom))
-            # I don't know what the best course of action is here
+            # StartEigenpair
             startEigenpair = [ last2pointsInfo[1][1], last2pointsInfo[1][2]]
             FoundSols, _, fGeigs, last2pointsInfo = self.grid_iteration(fineGrid, prevGeom, fGeigs, startEigenpair, coalSearch=True)
             reachedEnd = (fGeigs is not None
@@ -515,6 +527,8 @@ class PESWalker():
 
                     reachedEnd = (fGeigs is not None
                            and len(fGeigs) == len(fineGrid) + 1)
+
+        # what are these last two points returning? prevKs and currKs.              
         return FoundSols, reachedEnd, searchAnything, last2pointsInfo[0][3], last2pointsInfo[0][4]
 
 
