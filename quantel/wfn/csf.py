@@ -341,6 +341,10 @@ class CSF(Wavefunction):
             Returns:
                 Hvec : result of Hessian @ vec product
         """
+        # This would be faster if we didn't need to rebuild these each time when doing the Davidson diagonalisation
+        # I think that would make a big difference! 
+
+
         # Antisymmetric step
         step = np.zeros((self.nmo,self.nmo))
         step[self.rot_idx] = vec
@@ -617,6 +621,7 @@ class CSF(Wavefunction):
         orb_step = np.zeros((self.nmo, self.nmo))
         orb_step[self.rot_idx] = step
         self.mo_coeff = np.dot(self.mo_coeff, scipy.linalg.expm(orb_step - orb_step.T))
+
 
     def transform_vector(self,vec,step,X=None):
         """ Perform orbital rotation for vector in tangent space"""

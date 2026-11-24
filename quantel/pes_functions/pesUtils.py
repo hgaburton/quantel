@@ -150,11 +150,39 @@ def pick_search_index(eigval, currHessInd, hessZeroThresh):
     #    return None, None
 
 
+def compute_hessian_projectors(wfn, hessian_eigvecs): 
+    Ks = []
+    KNorms = [] 
+    for index in range(hessian_eigvecs.shape[1]):     
+        K, KNorm = compute_singleHessian_projector(wfn, hessian_eigvecs[:,index])
+        Ks.append(K) 
+        KNorms.append(KNorm)  
+    return Ks, KNorms
+
+def compute_singleHessian_projector(wfn, hessian_eigvec): 
+    metric = wfn.integrals.overlap_matrix() 
+    orb_step = np.zeros((wfn.nmo, wfn.nmo))
+    orb_step[wfn.rot_idx] = hessian_eigvec
+    K = np.linalg.multi_dot([wfn.mo_coeff, (orb_step - orb_step.T), wfn.mo_coeff.T])
+    KNorm = np.einsum("ij,jk,kl,li", K.T, metric, K, metric, optimize="optimal")
+    KNorm = np.sqrt(KNorm) 
+    return K, KNorm
+
+
+def singleMode_hessian_projection(K, KNorm, prevKs, prevKNorms, metric):  
+    approx_proj = []
+    for prevInd in range(len(prevKs)):
+        numerator = np.einsum("ij,jk,kl,li", K.T, metric, prevKs[prevInd], metric.T, optimize="optimal")
+        approx_proj.append(numerator/(prevKNorms[prevInd]*KNorm))
+    maxProjIndex = np.argmax(np.abs(approx_proj))
+    return approx_proj, maxProjIndex 
+
+
 def report_hessian(geom, prevHessInd, eigval, currHessInd):
-    #print(f"Geometry {geom}")
-    #print(f"Prev hess ind {prevHessInd}")
-    #print("Hessian eigenvalues: ", eigval[:10])
-    #print(f"Current Hessian index {currHessInd}")
+    print(f"Geometry {geom}")
+    print(f"Prev hess ind {prevHessInd}")
+    print("Hessian eigenvalues: ", eigval[:10])
+    print(f"Current Hessian index {currHessInd}")
     return
 
 

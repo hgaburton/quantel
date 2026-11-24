@@ -56,6 +56,7 @@ class PESWalker():
       
         # Hessian information
         self.nstore_hess = config["jobcontrol"]["nstore_hess"]
+        self.nhess_elements = 10 
         self.hess_eigvals = []
         self.hess_eigvecs = []
         # Child process selection  
@@ -87,7 +88,8 @@ class PESWalker():
         # Threshold for continuity backtracking to current solution 
         self.contEnergyThresh  = 1e-4     
         self.contOverlapThresh = 1e-4  
-
+        # Soft modes 
+        self.modes = []
 
         # Energy threshold
         try:  
@@ -192,6 +194,15 @@ class PESWalker():
         return grid
     #-------------------------------------------------------------
 
+    def storeHessian(self, eigsystem):
+        self.hess_eigvals.append(eigsystem[0][:self.nhess_elements])
+        self.hess_eigvecs.append(eigsystem[1][:,:self.nhess_elements])
+        self.hess_eigvals = self.hess_eigvals[-self.nstore_hess:].copy()
+        self.hess_eigvecs = self.hess_eigvecs[-self.nstore_hess:].copy()
+        return 
+
+    #-------------------------------------------------------------
+
     def _generate_geometry(self, geomval, path):
         """Run make_geometry.py for geomval and leave the result at `path`.
            Return False if the geometry could not be generated."""
@@ -223,6 +234,7 @@ class PESWalker():
         os.replace(tmp, path)
         return True
 
+
     def write_geometry(self, geomval, currGeom):
         """Stage temp/<geom>.xyz, the copy every optimisation reads from.
 
@@ -233,6 +245,7 @@ class PESWalker():
         if os.path.exists(path):
             return True
         return self._generate_geometry(geomval, path)
+
 
     def commit_geometry(self, geomval, currGeom):
         """Publish <geom>/geom.xyz, once something worth keeping has converged
@@ -247,269 +260,263 @@ class PESWalker():
             return True
         return self._generate_geometry(geomval, path)
     
-    def grid_iteration(self, grid, prevGeom, eigs):
-        self.merged = None 
+    
+    def grid_iteration(self, grid, startGeom, eigs, startEigenpair, coalSearch = True):
+        """ Wave function and grid interpolation along <grid> 
+                <coalSearch> determines if we set off coalescence searches at each geometry (for A2) 
+            For A3 search <startK>, <startKNorm> are provided so that we store the correct hessian eigenvalue      
+        """
+
+        self.merged = None
         FoundSolns = False
         prevFoundAny = False
-        searchedGeoms = [ prevGeom ] 
+        searchedGeoms = [ startGeom ]
+        wfn = self.get_wfn(startGeom)
+        wfn.read_from_disk(startGeom+"/"+self.sol)
+        prevK, prevKNorm = compute_singleHessian_projector(wfn, startEigenpair[1])
+        prevMetric = wfn.integrals.overlap_matrix().copy()
+
+        lastpointInfo = [ [[],[],[],[],[]], [[],[],[],[],[]] ]
+
         if len(grid)==0:
-            return False, None, None  
-        # We also want the first and last hessian eigenvalues  
-        #hess_eigvals = [starteig, ...., endeig]
+            """ Empty interpolation grid """
+            return False, None, None, []
+
         for geomval in grid:
-            # New addition of code..
-            if not ( self.geomMax  >= geomval >= self.geomMin): 
-                return FoundSolns, searchedGeoms, eigs 
-                
+            if not ( self.geomMax  >= geomval >= self.geomMin):
+                """ Interpolation grid outside desired bounds"""
+                return FoundSolns, searchedGeoms, eigs, lastpointInfo
+
             currGeom = self.make_geom_name(geomval)
-            print("In grid, currGeom", currGeom)  
-            searchedGeoms.append(currGeom) 
-            # Geom lock to write geometry and create directory 
+            searchedGeoms.append(currGeom)
+            # Geom lock to write geometry and create directory
             if not self.write_geometry(geomval, currGeom):
-                print("Error failed to write geometry file") 
-                break  
-            print("prevGeom, currGeom relax :", searchedGeoms[-2], currGeom, flush=True)  
-            # since temp=True we wont save any discontinuos solutions  
+                print(f"Error failed to write geometry file at {currGeom}")
+                break
+
+            # temp=True we wont save any discontinuos solutions
             wfn, converged, continuous, eigsystem =  self.relax_solution(searchedGeoms[-2], currGeom, temp=True, setOffDiscont=False)
-            
-            if converged: 
+
+            if converged:
+                """ Write all the geometries if the wfn converges, leads to smooth PESs """
                 with geom_lock(currGeom):
                     os.makedirs(currGeom, exist_ok=True)
                     if not self.commit_geometry(geomval, currGeom):
                         print("Error failed to write geometry file")
-                        try:     
-                            os.rmdir(currGeom) 
-                        except: 
-                            pass  
-                        break 
+                        try:
+                            os.rmdir(currGeom)
+                        except:
+                            pass
+                        break
                     self.new_geoms.append(currGeom)
-                    
+
                     if continuous:
                         merged = match_known_solution(currGeom, wfn, self.dedupEnergyThresh,
                                                       self.dedupOverlapThresh, exclude=self.sol)
                         if (merged is None):
                             wfn.save_to_disk(currGeom + "/" + self.sol)
                         else:
-                            self.merged = merged 
+                            self.merged = merged
                             print(f"{self.sol} converged onto known solution {merged} at {currGeom}")
                             self.merged = merged
                             self.proQueue.put(("merged", {"tid": self.tid, "sol": self.sol,
                                                  "onto": merged, "geom": currGeom}))
-                            break 
-                
-                if (not continuous and self.setOffDiscont):  
+                            break
+
+                if (not continuous and self.setOffDiscont):
                     self.register_branches([(wfn, wfn.hess_index[0])], currGeom)
-                    break 
-            else: 
-                break  
-            
-            self.hess_eigvals.append(eigsystem[0])
-            self.hess_eigvecs.append(eigsystem[1])
-            self.hess_eigvals = self.hess_eigvals[-self.nstore_hess:].copy()
-            self.hess_eigvecs = self.hess_eigvecs[-self.nstore_hess:].copy()
-            FoundSolns, FoundAny, CoalSig, eigval = self.coalescence_search(wfn, currGeom, prev_FalseCoal = prevFoundAny)
-            if FoundSolns: 
-                break 
-            if CoalSig:  
-                prevFoundAny = (FoundAny or prevFoundAny)  
-            else: 
-                prevFoundAny = False 
-            eigs.append(eigval[np.argsort(np.abs(eigval))[0]]) 
-                
-        return FoundSolns, searchedGeoms, eigs  
-    
-    def _estimate_cusp(self, eigvals, names, targetGeom): 
-        # Catch when mInd is either the [0] or [-1] value of the coarse grid even after splitting  
-        mInd = np.argmin(np.abs(eigvals))
-        if mInd == 0:  
-            # if mInd is zero that means we need to consider this against the previous coarse grain interval
-            # or that we should just divide the first section...  
-            prevGeom, currGeom = names[mInd], names[mInd+1]
-            fGeigs = [ eigvals[mInd] ] 
-        elif mInd == len(eigvals)-1: 
-            # if mInd is -1 then means we need to check against the next coarse grain interval...
-            addGeom = self.geom_value(targetGeom)+(self.geom_value(names[-1]) - self.geom_value(names[-2])) 
-            addEigs = [eigvals[-2]] 
-            FoundSolns, _, addEigs =  self.grid_iteration([addGeom], names[mInd], addEigs)
-            if FoundSolns or (self.merged is not None): 
-                return None, None, None, True 
-            # So checking if is better to move on to search on other side or to search here
-            j = int(np.argmin(np.abs(np.array(addEigs)-eigvals[mInd])))
-            if j == 1:
-                return None, None, None, False  
-            prevGeom, currGeom = names[mInd-1], names[mInd]
-            fGeigs = [ eigvals[mInd-1] ] 
-              
+                    break
+                elif not continuous: 
+                    break         
+            else:
+                break
+
+            # Passed all checks for convergence, match, etc
+            self.storeHessian(eigsystem)
+            currKs, currKNorms = compute_hessian_projectors(wfn, self.hess_eigvecs[-1])
+            _, MaxProjIndex =  singleMode_hessian_projection(prevK, prevKNorm, currKs, currKNorms, prevMetric)
+            eigs.append(self.hess_eigvals[-1][MaxProjIndex])
+            lastpointInfo.append([currGeom, self.hess_eigvals[-1][MaxProjIndex], self.hess_eigvecs[-1][:,MaxProjIndex], currKs, currKNorms])
+            lastpointInfo = lastpointInfo[-2:]
+
+            prevMetric = wfn.integrals.overlap_matrix().copy()
+            prevK = currKs[MaxProjIndex]
+            prevKNorm = currKNorms[MaxProjIndex]
+
+            if coalSearch:
+                FoundSolns, _ = self.coalescence_search(wfn, currGeom, prev_FalseCoal = prevFoundAny)
+                if FoundSolns:
+                    break
+
+        return FoundSolns, searchedGeoms, eigs, lastpointInfo 
+
+
+    def post_A3_search(self):
+        """ This goes through all the identified modes throughout the """
+        FoundSol = False 
+        for mode in self.modes:
+            # This modes object tells us everything we need to know!
+            # We have the soft mode coupling regions independently,
+            # Then we should interpolate between these regions
+            FoundSol = False
+
+            geoms_eigs = []
+            evecs = []
+            for i in range(len(mode)):
+                geoms_eigs.append((mode[i][0], mode[i][1]))
+                evecs.append(mode[i][2])
+
+            geoms_eigs = np.array(geoms_eigs, dtype=float)
+            evecs = np.array(evecs, dtype=float)
+
+            EminInd = np.argmin(np.abs(geoms_eigs[:,1]))
+            if EminInd == 0 or EminInd==len(mode)-1:
+                """ Start or end of the grid """
+                continue
+
+            geom = self.make_geom_name(geoms_eigs[EminInd,0])
+            wfn = self.get_wfn(geom)
+            wfn.read_from_disk(geom + "/" + self.sol)
+
+            # Search along the correct mode!
+            if geoms_eigs[EminInd, 1] < 0 :
+                targetInd = self.HessInd - 1
+            else:
+                targetInd = self.HessInd + 1
+            newwfns, FoundSol = self.search_coalescing_partners(wfn, geom, targetInd,
+                                                 evecs[EminInd, :])
+            if len(newwfns)!=0:
+                self.register_branches(newwfns, geom)
+                FoundAny = True
+
+            if not FoundSol:
+                # then we have the grid division procedure....
+                leftGrad =  abs((geoms_eigs[EminInd  ,1] - geoms_eigs[EminInd-1,1])/(geoms_eigs[EminInd  ,0] - geoms_eigs[EminInd-1,0]))
+                rightGrad = abs((geoms_eigs[EminInd+1,1] - geoms_eigs[EminInd  ,1])/(geoms_eigs[EminInd+1,0] - geoms_eigs[EminInd  ,0]))
+                startInterpolate = geom
+                startEigenpair   = [ geoms_eigs[EminInd,1], evecs[EminInd,:] ]
+                if leftGrad <= rightGrad:
+                    endInterpolate = self.make_geom_name(geoms_eigs[EminInd-1,0])
+                    endEigenpair = [ geoms_eigs[EminInd-1,1], evecs[EminInd-1,:] ]
+                else:
+                    endInterpolate = self.make_geom_name(geoms_eigs[EminInd+1,0])
+                    endEigenpair = [ geoms_eigs[EminInd+1,1], evecs[EminInd+1,:] ]
+
+                searchGeom, searchEigval = self.A3_post_refine_grid(startInterpolate, endInterpolate, startEigenpair, endEigenpair)
+                if searchGeom is None: 
+                    continue 
+                wfn = self.get_wfn(searchGeom)
+                wfn.read_from_disk(searchGeom + "/" + self.sol)
+                nEigs, nEvecs, currHessInd = analyse_hessian(wfn, self.hessThresh, exact=self.exactHess)
+                zi = np.argsort(np.abs(nEigs-searchEigval)).reshape(-1)[0]
+
+                # Search along the correct mode!
+                if searchEigval < 0 :
+                    targetInd = self.HessInd - 1
+                else:
+                    targetInd = self.HessInd + 1
+                newwfns, FoundSol = self.search_coalescing_partners(wfn, searchGeom, targetInd,
+                                                     nEvecs[:, zi])
+                if len(newwfns)!=0:
+                    self.register_branches(newwfns, searchGeom)
+                    FoundAny = True
+        return FoundSol
+
+
+    def A3_post_refine_grid(self, startGeom, endGeom, startEigenpair, endEigenpair):
+        """ Refine grid for an A2 search """
+        searchGeom = None 
+        searchEigval = None 
+
+        cGeigs = [startEigenpair[0]]
+        coarseGrid = self._grid_between(startGeom, endGeom, self.coarseGrain)
+
+        if len(coarseGrid)!=0:
+            searchAnything = True
+            # I need a way to refactor this so that I only save geometries that I care about
+            _, _, cGeigs, _ =  self.grid_iteration(coarseGrid, startGeom, cGeigs, startEigenpair, coalSearch = False)
+            # have a function here to extract the step
+            if len(cGeigs)==len(coarseGrid)+1:
+                cGeigs = cGeigs + [endEigenpair[0]]
+            cGeigs = np.array(cGeigs, dtype=float)
+            EigMinInd = np.argmin(np.abs(cGeigs))
+            if EigMinInd == 0 or EigMinInd == len(cGeigs)-1:
+               pass
+            else:
+                # Account for lack of start geometry in coarseGrid 
+                searchGeom = self.make_geom_name(coarseGrid[EigMinInd-1])
+                searchEigval = cGeigs[EigMinInd]
         else:
-            # See which is the smallest drop out of the forward and backward change  
-            j = int(np.argmin(np.abs([eigvals[mInd]-eigvals[mInd-1], eigvals[mInd+1]-eigvals[mInd]])))
-            prevGeom, currGeom = names[mInd-1+j], names[mInd+j]
-            fGeigs = [ eigvals[mInd-1+j] ] 
-        return prevGeom, currGeom, fGeigs, False      
+            """ prevGeom and currGeom stay the same """
+            pass
+
+        return searchGeom, searchEigval
 
 
-    def refine_grid_search(self,igeom,savedEigvals, search="A2"): 
+    def refine_grid_search(self,igeom, startEigsystem, search="A2"):
         """ Refine grid for an A2 search """
         searchAnything = False
         reachedEnd = False
-        FoundSolns = False
-     
+        FoundSols = False
+
         prevGeom = self.prop_geoms[igeom]
         currGeom = self.prop_geoms[igeom+1]
         targetGeom = currGeom
-        cGeigs = [ savedEigvals[0][np.argsort(np.abs(savedEigvals[0]))[0]] ]
+        cGeigs = [ startEigsystem[0][np.argsort(np.abs(startEigsystem[0]))[0]] ]
         coarseGrid = self._grid_between(prevGeom, currGeom, self.coarseGrain)
+        last2pointsInfo = [] 
+
         if len(coarseGrid)!=0:
-            searchAnything = True  
+            searchAnything = True
             # Append target geometry
             coarseGrid.append(self.geom_value(currGeom))
-            print("A2 refine coarseGrid: ", coarseGrid) 
-            FoundSolns, searchedGeoms, cGeigs = self.grid_iteration(coarseGrid, prevGeom, cGeigs)
+            EigminInd = np.argsort(np.abs(startEigsystem[0])).reshape(-1)[0]
+            startEigenpair = [ startEigsystem[0][EigminInd], startEigsystem[1][:,EigminInd] ]
+            FoundSols, searchedGeoms, cGeigs, last2pointsInfo = self.grid_iteration(coarseGrid, prevGeom, cGeigs, startEigenpair, coalSearch = True)
             reachedEnd = (cGeigs is not None
                    and len(cGeigs) == len(coarseGrid) + 1)
-            if ((search=="A2") and (reachedEnd or FoundSolns)) or (self.merged is not None):
-                "Located coalescing partner, propagated to end of grid or merged with another solutoin" 
-                return FoundSolns, reachedEnd, searchAnything  
-
-            if search=="A2": 
-                prevGeom = searchedGeoms[-2]
-                currGeom = searchedGeoms[-1]
-                fGeigs = [ cGeigs[-1] ] 
-            elif search=="A3": 
-                # have a function here to extract the step 
-                eigvals = np.asarray(cGeigs, dtype=float)
-                names = searchedGeoms[:len(eigvals)]
-                if len(names) < 2 : 
-                    currGeom = searchedGeoms[-1]
-                    fGeigs = [ cGeigs[-1] ] 
-                else:
-                    prevGeom, currGeom, fGeigs, FoundSolns = self._estimate_cusp(eigvals, names, targetGeom ) 
-                    if (prevGeom is None) or (FoundSolns or (self.merged is not None)): 
-                        return FoundSolns, reachedEnd, searchAnything  
-        else: 
-            " prevGeom and currGeom stay the same "
-            fGeigs = cGeigs
-        
-        fineGrid = list(self._grid_between(prevGeom, currGeom, self.fineGrain))
-        if len(fineGrid)!=0:
-            searchAnything = True  
-            fineGrid.append(self.geom_value(currGeom))
-            FoundSolns, _, fGeigs = self.grid_iteration(fineGrid, prevGeom,
-                                                    fGeigs)
-            reachedEnd = (fGeigs is not None
-                   and len(fGeigs) == len(fineGrid) + 1)
-            if (reachedEnd and not FoundSolns) and (self.merged is None): 
-                " well this is a challenging case - if may propagate along current trajectory "
-                if currGeom != targetGeom: 
-                    fineGrid = list(self._grid_between(currGeom, targetGeom, self.fineGrain))
-                    fineGrid.append(self.geom_value(targetGeom)) 
             
-                    fGeigs = [ fGeigs[-1] ] 
-                    FoundSolns, _, fGeigs = self.grid_iteration(fineGrid, currGeom,
-                                                           fGeigs)
-                    reachedEnd = (fGeigs is not None
-                           and len(fGeigs) == len(fineGrid) + 1)
-        return FoundSolns, reachedEnd, searchAnything     
-
-    def old_refine_grid_search(self, igeom, savedEigvals):
-        """Subdivide the interval the main walk just failed to cross.
-           or to locate A3 cusp 
-            """
-        prevGeom = self.prop_geoms[igeom]
-        currGeom = self.prop_geoms[igeom+1]
-        # Plain rebind, not .copy(): prop_geoms mixes np.str_ (from geoms.txt)
-        # with plain str (every point merge_geom inserts mid-run), and str has
-        # no .copy().  Names are immutable either way.
-        targetGeom = currGeom
-        cGeigs = [ savedEigvals[0][np.argsort(np.abs(savedEigvals[0]))[0]] ]
-        #------------------------
-        cuspSearch=None  
-        if savedEigvals[1] is None: 
-            cuspSearch = 2  
-        else: 
-            cuspSearch = 3 
-        #------------------------
-
-        coarseGrid = self._grid_between(prevGeom, currGeom, self.coarseGrain)
-        coarseGrid = list(coarseGrid) 
-        # Adding Current geom this'll make it work better - but we have already run this calculation though.. 
-        if len(coarseGrid)==0: 
-            FoundSolns = False 
-            searchedGeoms = [] 
-        else: 
-            coarseGrid.append(self.geom_value(currGeom))
-            print("in refine search coarseGrid: ", coarseGrid) 
-            FoundSolns, searchedGeoms, cGeigs  = self.grid_iteration(coarseGrid, prevGeom, cGeigs)
-        """
-            We want to distinguish between two scenarios
-            1. A3 cusp is to be found in a finer grid in this interval not the last gridpoint  
-            2. A3 cusp is actually between the next geometry. This stop the fine grid search if the eigenvalues are monotonic  
-        """
-
-        # cGeigs = [ prevEig, convergedEigs... ] 
-        # searchedGeoms = [ prevGeom, all_attempted Geoms (so includes prevGeom and currGeom eigs always)) 
-        reached = (cGeigs is not None
-                   and len(cGeigs) == len(coarseGrid) + 1)
-        if cuspSearch == 2 and reached:
-            print(f"refinement reached {targetGeom} on the coarse grid - "
-                  f"propagation can continue", flush=True)
-            return FoundSolns, True
-        
-
-        if FoundSolns:
-            # Found solns and ended early - either A3 or A2 
-            return True, False
-
-        if len(searchedGeoms) < 2:
-            # Well this should just set off a fine grid calc? 
-            # If interval was too small, since coarseGrid has appended currGeom - searchGeom should always have these two 
-            return False, False
-        
-        if cuspSearch == 2:
+            if (reachedEnd or FoundSols) or (self.merged is not None):
+                "Located coalescing partner, propagated to end of grid or merged with another solutoin"
+                return FoundSols, reachedEnd, searchAnything, last2pointsInfo[0][3], last2pointsInfo[0][4]
             prevGeom = searchedGeoms[-2]
             currGeom = searchedGeoms[-1]
-            fGeigs = [ cGeigs[-1] ] 
-        elif cuspSearch == 3:
-            eigvals = np.asarray(cGeigs, dtype=float)
-            names = searchedGeoms[:len(eigvals)]
-            if len(names) < 2:
-                return False, False
-            # How to catch when mInd is either the 0 or -1 ? 
-            mInd = np.argmin(np.abs(eigvals))
-            if mInd == 0:  
-                # if mInd is zero that means we need to consider this against the previous coarse grain interval
-                # or that we should just divide the first section...  
-                prevGeom, currGeom = names[mInd], names[mInd+1]
-                fGeigs = [ cGeigs[mInd] ] 
-            elif mInd == len(eigvals)-1: 
-                # if mInd is -1 then means we need to check against the next coarse grain interval...
-                addGeom = self.geom_value(targetGeom)+(self.geom_value(names[-1]) - self.geom_value(names[-2])) 
-                addEigs = [cGeigs[-2]] 
-                FoundSolns, _, addEigs =  self.grid_iteration([addGeom], names[mInd], addEigs)
-                if FoundSolns: 
-                    return True, True 
-                j = int(np.argmin(np.abs(np.array(addEigs)-cGeigs[mInd])))
-                if j == 1: 
-                    return FoundSolns,True   
-                prevGeom, currGeom = names[mInd-1], names[mInd]
-                fGeigs = [ cGeigs[mInd-1] ] 
-                  
-            else: 
-                j = int(np.argmin(np.abs([eigvals[mInd]-eigvals[mInd-1], eigvals[mInd+1]-eigvals[mInd]])))
-                prevGeom, currGeom = names[mInd-1+j], names[mInd+j]
-                fGeigs = [ cGeigs[mInd-1+j] ] 
+            fGeigs = [ cGeigs[-1] ]
+        else:
+            " Go straight to fine grid "
+            fGeigs = cGeigs
 
         fineGrid = list(self._grid_between(prevGeom, currGeom, self.fineGrain))
-        fineGrid.append(self.geom_value(currGeom))
-        FoundSolns, _, fGeigs = self.grid_iteration(fineGrid, prevGeom,
-                                                    fGeigs)
-        if (cuspSearch == 2 and not FoundSolns and currGeom == targetGeom
-                and fGeigs is not None
-                and len(fGeigs) == len(fineGrid) + 1):
-            print(f"refinement reached {targetGeom} on the fine grid - "
-                  f"propagation can continue", flush=True)
-            return False, True
-        return FoundSolns, False
+        
+        
+        if len(fineGrid)==0 and len(coarseGrid)==0:
+            # no interpolation done
+            print("grid resolution max already - no refinement carried out")
+            return False, False, False, [], []
+        else:
+            searchAnything = True
+            fineGrid.append(self.geom_value(currGeom))
+            # I don't know what the best course of action is here
+            startEigenpair = [ last2pointsInfo[1][1], last2pointsInfo[1][2]]
+            FoundSols, _, fGeigs, last2pointsInfo = self.grid_iteration(fineGrid, prevGeom, fGeigs, startEigenpair, coalSearch=True)
+            reachedEnd = (fGeigs is not None
+                   and len(fGeigs) == len(fineGrid) + 1)
+            if FoundSols or (self.merged is not None):
+                "Located coalescing partner, propagated to end of grid or merged with another solutoin"
+                return FoundSols, reachedEnd, searchAnything, last2pointsInfo[0][3], last2pointsInfo[0][4]
+            elif (reachedEnd and not FoundSols):
+                " Reached end of the fine grid, but didn't find anything. Needs to go onto the next grid point "
+                if currGeom != targetGeom:
+                    fineGrid = list(self._grid_between(currGeom, targetGeom, self.fineGrain))
+                    fineGrid.append(self.geom_value(targetGeom))
+                    fGeigs = [ fGeigs[-1] ]
+                    startEigenpair = [ last2pointsInfo[1][1], last2pointsInfo[1][2]]
+                    FoundSols, searchedGeoms, fGeigs, last2pointsInfo = self.grid_iteration(fineGrid, currGeom, fGeigs, startEigenpair, coalSearch = True)
+
+                    reachedEnd = (fGeigs is not None
+                           and len(fGeigs) == len(fineGrid) + 1)
+        return FoundSols, reachedEnd, searchAnything, last2pointsInfo[0][3], last2pointsInfo[0][4]
+
 
     #-------------------------------------------------------------
 
@@ -544,14 +551,14 @@ class PESWalker():
         # So this is where some eigenfollow logic would hold us back 
         if converged:
             eigval, eigvec, currHessInd = analyse_hessian(wfn, self.hessThresh, exact=self.exactHess)
-            report_hessian(geom_to, self.HessInd, eigval, currHessInd)
+            #report_hessian(geom_to, self.HessInd, eigval, currHessInd)
             continuous = ( continuous and (currHessInd == self.HessInd) )  
             
         if self.setOffDiscont and ( (not temp and setOffDiscont) and (converged and not continuous)):
             # This sets off as another branch any new solutions  
             print("Not continuous, setting off new branch", flush=True ) 
             self.register_branches([(wfn, currHessInd)], geom_to)
-        return wfn, converged, continuous, [eigval, eigvec]
+        return wfn, converged, continuous, [eigval[:self.nhess_elements], eigvec[:,:self.nhess_elements]]
 
 
     def search_coalescing_partners(self, wfn, geom, search_ind, zero_vec, prev_FalseCoal=False):
@@ -608,38 +615,44 @@ class PESWalker():
                 found.append((testwfn, testHessInd))
         return found, FoundCoal
 
-    def coalescence_search(self, wfn, geom, prevFS = False, prevCS = False, prev_FalseCoal = False):
+
+    def coalescence_search(self, wfn, geom, prevFS = False, prevCS = False, prev_FalseCoal = False, prevNumSoftModes = 0 ):
         """Analyse wfn's Hessian, if a coalescence signature is present, run
            the partner search.
            Returns (newwfns, signature):
                 signature = True : when n a zero mode was identified"""
-        FoundAny = False 
-        FoundCoal = False 
+        # Current descriptors 
+        FoundCoal = False
         CoalSig = False 
         eigval = self.hess_eigvals[-1]
         eigvec = self.hess_eigvecs[-1]
+
+        # It is at this point that we would need to have a check that we are not having just a soft mode! 
         searchInfo = pick_search_index(eigval, self.HessInd, self.CoalSigThresh)
-            
         if len(searchInfo) > 0 :
             CoalSig = True
-            if prevFS and prevCS:
-                return FoundCoal, FoundAny, CoalSig, eigval 
- 
-            print("Coalesence signature present ", flush=True)
-            newwfns = [] 
-            for searchInd, zi in searchInfo:
-                wfns, foundcoal = self.search_coalescing_partners(wfn, geom, searchInd,
-                                                 eigvec[:, zi], prev_FalseCoal)
-                # Every converged candidate gets registered; FoundSolns tracks
-                # only whether the coalescing partner itself was located, since
-                # that is what the cusp logic upstream keys off.
-                newwfns += wfns
-                FoundCoal = (FoundCoal or foundcoal)
+            if (len(searchInfo) - prevNumSoftModes <= 0): 
+                # then we need to analyse the hessian and the eigenvalues for previous steps 
+                pass 
+            elif not prevFS: 
+                print("Coalesence signature present, no previous coalescing solution located ", flush=True)
+                newwfns = [] 
+                
+                for searchInd, zi in searchInfo:
+                    wfns, foundcoal = self.search_coalescing_partners(wfn, geom, searchInd,
+                                                     eigvec[:, zi], prev_FalseCoal)
+                    # Every converged candidate gets registered; FoundSolns tracks
+                    # only whether the coalescing partner itself was located, since
+                    # that is what the cusp logic upstream keys off.
+                    newwfns += wfns
+                    FoundCoal = (FoundCoal or foundcoal)
 
-            if len(newwfns)!=0:
-                self.register_branches(newwfns, geom)
-                FoundAny = True
-        return FoundCoal, FoundAny , CoalSig, eigval  
+                if len(newwfns)!=0:
+                    self.register_branches(newwfns, geom)
+                    FoundAny = True
+        
+        return FoundCoal, searchInfo 
+ 
 
     def adjacent_geoms(self, geom): 
         allgeoms = sorted(glob.glob("geom_*"), key=self.geom_value)
@@ -655,6 +668,7 @@ class PESWalker():
         else:
             above = allgeoms[i]
         return below, above
+
 
     def check_adjacent_geoms(self, geom, wfn, exclude=None): 
         below, above = self.adjacent_geoms(geom)
@@ -705,6 +719,7 @@ class PESWalker():
  
         return match, geom_to              
 
+
     def register_branches(self, newwfns, geom):
         """Check, name, save and queue every (wfn, hess_index) partner found at geom."""
         foundSolns = False
@@ -748,6 +763,7 @@ class PESWalker():
                 foundSolns=True
         return foundSolns, match
 
+
     def propagate_solution(self, initSearch=False):
         print("Starting propagations: sol, prop_geoms ", self.sol, self.prop_geoms)
         startE, _ = read_solution_header(
@@ -757,6 +773,11 @@ class PESWalker():
         prevFoundSolns = False
         prevFoundAny = False
         prevCoalSig = False
+    
+        prevKs = []
+        prevKNorms = []
+        prevNumSoftModes = 0
+        
         for igeom, geom in enumerate(self.prop_geoms[1:]):
             print(f"====== Geom: {geom} ========")  
             prev_geom = self.prop_geoms[igeom]
@@ -764,14 +785,15 @@ class PESWalker():
             print(f"Relax output: converged: {converged} and continuous: {continuous}")  
             merged = None
             # Becareful of this condition and if the optimisation doesnt converge
+            # This is fine and doesn't need refactoring
             if (not converged or not continuous):
                 print("Current solution is being trashed/(set off again) - can we subdivide geometry steps?")
                 if prevFoundSolns:
                     print("PES died but we have located previous coalescing solution")
                     break
 
-                currFoundSolns, reachedEnd, searchedAnything = self.refine_grid_search(
-                    igeom, (self.hess_eigvals[-1], None), search="A2")
+                currFoundSolns, reachedEnd, searchedAnything, prevKs, prevKNorms = self.refine_grid_search(
+                    igeom, (self.hess_eigvals[-1], self.hess_eigvecs[-1]), search="A2")
 
                 print(f" A2 Fold search: reachedEnd: {reachedEnd}, FoundSolns: {currFoundSolns} and searchedAnything: {searchedAnything}")  
                 if not reachedEnd or (self.merged is not None): 
@@ -779,17 +801,16 @@ class PESWalker():
                 else:  
                     # The refinement bridged the interval and saved self.sol at
                     # geom, so the step was only too coarse.  Adopt that point
-                    # what if it was a previously converged onto solution? Well then... 
+                    # what if it was a previously converged onto solution? 
                     wfn.read_from_disk(geom + "/" + self.sol)
                     eigval, eigvec, currHessInd = analyse_hessian(wfn, self.hessThresh, exact=self.exactHess)
                     eigsystem = [ eigval, eigvec] 
                     prevFoundSolns = False
                     prevCoalSig = False
-                    self.hess_eigvals.append(eigsystem[0])
-                    self.hess_eigvecs.append(eigsystem[1])
-                    self.hess_eigvals = self.hess_eigvals[-self.nstore_hess:].copy()
-                    self.hess_eigvecs = self.hess_eigvecs[-self.nstore_hess:].copy()
+                    self.storeHessian(eigsystem)
                     self.Energies.append(wfn.energy)
+                    # But we need to remake the prevKs, prevKNorms 
+                    #prevNumSoftModes, prevKs, prevKNorms = self.hessian_projection(wfn, geom, searchInfo, prevNumSoftModes, prevKs, prevKNorms)  
                     continue  
 
             with geom_lock(geom):
@@ -816,7 +837,7 @@ class PESWalker():
                 if initSearch:
                     refsearchInfo = pick_search_index(self.hess_eigvals[0], self.HessInd, self.CoalSigThresh)
                     print("Init. Search Info, ", refsearchInfo)  
-                    print("Initial eigenvalues: ", self.hess_eigvals[0][:10]) 
+                    print("Initial eigenvalues: ", self.hess_eigvals[0][:10])
                     if len(refsearchInfo) > 0:
                         refnewwfns = []
                         for refsearchInd, refzi in refsearchInfo:
@@ -826,37 +847,62 @@ class PESWalker():
                             print("Potentially new solutions from initial coalescence search")
                             self.register_branches(refnewwfns, self.prop_geoms[0])
            
-            self.hess_eigvals.append(eigsystem[0])
-            self.hess_eigvecs.append(eigsystem[1])
-            self.hess_eigvals = self.hess_eigvals[-self.nstore_hess:].copy()
-            self.hess_eigvecs = self.hess_eigvecs[-self.nstore_hess:].copy()
+            self.storeHessian(eigsystem)
             self.Energies.append(wfn.energy) 
-            FoundSolns, FoundAny, CoalSig, eigval = self.coalescence_search(wfn, geom,
-                                                             prevFS = prevFoundSolns,
+
+            # So this is going to be where we decide to set off a search etc
+            FoundSolns, searchInfo  = self.coalescence_search(wfn, geom,
+                                                              prevFS = prevFoundSolns,
                                                               prevCS = prevCoalSig, 
-                                                              prev_FalseCoal = prevFoundAny)
-            #  
-            if (CoalSig and not FoundSolns) and (prevCoalSig and not prevFoundSolns): 
-                print("A3 search: No coalescing partners were located")
-                FoundSolns, _ , searchAnything = self.refine_grid_search(
-                    igeom, 
-                    (self.hess_eigvals[-2], self.hess_eigvals[-1]), search="A3")
-                if FoundSolns:
-                    print("A3 - constructed new geometries and located a coalescing partners")
-                if self.merged is not None: 
-                    print("Merged during A3 search but not merged at current geom") 
-    
-            prevCoalSig = CoalSig 
-            if not CoalSig: 
-                prevFoundSolns = False 
-                prevFoundAny = False 
-            else: 
-                prevFoundSolns = (prevFoundSolns or FoundSolns) 
-                prevFoundAny = (prevFoundAny or FoundAny) 
-                pass  
+                                                              prev_FalseCoal = prevFoundAny, 
+                                                              prevNumSoftModes = prevNumSoftModes)
+
+            prevNumSoftModes, prevKs, prevKNorms = self.hessian_projection(wfn, geom, searchInfo, prevNumSoftModes, prevKs, prevKNorms)  
+        
         return
 
 
+    def hessian_projection(self, wfn, currGeom, searchInfo, prevNumSoftModes, prevKs, prevKNorms):  
+        # Then here I should build the modes lists
+        if len(searchInfo)> 0: 
+            # Then we should construct as save the prev Ks. 
+            currKs, currKNorms = compute_hessian_projectors(wfn, self.hess_eigvecs[-1])
+            geomVal = self.geom_value(currGeom) 
+            if prevNumSoftModes == 0 :
+                # This means that prevKs = None, therefore we can just skip this section and start a new mode branch 
+                for _, searchModeIndex in searchInfo:
+                    self.modes.append([(geomVal, self.hess_eigvals[-1][searchModeIndex], self.hess_eigvecs[-1][:,searchModeIndex])])
+            else: 
+                metric = wfn.integrals.overlap_matrix() 
+                for _, searchModeIndex in searchInfo:
+                    approx_proj, maxProjIndex = singleMode_hessian_projection(currKs[searchModeIndex], currKNorms[searchModeIndex], prevKs, prevKNorms, metric) 
+                    match = False
+                    if 1-np.abs(approx_proj[maxProjIndex])> 2e-1:
+                        #print("1-abs(proj): ", 1-np.abs(approx_proj[maxProjIndex]))
+                        self.modes.append([(geomVal, self.hess_eigvals[-1][searchModeIndex], self.hess_eigvecs[-1][:,searchModeIndex])]) 
+                    else:
+                        for mInd, mode in enumerate(self.modes):
+                            #mode_geoms = np.array([ x[0] for x in mode ])  
+                            #geomIndex = np.argwhere(mode_geoms == self.geom_value(prevGeom))                    
+                            if mode[-1][1] == self.hess_eigvals[-2][maxProjIndex]:
+                                match = True
+                                self.modes[mInd].append((geomVal, self.hess_eigvals[-1][searchModeIndex], self.hess_eigvecs[-1][:,searchModeIndex])) 
+                        if not match:
+                            self.modes.append([(geomVal, self.hess_eigvals[-1][searchModeIndex], self.hess_eigvecs[-1][:,searchModeIndex])]) 
+        
+            # Reset for the next iteration 
+            prevKs = currKs 
+            prevKNorms = currKNorms
+            prevNumSoftModes = len(searchInfo)  
+        else: 
+            # No coalescence signature whatsoever 
+            # Reset for next iteration 
+            prevNumSoftModes = 0 
+            prevKs = [] 
+            prevKNorms = [] 
+        return prevNumSoftModes, prevKs, prevKNorms 
+   
+ 
     def initialise_run(self, geom):
         """Initial search for coalescing solutions"""
         wfn = self.get_wfn(geom)
@@ -869,10 +915,10 @@ class PESWalker():
          
         wfn.update()
         eigval, eigvec, currHessInd = analyse_hessian(wfn, self.hessThresh, exact=self.exactHess)
-        self.hess_eigvals.append(eigval)
-        self.hess_eigvecs.append(eigvec)
         self.HessInd = currHessInd
-
+        self.nhess_elements = currHessInd + 4  
+        self.storeHessian([eigval, eigvec])
+        
         # so I could/should put the search/index run after doing this? 
         #if search:
         #    searchInfo = pick_search_index(eigval,currHessInd, self.CoalSigThresh)
@@ -903,6 +949,8 @@ class PESWalker():
             # We only run the initial coalescence search if we survive the first step 
             self.propagate_solution(initSearch=initSearch)
         print(f"{self.sol} finished, geometries created this walk: ", self.new_geoms)
+     
+        self.post_A3_search()
         return self.new_geoms.copy()
 
 

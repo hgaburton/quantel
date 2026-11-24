@@ -28,7 +28,7 @@ def wfnlist_osc_strength(wfnlist, ref_ind=0, plev=1, save=True):
     for i, state_i in enumerate(wfnlist):
         if(i==ref_ind): continue
         state_i.update()
-        # Compute excitation energy in eV 
+        # Compute excitation energy in Hartrees  
         de = state_i.energy - ref_state.energy
         s = state_i.overlap(ref_state) 
         a = np.sqrt(1+s)/np.sqrt(1-s)
@@ -37,7 +37,7 @@ def wfnlist_osc_strength(wfnlist, ref_ind=0, plev=1, save=True):
         tdm12 = ref_state.tdm(state_i)
         tdm22 = state_i.tdm(state_i)
         tdm = (1/(4*(1+s)))*( (1-a**2)*(tdm11 + tdm22) + tdm21*(1+a)**2+tdm12*(1-a)**2)
-        # Compute oscillator strength
+        # Compute oscillator strength in Hartrees
         f = 2./3. * de * np.dot(tdm,tdm)
         fother = 2./3. * de * np.dot(tdm21, tdm21) 
         fothers.append(fother)
@@ -52,11 +52,11 @@ def wfnlist_osc_strength(wfnlist, ref_ind=0, plev=1, save=True):
     print(" Computing oscillator strengths from solution {:04d}".format(int(namelist[ref_ind])))
     print("===============================================")
     # Print the outcome
-    print("{:4s}   {:10s}   {:10s}   {:10s}".format("","  dE / eV", "   f / au","   S / au"))
+    print("{:4s}   {:10s}   {:10s}   {:10s}   {:10s}".format("","  dE / eV", "   f / au","   S / au"," TDM2/ au"))
     print("-----------------------------------------------")
     #strengths.sort()
     for ind, (n, de, f, s) in enumerate(data):
-        print("{:04d}:  {: 10.6f}   {: 10.6f}   {: 10.6f}".format(n,de,f,s),f"  (other f: {fothers[ind]})")
+        print("{:04d}:  {: 10.6f}   {: 10.6f}   {: 10.6f}   {: 10.6f}".format(n,de,f,s,tdms[ind]),f"  (other f: {fothers[ind]})")
     print("----------------------------------------------------------")
     return namelist[ref_ind], data, np.array(tdms) 
 def over_wfnlist_osc_strength(wfnlist, ref_ind=0, plev=1, save=True):
