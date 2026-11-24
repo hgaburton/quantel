@@ -331,42 +331,43 @@ class PESWalker():
         """ This goes through all the identified modes throughout the """
         FoundSol = False 
         for mode in self.modes:
-            # This modes object tells us everything we need to know!
-            # We have the soft mode coupling regions independently,
-            # Then we should interpolate between these regions
+            # Soft modes stores the soft coupling modes independently
+            # Iteratate and refine within in each grid where necessary 
             FoundSol = False
 
+            # Convert soft mode information to np arrays 
             geoms_eigs = []
             evecs = []
             for i in range(len(mode)):
                 geoms_eigs.append((mode[i][0], mode[i][1]))
                 evecs.append(mode[i][2])
-
             geoms_eigs = np.array(geoms_eigs, dtype=float)
             evecs = np.array(evecs, dtype=float)
 
+            # Find the lowest magnitude eigenvalue 
             EminInd = np.argmin(np.abs(geoms_eigs[:,1]))
             if EminInd == 0 or EminInd==len(mode)-1:
-                """ Start or end of the grid """
+                """ Lowest at the start or end of the grid, the start has already been searched """
                 continue
 
+            # Read in wave function at min. Eig. geometry 
             geom = self.make_geom_name(geoms_eigs[EminInd,0])
             wfn = self.get_wfn(geom)
             wfn.read_from_disk(geom + "/" + self.sol)
 
-            # Search along the correct mode!
+            # Identify the target hessian index 
             if geoms_eigs[EminInd, 1] < 0 :
                 targetInd = self.HessInd - 1
             else:
                 targetInd = self.HessInd + 1
-            newwfns, FoundSol = self.search_coalescing_partners(wfn, geom, targetInd,
-                                                 evecs[EminInd, :])
-            if len(newwfns)!=0:
-                self.register_branches(newwfns, geom)
-                FoundAny = True
+            # Search along the correct mode by perturbing along corresponding evec 
+            newwfns, FoundSol = self.search_coalescing_partners(wfn, geom, targetInd,evecs[EminInd, :])
+            self.register_branches(newwfns, geom)
+
 
             if not FoundSol:
-                # then we have the grid division procedure....
+                # No solutions found, there may be solutions found via grid division 
+                #Select division left or right 
                 leftGrad =  abs((geoms_eigs[EminInd  ,1] - geoms_eigs[EminInd-1,1])/(geoms_eigs[EminInd  ,0] - geoms_eigs[EminInd-1,0]))
                 rightGrad = abs((geoms_eigs[EminInd+1,1] - geoms_eigs[EminInd  ,1])/(geoms_eigs[EminInd+1,0] - geoms_eigs[EminInd  ,0]))
                 startInterpolate = geom
@@ -378,24 +379,21 @@ class PESWalker():
                     endInterpolate = self.make_geom_name(geoms_eigs[EminInd+1,0])
                     endEigenpair = [ geoms_eigs[EminInd+1,1], evecs[EminInd+1,:] ]
 
+                # Refine selected grid, propagate only the desired solution, don't search for coalescences yet
                 searchGeom, searchEigval = self.A3_post_refine_grid(startInterpolate, endInterpolate, startEigenpair, endEigenpair)
                 if searchGeom is None: 
                     continue 
+
+                # Search Geom tells us the best candidate to search, and searchEigval tells us the eigval corresponding to softMode  
                 wfn = self.get_wfn(searchGeom)
                 wfn.read_from_disk(searchGeom + "/" + self.sol)
-                nEigs, nEvecs, currHessInd = self.analyse_hessian(wfn)
+                nEigs, nEvecs, _ = self.analyse_hessian(wfn)
                 zi = np.argsort(np.abs(nEigs-searchEigval)).reshape(-1)[0]
 
-                # Search along the correct mode!
-                if searchEigval < 0 :
-                    targetInd = self.HessInd - 1
-                else:
-                    targetInd = self.HessInd + 1
-                newwfns, FoundSol = self.search_coalescing_partners(wfn, searchGeom, targetInd,
-                                                     nEvecs[:, zi])
+                # Search along the correct mode, targetInd doesn't change of course 
+                newwfns, FoundSol = self.search_coalescing_partners(wfn, searchGeom, targetInd,nEvecs[:, zi])
                 if len(newwfns)!=0:
                     self.register_branches(newwfns, searchGeom)
-                    FoundAny = True
         return FoundSol
 
 
@@ -408,7 +406,6 @@ class PESWalker():
         coarseGrid = self._grid_between(startGeom, endGeom, self.coarseGrain)
 
         if len(coarseGrid)!=0:
-            searchAnything = True
             # I need a way to refactor this so that I only save geometries that I care about
             _, _, cGeigs, _ =  self.grid_iteration(coarseGrid, startGeom, cGeigs, startEigenpair, coalSearch = False)
             # have a function here to extract the step
@@ -630,6 +627,7 @@ class PESWalker():
         #    flips = [] 
         #    for nwfn, ind in newwfns: 
 
+        # but also here we may put in a symmetry check! 
         for nwfn, ind in newwfns:
             # check the energy target.
             if self.energy_thresh: 
@@ -747,6 +745,7 @@ class PESWalker():
                     self.register_branches(newwfns, geom)
         return FoundCoal, searchInfo 
 
+
     #---- Propagation wrappers ----------------------------------------------------------------------
     def relax_solution(self, geom_from, geom_to, temp=False, setOffDiscont = True):
         """Read `sol` at geom_from and re-relax it at geom_to"""
@@ -861,7 +860,7 @@ class PESWalker():
 
             # So this is going to be where we decide to set off a search etc
             prevFoundSolns, searchInfo  = self.coalescence_search(wfn, geom,
-                                                              prevFoundSolns = prevFoundSolns,
+                                                              prevFoundSol = prevFoundSolns,
                                                               prevNumSoftModes = prevNumSoftModes)
 
             prevNumSoftModes, prevKs, prevKNorms = self.hessian_projection(wfn, geom, searchInfo, prevNumSoftModes, prevKs, prevKNorms)  
