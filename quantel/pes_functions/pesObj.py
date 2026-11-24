@@ -320,7 +320,7 @@ class PESWalker():
             prevKNorm = currKNorms[MaxProjIndex]
 
             if coalSearch:
-                FoundSolns, _ = self.coalescence_search(wfn, currGeom, prev_FalseCoal = prevFoundAny)
+                FoundSolns, _ = self.coalescence_search(wfn, currGeom)
                 if FoundSolns:
                     break
 
@@ -857,12 +857,10 @@ class PESWalker():
            
             self.storeHessian(eigsystem)
             self.Energies.append(wfn.energy) 
-
             # So this is going to be where we decide to set off a search etc
             prevFoundSolns, searchInfo  = self.coalescence_search(wfn, geom,
                                                               prevFoundSol = prevFoundSolns,
                                                               prevNumSoftModes = prevNumSoftModes)
-
             prevNumSoftModes, prevKs, prevKNorms = self.hessian_projection(wfn, geom, searchInfo, prevNumSoftModes, prevKs, prevKNorms)  
         return
 
