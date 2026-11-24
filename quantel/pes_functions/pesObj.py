@@ -371,28 +371,35 @@ class PESWalker():
                 rightGrad = abs((geoms_eigs[EminInd+1,1] - geoms_eigs[EminInd  ,1])/(geoms_eigs[EminInd+1,0] - geoms_eigs[EminInd  ,0]))
                 startInterpolate = geom
                 startEigenpair   = [ geoms_eigs[EminInd,1], evecs[EminInd,:] ]
+
+                order = [] 
                 if leftGrad <= rightGrad:
-                    endInterpolate = self.make_geom_name(geoms_eigs[EminInd-1,0])
-                    endEigenpair = [ geoms_eigs[EminInd-1,1], evecs[EminInd-1,:] ]
+                    #endInterpolate = self.make_geom_name(geoms_eigs[EminInd-1,0])
+                    #endEigenpair = [ geoms_eigs[EminInd-1,1], evecs[EminInd-1,:] ]
+                    order = [self.make_geom_name(geoms_eigs[EminInd-1,0]), [ geoms_eigs[EminInd-1,1], evecs[EminInd-1,:] ]]
                 else:
-                    endInterpolate = self.make_geom_name(geoms_eigs[EminInd+1,0])
-                    endEigenpair = [ geoms_eigs[EminInd+1,1], evecs[EminInd+1,:] ]
+                    #endInterpolate = self.make_geom_name(geoms_eigs[EminInd+1,0])
+                    #endEigenpair = [ geoms_eigs[EminInd+1,1], evecs[EminInd+1,:] ]
+                    order = [self.make_geom_name(geoms_eigs[EminInd+1,0]), [ geoms_eigs[EminInd+1,1], evecs[EminInd+1,:] ]]
 
-                # Refine selected grid, propagate only the desired solution, don't search for coalescences yet
-                searchGeom, searchEigval = self.A3_post_refine_grid(startInterpolate, endInterpolate, startEigenpair, endEigenpair)
-                if searchGeom is None: 
-                    continue 
+                for endInterpolate, endEigenpair in order: 
+                    # Refine selected grid, propagate only the desired solution, don't search for coalescences yet
+                    searchGeom, searchEigval = self.A3_post_refine_grid(startInterpolate, endInterpolate, startEigenpair, endEigenpair)
+                    if searchGeom is None: 
+                        continue 
 
-                # Search Geom tells us the best candidate to search, and searchEigval tells us the eigval corresponding to softMode  
-                wfn = self.get_wfn(searchGeom)
-                wfn.read_from_disk(searchGeom + "/" + self.sol)
-                nEigs, nEvecs, _ = self.analyse_hessian(wfn)
-                zi = np.argsort(np.abs(nEigs-searchEigval)).reshape(-1)[0]
+                    # Search Geom tells us the best candidate to search, and searchEigval tells us the eigval corresponding to softMode  
+                    wfn = self.get_wfn(searchGeom)
+                    wfn.read_from_disk(searchGeom + "/" + self.sol)
+                    nEigs, nEvecs, _ = self.analyse_hessian(wfn)
+                    zi = np.argsort(np.abs(nEigs-searchEigval)).reshape(-1)[0]
 
-                # Search along the correct mode, targetInd doesn't change of course 
-                newwfns, FoundSol = self.search_coalescing_partners(wfn, searchGeom, targetInd,nEvecs[:, zi])
-                if len(newwfns)!=0:
-                    self.register_branches(newwfns, searchGeom)
+                    # Search along the correct mode, targetInd doesn't change of course 
+                    newwfns, FoundSol = self.search_coalescing_partners(wfn, searchGeom, targetInd,nEvecs[:, zi])
+                    if len(newwfns)!=0:
+                        self.register_branches(newwfns, searchGeom)
+                    if FoundSol: 
+                        break 
         return FoundSol
 
 
