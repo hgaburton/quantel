@@ -954,16 +954,16 @@ class PESWalker():
                 anchor = hole   # chain: next hole relaxes from the one we just filled
 
 
-def save_or_merge(self, geomName, wfn, claim = True):
-    # Claim just says if we register a claim or not 
-    merged = None 
-    merged = match_known_solution(geomName, wfn, self.dedupEnergyThresh,
-                                                      self.dedupOverlapThresh, exclude = self.sol)
-    if (merged is None):
-        wfn.save_to_disk(geomName + "/" + self.sol)
-    elif claim: 
-        self.merged = merged
-        self.proQueue.put(("merged", {"tid": self.tid, "sol": self.sol,
-                                 "onto": merged, "geom": geomName}))
-        print(f"{self.sol} converged onto known solution {merged} at {geomName}")
-    return merged
+    def save_or_merge(self, geomName, wfn, claim = True):
+        # Claim just says if we register a claim or not 
+        merged = None 
+        merged = match_known_solution(geomName, wfn, self.dedupEnergyThresh,
+                                                          self.dedupOverlapThresh, exclude = self.sol)
+        if (merged is None):
+            wfn.save_to_disk(geomName + "/" + self.sol)
+        elif claim: 
+            self.merged = merged
+            self.proQueue.put(("merged", {"tid": self.tid, "sol": self.sol,
+                                     "onto": merged, "geom": geomName}))
+            print(f"{self.sol} converged onto known solution {merged} at {geomName}")
+        return merged
