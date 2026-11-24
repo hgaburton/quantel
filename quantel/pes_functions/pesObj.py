@@ -916,7 +916,9 @@ class PESWalker():
             # We only run the initial coalescence search if we survive the first step 
             self.propagate_solution(initSearch=initSearch)
         print(f"{self.sol} finished, geometries created this walk: ", self.new_geoms)
-     
+
+        print("Performing A3 search") 
+        print("soft modes: ",self.modes )
         self.post_A3_search()
         return self.new_geoms.copy()
 
