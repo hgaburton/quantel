@@ -911,7 +911,7 @@ class PESWalker():
         return
 
  
-    def initialise_run(self, Geom):
+    def initialise_run(self, Geom, getHessInfo = True):
         """Initial search for coalescing solutions"""
         wfn = self.get_wfn(Geom)
         wfn.read_from_disk(Geom+"/"+self.sol)
@@ -924,10 +924,11 @@ class PESWalker():
         wfn.update()
         eigval, eigvec, currHessInd = self.analyse_hessian(wfn)
         self.HessInd = currHessInd
-        searchInfo = pick_search_index(eigval, self.HessInd, self.CoalSigThresh)
-        self.nhess_elements = currHessInd + 4  
-        _, Ks, KNorms = self.hessian_projection(wfn, Geom, None, 0, searchInfo, [eigval, eigvec])  
-        self.storeHessian(Geom, [eigval, eigvec], Ks, KNorms)
+        if getHessInfo: 
+            searchInfo = pick_search_index(eigval, self.HessInd, self.CoalSigThresh)
+            self.nhess_elements = currHessInd + 4  
+            _, Ks, KNorms = self.hessian_projection(wfn, Geom, None, 0, searchInfo, [eigval, eigvec])  
+            self.storeHessian(Geom, [eigval, eigvec], Ks, KNorms)
         return
 
 
@@ -964,8 +965,8 @@ class PESWalker():
             key=self.geom_value)
         if len(present) < 2:
             return
-        start, stop = self.geom_value(present[0]), self.geom_value(present[-1])
-        present_set = set(present)
+        
+        self.initialise_run(present[0], getHessInfo = False) 
 
         # HessInd of this solution (from its stored header) drives the optimizer
         _, self.HessInd = read_solution_header(f"{present[0]}/{self.sol}.solution")
